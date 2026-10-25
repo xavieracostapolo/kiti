@@ -72,6 +72,13 @@ describe("SimTransport", () => {
     expect(await t.killAgent("no-existe")).toEqual({ kind: "notFound" });
   });
 
+  it("now() expone el reloj virtual y avanza con los pasos", async () => {
+    const t = new SimTransport({ count: 2, seed: 1, schedule: manualTimer().schedule });
+    const t0 = t.now();
+    t.advance(3);
+    expect(t.now() - t0).toBe(300);
+  });
+
   it("dispose detiene la simulación", async () => {
     const timer = manualTimer();
     const t = new SimTransport({ count: 3, seed: 1, schedule: timer.schedule });

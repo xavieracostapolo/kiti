@@ -45,6 +45,11 @@ export class SimTransport implements Transport {
     return { protocolVersion: PROTOCOL_VERSION, appVersion: "0.1.0-sim", source: "sim" };
   }
 
+  /** Reloj virtual del simulador en epoch ms (para "hace N s" en los paneles). */
+  now(): number {
+    return this.fleet.now;
+  }
+
   /** Avanza `n` pasos a mano (window.__kiti.step). */
   advance(n: number): void {
     for (let i = 0; i < n; i++) this.tick();
