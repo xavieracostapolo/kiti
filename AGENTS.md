@@ -213,6 +213,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run hooks:install-gemini # solo si usas Gemini CLI
   mise run hooks:uninstall # quita los hooks de Kiti de ~/.claude/settings.json (los tuyos quedan)
   mise run app:build     # release sin empaquetar: target/release/kiti-app
+  mise run app:bundle    # Kiti.app y copia en el Escritorio (cierra Kiti antes)
   mise run app:measure   # RAM y CPU con 20 y 50 agentes simulados y en modo real
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
