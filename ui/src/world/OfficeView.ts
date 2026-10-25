@@ -5,18 +5,20 @@
 import { BitmapText, Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
 import type { Lod } from "../domain/lod";
 import { displayName } from "../domain/names";
+import { charsIn, fitLines, fontFor, LINE_H } from "../domain/text";
 import type { AgentState, ConversationInfo, StatusKind } from "../protocol";
 import { anchors, type RoomSize } from "./officeTemplate";
 import { PAL, PROVIDER_COLOR, PROVIDER_LETTER, STATUS_COLOR } from "./palette";
 
 export const FONT = "kiti-pixel";
-/** Caracteres que caben entre el borde y la ventana con fontSize 9. */
-const LABEL_MAX = 19;
-/** Caracteres de la nota inferior (actividad o último pedido) con fontSize 7. */
-const NOTE_MAX = 40;
-
-const clip = (text: string, max: number) =>
-  text.length > max ? `${text.slice(0, max - 1)}…` : text;
+/**
+ * Texto que se adapta al zoom: mide más o menos lo mismo en pantalla, así al acercarse caben más
+ * caracteres y más líneas. Título en la pared (entre el borde y la ventana) y nota abajo.
+ */
+const LABEL = { screenPx: 13, min: 4, max: 9, width: 106, height: 24, maxLines: 3 };
+const NOTE = { screenPx: 11, min: 3, max: 7, height: 40, maxLines: 4 };
+/** Nombres de carpeta enteros: el corte lo hace `fitLines`. */
+const FULL = 200;
 
 const LAMP_FOR: Record<StatusKind, 0 | 1 | 2 | undefined> = {
   error: 0,
@@ -48,6 +50,10 @@ export class OfficeView {
   private readonly noteText: BitmapText;
   private agent: AgentState | undefined;
   private conversation: ConversationInfo | undefined;
+  private labelRaw = "";
+  private noteRaw = "";
+  private labelSize = LABEL.max;
+  private noteSize = NOTE.max;
 
   constructor(
     template: Texture,
@@ -103,9 +109,7 @@ export class OfficeView {
     const kind = agent.status.kind;
     if (prev?.status.kind !== kind) this.drawStatus(kind);
     if (prev?.cwd !== agent.cwd || prev?.title !== agent.title) {
-      this.label.text = agent.title
-        ? clip(agent.title, LABEL_MAX)
-        : displayName(agent.cwd, LABEL_MAX);
+      this.setLabel(agent.title ?? displayName(agent.cwd, FULL));
     }
     if (prev?.provider !== agent.provider) this.drawProvider(agent);
     if (prev?.lastTool !== agent.lastTool || prev?.status.kind !== kind) this.drawBubble(agent);
@@ -121,9 +125,23 @@ export class OfficeView {
     this.conversation = c;
     if (prev === undefined) this.drawDormant(c);
     if (prev?.title !== c.title || prev?.cwd !== c.cwd) {
-      this.label.text = c.title ? clip(c.title, LABEL_MAX) : displayName(c.cwd, LABEL_MAX);
+      this.setLabel(c.title ?? displayName(c.cwd, FULL));
     }
     if (prev?.lastPrompt !== c.lastPrompt) this.drawNote(c.lastPrompt ? `> ${c.lastPrompt}` : "");
+  }
+
+  /** Escala de la cámara: recalcula el texto solo si cambia su tamaño cuantizado. */
+  setTextScale(k: number): void {
+    const label = fontFor(k, LABEL.screenPx, LABEL.min, LABEL.max);
+    const note = fontFor(k, NOTE.screenPx, NOTE.min, NOTE.max);
+    if (label !== this.labelSize) {
+      this.labelSize = label;
+      this.renderLabel();
+    }
+    if (note !== this.noteSize) {
+      this.noteSize = note;
+      this.renderNote();
+    }
   }
 
   setLod(lod: Lod): void {
@@ -145,13 +163,39 @@ export class OfficeView {
     }
   }
 
+  private setLabel(text: string): void {
+    this.labelRaw = text;
+    this.renderLabel();
+  }
+
+  private renderLabel(): void {
+    const size = this.labelSize;
+    const lines = Math.min(LABEL.maxLines, Math.max(1, Math.floor(LABEL.height / (size * LINE_H))));
+    this.label.style.fontSize = size;
+    this.label.text = fitLines(this.labelRaw, charsIn(LABEL.width, size), lines);
+  }
+
   private drawNote(text: string): void {
-    this.noteText.text = clip(text, NOTE_MAX);
+    this.noteRaw = text;
+    this.renderNote();
+  }
+
+  private renderNote(): void {
     this.noteBg.clear();
+    const size = this.noteSize;
+    // Con la letra a tamaño completo (lejos), una línea; al acercarse, hasta cuatro.
+    const maxLines =
+      size >= NOTE.max ? 1 : Math.min(NOTE.maxLines, Math.floor(NOTE.height / (size * LINE_H)));
+    const width = this.size.w - 12;
+    const text = fitLines(this.noteRaw, charsIn(width, size), maxLines);
+    this.noteText.style.fontSize = size;
+    this.noteText.text = text;
     if (text === "") return;
-    this.noteBg
-      .rect(3, this.size.h - 16, this.size.w - 6, 13)
-      .fill({ color: PAL.housing, alpha: 0.82 });
+    const lines = text.split("\n").length;
+    const height = Math.ceil(lines * size * LINE_H) + 4;
+    const top = this.size.h - 3 - height;
+    this.noteText.position.set(6, top + 2);
+    this.noteBg.rect(3, top, this.size.w - 6, height).fill({ color: PAL.housing, alpha: 0.82 });
   }
 
   private drawDormant(c: ConversationInfo): void {
