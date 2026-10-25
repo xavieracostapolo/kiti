@@ -51,6 +51,23 @@ export function fitRect(rect: Rect, vp: Viewport, padding: number, limits: Limit
   return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2, k };
 }
 
+/** Márgenes de pantalla ocupados por paneles: la barra superior y la terminal a la derecha. */
+export type Insets = { top: number; right: number };
+
+/** Como `fitRect`, pero dentro de la zona libre del viewport, centrado en ella. */
+export function fitInto(
+  rect: Rect,
+  vp: Viewport,
+  insets: Insets,
+  padding: number,
+  limits: Limits,
+): Camera {
+  const free = { w: Math.max(1, vp.w - insets.right), h: Math.max(1, vp.h - insets.top) };
+  const c = fitRect(rect, free, padding, limits);
+  // El centro de la zona libre está desplazado respecto al del viewport: se compensa en mundo.
+  return { x: c.x + insets.right / 2 / c.k, y: c.y - insets.top / 2 / c.k, k: c.k };
+}
+
 /** El centro de la cámara no sale del mundo, así que el mundo nunca desaparece de la vista. */
 export function clampToBounds(cam: Camera, bounds: Rect): Camera {
   return {

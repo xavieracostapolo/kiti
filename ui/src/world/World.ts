@@ -19,6 +19,7 @@ import {
   clampToBounds,
   DEFAULT_LIMITS,
   FOCUS_MS,
+  fitInto,
   fitRect,
   panBy,
   toScreen,
@@ -33,6 +34,7 @@ import {
   type LayoutOpts,
   type Rect,
   slotRect,
+  TERMINAL_FRACTION,
   worldBounds,
 } from "../domain/layout";
 import { LOD_SCALE, type Lod, lodFor } from "../domain/lod";
@@ -202,6 +204,25 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           pendingDiffAt ??= performance.now();
           scheduler?.request();
         }
+        // Agente recién lanzado desde Kiti: en cuanto aparece su oficina, se enfoca y se selecciona.
+        if (s.pendingLaunchPid !== undefined) {
+          const launched = [...s.agents.agents.values()].find((a) => a.pid === s.pendingLaunchPid);
+          if (launched) {
+            s.setPendingLaunch(undefined);
+            s.select(launched.id);
+            focusId(launched.id);
+          }
+        }
+        // Al abrir o cerrar la terminal cambia la zona libre: se encuadran TODAS las oficinas en
+        // ella, para seguir viendo los semáforos y poder cambiar de terminal con un clic.
+        if (s.openTerminalId !== prev.openTerminalId) setCamera(fitAllCamera(), true);
+        if (s.terminals !== prev.terminals || s.agents.agents !== prev.agents.agents) {
+          for (const [id, view] of views) {
+            const agent = s.agents.agents.get(id);
+            view.setHasTerminal(agent !== undefined && s.terminals.has(agent.pid));
+          }
+          scheduler?.request();
+        }
         if (s.view.selectedId !== prev.view.selectedId) {
           if (prev.view.selectedId) views.get(prev.view.selectedId)?.setSelected(false);
           if (s.view.selectedId) views.get(s.view.selectedId)?.setSelected(true);
@@ -217,7 +238,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
         zoomCenter: (f) =>
           setCamera(zoomAt(cam, vp, { x: vp.w / 2, y: vp.h / 2 }, f, DEFAULT_LIMITS)),
         fitAll: () => setCamera(fitAllCamera(), true),
-        click: (sx, sy) => store.getState().select(officeAt(sx, sy)),
+        click: (sx, sy) => clickOffice(officeAt(sx, sy)),
         focusAt: (sx, sy) => {
           const id = officeAt(sx, sy);
           if (id) focusId(id);
@@ -268,6 +289,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       const r = slotRect(slots.get(op.agent.id) as number, layout);
       view.root.position.set(r.x, r.y);
       view.update(op.agent);
+      // Las terminales pueden haber llegado antes de que existiera la oficina.
+      view.setHasTerminal(store.getState().terminals.has(op.agent.pid));
     }
     bounds = worldBounds(slots, layout);
     if (corridor) {
@@ -292,6 +315,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   }
 
   function setCamera(target: Camera, animate = false) {
+    // La oficina bajo el ratón cambia al moverse la cámara: el tooltip ya no vale.
+    store.getState().setHover(undefined);
     const token = ++animToken;
     if (!animate || !opts.anim || !scheduler) {
       cam = target;
@@ -308,9 +333,24 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     });
   }
 
+  /** Pantalla ocupada por la barra superior y, si está abierta, la terminal. */
+  function insets() {
+    const right = store.getState().openTerminalId ? Math.round(vp.w * TERMINAL_FRACTION) + 12 : 0;
+    return { top: TOP_INSET, right };
+  }
+
   function fitAllCamera(): Camera {
-    const c = fitRect(bounds, { w: vp.w, h: vp.h - TOP_INSET }, FIT_PADDING, DEFAULT_LIMITS);
-    return { ...c, y: c.y - TOP_INSET / 2 / c.k };
+    return fitInto(bounds, vp, insets(), FIT_PADDING, DEFAULT_LIMITS);
+  }
+
+  /** Clic del usuario: selecciona y, si la oficina tiene terminal, la abre (ADR 0007). */
+  function clickOffice(id: AgentId | undefined) {
+    const st = store.getState();
+    st.select(id);
+    const agent = id ? st.agents.agents.get(id) : undefined;
+    const terminal = agent ? st.terminals.get(agent.pid) : undefined;
+    if (terminal) st.openTerminal(terminal.id);
+    else st.closeTerminal();
   }
 
   function officeAt(sx: number, sy: number): AgentId | undefined {
@@ -332,7 +372,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   function focusId(id: AgentId) {
     const slot = slots.get(id);
     if (slot === undefined) return;
-    setCamera(fitRect(slotRect(slot, layout), vp, FOCUS_PADDING, DEFAULT_LIMITS), true);
+    setCamera(fitInto(slotRect(slot, layout), vp, insets(), FOCUS_PADDING, DEFAULT_LIMITS), true);
   }
 
   /** Oficina más cercana al centro del mundo, para los zooms mid y near. */

@@ -212,12 +212,13 @@
   white-space: nowrap;
 }
 
+/* Ancho = TERMINAL_FRACTION (domain/layout.ts): el mundo encuadra en el espacio que queda libre. */
 .terminalPanel {
   position: absolute;
   top: 72px;
   right: 12px;
   bottom: 12px;
-  width: min(760px, calc(100vw - 340px));
+  width: 46vw;
   display: flex;
   flex-direction: column;
   background: #14171f;

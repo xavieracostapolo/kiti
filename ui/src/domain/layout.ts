@@ -14,6 +14,9 @@ export type LayoutOpts = {
   tile: number;
 };
 
+/** Ancho del panel de terminal como fracción del viewport (debe coincidir con `.terminalPanel`). */
+export const TERMINAL_FRACTION = 0.46;
+
 export const DEFAULT_LAYOUT: LayoutOpts = { cols: 5, roomW: 12, roomH: 9, gap: 2, tile: 16 };
 
 /**

@@ -173,3 +173,38 @@ async fn rechaza_el_pid_1_y_el_propio() {
         assert_eq!(outcome.unwrap(), KillOutcome::StaleProcess, "pid {pid}");
     }
 }
+
+#[test]
+fn detecta_un_proceso_que_se_convierte_en_agente_con_exec() {
+    // Así lanza Kiti los agentes: `zsh -lic 'exec claude'`. El PID no cambia, el exe sí.
+    let fake = {
+        let dir = std::env::temp_dir().join(format!("kiti-exec-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let bin = dir.join("claude");
+        if !bin.exists() {
+            std::fs::copy(std::env::current_exe().unwrap(), &bin).unwrap();
+        }
+        bin
+    };
+    let script = format!(
+        "sleep 0.4; exec '{}' durmiente --exact --ignored",
+        fake.display()
+    );
+    let mut child = Command::new("/bin/sh")
+        .args(["-c", &script])
+        .spawn()
+        .unwrap();
+    let pid = Pid(child.id());
+    let mut scanner = SysinfoScanner::new();
+    // Primer escaneo: todavía es `sh`, no es candidato.
+    assert!(scanner.scan().unwrap().iter().all(|s| s.pid != pid));
+    std::thread::sleep(Duration::from_millis(800));
+    let seen = scanner.scan().unwrap().into_iter().find(|s| s.pid == pid);
+    let exe = seen.and_then(|s| s.exe).unwrap_or_default();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(
+        exe.ends_with("/claude"),
+        "tras el exec el escáner debe ver claude, vio {exe:?}"
+    );
+}

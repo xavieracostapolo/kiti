@@ -6,7 +6,7 @@ use crate::ports::{ProcessScanner, ScanError};
 
 /// `ProcessScanner` con sysinfo, en dos pasadas para no pagar por los ~600 procesos del usuario:
 /// primero solo `exe` y usuario de todos; después `argv` y `cwd` solo de los candidatos.
-/// Conserva el `System` entre escaneos, así que cada dato se lee una sola vez por proceso.
+/// Conserva el `System` entre escaneos; `exe`, `argv` y `cwd` se releen en cada uno.
 pub struct SysinfoScanner {
     system: System,
     uid: Option<u32>,
@@ -34,8 +34,10 @@ impl ProcessScanner for SysinfoScanner {
         self.system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
+            // `exe` siempre: un proceso que hace `exec` (así lanza Kiti los agentes:
+            // `zsh -lic 'exec claude'`) conserva el PID pero cambia de ejecutable.
             ProcessRefreshKind::nothing()
-                .with_exe(UpdateKind::OnlyIfNotSet)
+                .with_exe(UpdateKind::Always)
                 .with_user(UpdateKind::OnlyIfNotSet),
         );
         // Solo se puede leer argv de procesos del mismo usuario, y solo esos son nuestros.
@@ -56,9 +58,10 @@ impl ProcessScanner for SysinfoScanner {
         self.system.refresh_processes_specifics(
             ProcessesToUpdate::Some(&candidates),
             false,
+            // Son pocos procesos: se releen siempre, por el mismo motivo que `exe`.
             ProcessRefreshKind::nothing()
-                .with_cmd(UpdateKind::OnlyIfNotSet)
-                .with_cwd(UpdateKind::OnlyIfNotSet),
+                .with_cmd(UpdateKind::Always)
+                .with_cwd(UpdateKind::Always),
         );
         Ok(candidates
             .iter()

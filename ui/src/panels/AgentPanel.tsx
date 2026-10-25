@@ -22,7 +22,9 @@ export function AgentPanel({ store, world, now, terminalsAvailable = false }: Pr
     st.view.selectedId ? st.agents.agents.get(st.view.selectedId) : undefined,
   );
   const terminal = useStore(store, (st) => (agent ? st.terminals.get(agent.pid) : undefined));
-  if (!agent) return null;
+  // Con la terminal abierta, su cabecera ya dice qué agente es: el panel no tapa oficinas.
+  const terminalOpen = useStore(store, (st) => st.openTerminalId !== undefined);
+  if (!agent || terminalOpen) return null;
   return (
     <aside className={s.agentPanel} aria-label="Agente seleccionado">
       <h2 className={s.agentTitle}>

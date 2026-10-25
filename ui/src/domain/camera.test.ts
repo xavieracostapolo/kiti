@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   type Camera,
   clampToBounds,
+  fitInto,
   fitRect,
   type Limits,
   panBy,
@@ -103,5 +104,28 @@ describe("tween", () => {
 
   it("con duración 0 salta directo al destino", () => {
     expect(tween(cam, to, 0, 0).at(0)).toEqual({ camera: to, done: true });
+  });
+});
+
+describe("fitInto", () => {
+  it("sin márgenes equivale a fitRect", () => {
+    const r = { x: 0, y: 0, w: 1000, h: 500 };
+    expect(fitInto(r, vp, { top: 0, right: 0 }, 20, limits)).toEqual(fitRect(r, vp, 20, limits));
+  });
+
+  it("encuadra en la zona libre: a la izquierda de la terminal y bajo la barra", () => {
+    const r = { x: 0, y: 0, w: 400, h: 300 };
+    const insets = { top: 60, right: 700 };
+    const cam = fitInto(r, vp, insets, 10, limits);
+    // El rectángulo queda entero dentro de [0, 1440-700] × [60, 900].
+    const tl = toScreen(cam, vp, { x: r.x, y: r.y });
+    const br = toScreen(cam, vp, { x: r.x + r.w, y: r.y + r.h });
+    expect(tl.x).toBeGreaterThanOrEqual(0);
+    expect(br.x).toBeLessThanOrEqual(1440 - 700 + 1e-6);
+    expect(tl.y).toBeGreaterThanOrEqual(60 - 1e-6);
+    expect(br.y).toBeLessThanOrEqual(900 + 1e-6);
+    // Y centrado en esa zona.
+    expect((tl.x + br.x) / 2).toBeCloseTo((1440 - 700) / 2);
+    expect((tl.y + br.y) / 2).toBeCloseTo(60 + (900 - 60) / 2);
   });
 });

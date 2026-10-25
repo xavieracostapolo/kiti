@@ -37,8 +37,8 @@ export class SimTransport implements Transport {
   constructor(opts: SimOptions) {
     this.opts = opts;
     this.fleet = new SimFleet({ count: opts.count, seed: opts.seed });
-    const first = this.fleet.snapshot()[0];
-    if (opts.terminals && first) this.terminals = new FakeTerminals(first);
+    const [first, second] = this.fleet.snapshot();
+    if (opts.terminals && first) this.terminals = new FakeTerminals(first, second);
   }
 
   async connect(onMsg: (msg: ServerMsg) => void): Promise<Hello> {
