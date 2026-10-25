@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Texto del permiso de Automatización de macOS (ADR 0012). Tauri lo fusiona con su Info.plist. -->
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Kiti muestra la pestaña de terminal de un agente en Ghostty o Terminal.app cuando pulsas «Ir a su terminal».</string>
+</dict>
+</plist>

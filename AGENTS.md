@@ -235,4 +235,5 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   ```
 
 - **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant` y `dimmed`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Releases:** un tag `vX.Y.Z` firma, notariza y publica Kiti.app en borrador (`.github/workflows/release.yml`). Secrets y pasos en [docs/release.md](docs/release.md).
 - Los recursos gráficos son de Kenney.nl (CC0), en `ui/public/assets/kenney/` con sus licencias (ADR 0013).
