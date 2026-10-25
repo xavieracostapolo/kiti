@@ -41,6 +41,12 @@ Las opciones 1 y 2 quedan como mejora posible para los agentes externos.
 
 **El agente lanzado es un proceso real:** el escáner lo detecta y los hooks lo colorean como cualquier otro. La UI une oficina y terminal por PID (`list_terminals`).
 
+## CSP
+
+xterm.js (y otros componentes) inyectan estilos en tiempo de ejecución. Un E2E sirve el build de producción con la CSP exacta de `tauri.conf.json` y detectó que `style-src 'self'` los bloqueaba: la terminal se habría visto rota solo en la app instalada.
+
+**Decisión:** `style-src 'self' 'unsafe-inline'` en producción. `script-src` sigue siendo `'self'`, así que un XSS no puede ejecutar código; como mucho, alterar estilos. El E2E `terminal.spec.ts` falla ante cualquier violación de CSP.
+
 ## Dependencias
 
 | Paquete | Versión | Mantenimiento | Por qué |
@@ -56,6 +62,18 @@ Las opciones 1 y 2 quedan como mejora posible para los agentes externos.
 | ¿Se pierde salida al reabrir? | Test de `attach` con scrollback + stream | 0 bytes perdidos |
 | ¿Cuánto ocupa un agente lanzado? | Scrollback por sesión | ≤ 512 KiB |
 | ¿Se lanza algo que no sea un CLI permitido? | `agent.launch` con `provider` y ruta resuelta | Solo `claude`, `codex` y `gemini` |
+
+## Resultados (Hito 8)
+
+- **`PtyManager`:** 5 tests contra `sh` y `cat` (salida en el scrollback, eco de la entrada, reconexión sin perder ni duplicar líneas, scrollback acotado, `kill`), estables en tres ejecuciones. `attach` envía el scrollback por el mismo sink y bajo el mismo lock que el stream, así que el orden está garantizado.
+- **Comandos de Tauri:** `launch_agent` (selector nativo de carpeta + `exec <cli>` en la shell de login del usuario, para que herede su `PATH`), `list_terminals`, `attach_terminal` (bytes en crudo por `Channel`), `terminal_input` y `terminal_resize`, todos declarados en el ACL.
+- **UI:**
+  - Botón "+ Nuevo agente" con menú de CLIs.
+  - Al hacer clic en una oficina con terminal, se abre su panel (xterm.js + fit).
+  - Las oficinas externas muestran el aviso "abierto fuera de Kiti" en el panel lateral.
+  - Tooltip con nombre, proveedor y estado al pasar el ratón.
+- **Pruebas en el navegador:** `?terminals=1` añade al simulador una terminal falsa que repite lo que se escribe. Los E2E abren la terminal con un clic, escriben y comprueban el eco, también con el build de producción y la CSP real.
+- **Pendiente manual:** lanzar un agente real desde la app (requiere elegir carpeta en el selector nativo).
 
 ## Cuándo reabrir
 

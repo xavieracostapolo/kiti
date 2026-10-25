@@ -2,11 +2,33 @@
 // Se conecta al stream IPC mediante Channel<ServerMsg> y usa native dialogs para confirmación.
 
 import { Channel, invoke } from "@tauri-apps/api/core";
-import type { AgentId, Hello, KillResult, ServerMsg, UiMetrics } from "../../protocol";
-import type { Transport } from "../Transport";
+import type {
+  AgentId,
+  Hello,
+  KillResult,
+  Provider,
+  ServerMsg,
+  TerminalInfo,
+  UiMetrics,
+} from "../../protocol";
+import type { TerminalApi, Transport } from "../Transport";
+
+const terminals: TerminalApi = {
+  launch: (provider: Provider) => invoke<TerminalInfo | null>("launch_agent", { provider }),
+  list: () => invoke<TerminalInfo[]>("list_terminals"),
+  async attach(id, onData) {
+    // La salida llega en binario (InvokeResponseBody::Raw): ArrayBuffer, no un array JSON.
+    const channel = new Channel<ArrayBuffer>();
+    channel.onmessage = (data) => onData(new Uint8Array(data));
+    await invoke("attach_terminal", { id, onData: channel });
+  },
+  input: (id, data) => invoke("terminal_input", { id, data }),
+  resize: (id, cols, rows) => invoke("terminal_resize", { id, cols, rows }),
+};
 
 export class TauriTransport implements Transport {
   readonly killConfirmation = "native" as const;
+  readonly terminals = terminals;
 
   async connect(onMsg: (msg: ServerMsg) => void): Promise<Hello> {
     const channel = new Channel<ServerMsg>();

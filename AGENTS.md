@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 7, "Barra de menú y ventana desechable", implementado en la rama `hito-7-barra-de-menu`; con él se completa el roadmap del MVP. Hitos 1 a 6 fusionados en `main`. Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-7).
+- **Fase:** Hito 8, "Terminal embebida", implementado en la rama `hito-8-terminal-embebida` ([ADR 0007](docs/decisiones/0007-terminal-embebida/README.md)). Hitos 1 a 7 fusionados en `main`.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -167,7 +167,8 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **5. Forwarder:** hooks para Codex y Gemini.
 - [x] **6. Tailer de transcripts** y panel lateral con la última herramienta, el cwd y el último evento.
 - [x] **7. Barra de menú y bandeja**, y pausa del render con la ventana oculta.
-- [ ] **Después:** terminal embebida (`@xterm/xterm`), soporte para Windows y lanzar agentes desde Kiti.
+- [x] **8. Terminal embebida:** lanzar agentes desde Kiti en un PTY propio y verlos con xterm.js; tooltip con el nombre; aviso para los agentes abiertos fuera de Kiti (ADR 0007).
+- [ ] **Después:** soporte para Windows, enfocar las pestañas de Ghostty de los agentes externos (AppleScript) y mejora visual con Kenney.
 
 ## Pendientes de verificar
 
@@ -216,5 +217,5 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
-- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`. En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames` y `bench`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames` y `bench`. El panel de debug se abre con `Cmd+Shift+D`.
 - Los recursos gráficos del MVP son de Kenney.nl (CC0). Los packs de oficina de LimeZu en itch.io quedan pendientes de revisar su licencia.

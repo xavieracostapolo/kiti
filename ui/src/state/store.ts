@@ -3,7 +3,7 @@
 
 import { createStore } from "zustand/vanilla";
 import type { Lod } from "../domain/lod";
-import type { AgentId, CoreMetrics, ServerMsg, Source } from "../protocol";
+import type { AgentId, CoreMetrics, ServerMsg, Source, TerminalInfo } from "../protocol";
 import { type AgentsState, applyMsg, EMPTY_AGENTS } from "./agents";
 
 export type ViewState = {
@@ -12,8 +12,20 @@ export type ViewState = {
   lod: Lod;
 };
 
+/** Oficina bajo el ratón, en px de pantalla, para el tooltip. */
+export type Hover = { id: AgentId; x: number; y: number };
+
 export type KitiState = {
   agents: AgentsState;
+  /** Terminales de los agentes lanzados desde Kiti, por pid (ADR 0007). */
+  terminals: ReadonlyMap<number, TerminalInfo>;
+  openTerminalId: string | undefined;
+  hover: Hover | undefined;
+  setTerminals(list: readonly TerminalInfo[]): void;
+  terminalFor(pid: number): TerminalInfo | undefined;
+  openTerminal(id: string): void;
+  closeTerminal(): void;
+  setHover(hover: Hover | undefined): void;
   view: ViewState;
   /** De dónde vienen los agentes (Hello.source). `undefined` hasta conectar. */
   source?: Source;
@@ -37,7 +49,28 @@ function without<K extends keyof ViewState>(view: ViewState, key: K): ViewState 
 export function createKitiStore() {
   return createStore<KitiState>()((set, get) => ({
     agents: EMPTY_AGENTS,
+    terminals: new Map(),
+    openTerminalId: undefined,
+    hover: undefined,
     view: { lod: "far" },
+    setTerminals(list) {
+      set({ terminals: new Map(list.map((t) => [t.pid, t])) });
+    },
+    terminalFor(pid) {
+      return get().terminals.get(pid);
+    },
+    openTerminal(id) {
+      if (get().openTerminalId !== id) set({ openTerminalId: id });
+    },
+    closeTerminal() {
+      if (get().openTerminalId !== undefined) set({ openTerminalId: undefined });
+    },
+    setHover(hover) {
+      const prev = get().hover;
+      // Solo cambia la oficina, no cada píxel: el tooltip se ancla a la posición de entrada.
+      if (prev?.id === hover?.id) return;
+      set({ hover });
+    },
     setSource(source) {
       set({ source });
     },

@@ -10,6 +10,8 @@ export type CameraController = {
   click(sx: number, sy: number): void;
   focusAt(sx: number, sy: number): void;
   dragging(active: boolean): void;
+  /** Ratón encima sin arrastrar (tooltip). `undefined` al salir del mundo. */
+  hover(point: { x: number; y: number } | undefined): void;
 };
 
 const DRAG_THRESHOLD_PX = 3;
@@ -34,7 +36,12 @@ export function attachCameraInput(el: HTMLElement, ctl: CameraController): () =>
   };
 
   const onPointerMove = (e: PointerEvent) => {
-    if (!down || e.pointerId !== down.id) return;
+    if (!down) {
+      ctl.hover(local(e.clientX, e.clientY));
+      return;
+    }
+    if (e.pointerId !== down.id) return;
+    ctl.hover(undefined);
     if (!dragging && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_THRESHOLD_PX) {
       dragging = true;
       ctl.dragging(true);
@@ -99,6 +106,8 @@ export function attachCameraInput(el: HTMLElement, ctl: CameraController): () =>
 
   el.addEventListener("pointerdown", onPointerDown);
   el.addEventListener("pointermove", onPointerMove);
+  const onPointerLeave = () => ctl.hover(undefined);
+  el.addEventListener("pointerleave", onPointerLeave);
   el.addEventListener("pointerup", onPointerUp);
   el.addEventListener("pointercancel", onPointerUp);
   el.addEventListener("wheel", onWheel, { passive: false });
@@ -110,6 +119,7 @@ export function attachCameraInput(el: HTMLElement, ctl: CameraController): () =>
   return () => {
     el.removeEventListener("pointerdown", onPointerDown);
     el.removeEventListener("pointermove", onPointerMove);
+    el.removeEventListener("pointerleave", onPointerLeave);
     el.removeEventListener("pointerup", onPointerUp);
     el.removeEventListener("pointercancel", onPointerUp);
     el.removeEventListener("wheel", onWheel);

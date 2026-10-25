@@ -223,6 +223,10 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           if (id) focusId(id);
         },
         dragging: () => {},
+        hover: (p) => {
+          const id = p ? officeAt(p.x, p.y) : undefined;
+          store.getState().setHover(id && p ? { id, x: p.x, y: p.y } : undefined);
+        },
       }),
     );
 

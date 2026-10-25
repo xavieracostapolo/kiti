@@ -17,7 +17,9 @@ fn spec(program: &str, args: &[&str]) -> LaunchSpec {
 }
 
 /// Recoge lo que llega por el stream de una sesión.
-fn collector() -> (Arc<Mutex<Vec<u8>>>, impl Fn(Vec<u8>) + Send + 'static) {
+type Buffer = Arc<Mutex<Vec<u8>>>;
+
+fn collector() -> (Buffer, impl Fn(Vec<u8>) + Send + 'static) {
     let buf = Arc::new(Mutex::new(Vec::new()));
     let sink = buf.clone();
     (buf, move |bytes: Vec<u8>| {
@@ -25,7 +27,7 @@ fn collector() -> (Arc<Mutex<Vec<u8>>>, impl Fn(Vec<u8>) + Send + 'static) {
     })
 }
 
-fn wait_for(buf: &Arc<Mutex<Vec<u8>>>, needle: &str) -> bool {
+fn wait_for(buf: &Buffer, needle: &str) -> bool {
     let deadline = Instant::now() + Duration::from_secs(3);
     while Instant::now() < deadline {
         if String::from_utf8_lossy(&buf.lock().unwrap()).contains(needle) {

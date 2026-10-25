@@ -170,6 +170,79 @@
   gap: 8px;
 }
 
+.menu {
+  min-width: 170px;
+  padding: 4px;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--shadow);
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text);
+  z-index: 20;
+}
+
+.menuItem {
+  padding: 6px 10px;
+  cursor: pointer;
+  outline: none;
+}
+
+.menuItem[data-highlighted] {
+  background: var(--panel-3);
+}
+
+.notice {
+  margin: 0 0 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 10;
+  padding: 5px 8px;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  box-shadow: 3px 3px 0 var(--shadow);
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.terminalPanel {
+  position: absolute;
+  top: 72px;
+  right: 12px;
+  bottom: 12px;
+  width: min(760px, calc(100vw - 340px));
+  display: flex;
+  flex-direction: column;
+  background: #14171f;
+  border: 3px solid var(--edge);
+  box-shadow: 4px 4px 0 var(--shadow);
+  pointer-events: auto;
+}
+
+.terminalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--panel);
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text);
+}
+
+.terminalHost {
+  flex: 1;
+  min-height: 0;
+  padding: 6px;
+}
+
 .debug {
   position: absolute;
   left: 12px;
