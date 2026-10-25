@@ -1,6 +1,6 @@
 // Mide RAM y CPU de la app nativa con agentes simulados (ADR 0006, ficha del Hito 2).
 //
-// Uso: node scripts/measure.mjs [--sim=20:42:freeze] [--warmup=15] [--seconds=10] [--bin=target/release/kiti-app]
+// Uso: node scripts/measure.mjs [--sim=20:42:freeze|live] [--warmup=15] [--seconds=10] [--bin=target/release/kiti-app]
 //
 // Cuenta el proceso de la app y los procesos XPC de WebKit (WebContent, GPU, Networking) que
 // aparecen al lanzarla. RAM: `footprint` (memoria física atribuida, lo que muestra el Monitor de
@@ -40,7 +40,11 @@ function processes() {
 const isWebKit = (p) => p.comm.includes("com.apple.WebKit.");
 const before = new Set(processes().filter(isWebKit).map((p) => p.pid));
 
-const app = spawn(bin, [], { env: { ...process.env, KITI_SIM: sim }, stdio: "ignore" });
+// --sim=live mide el modo real (escaneo de procesos cada 2 s) en lugar del simulador.
+const env = { ...process.env };
+if (sim === "live") delete env.KITI_SIM;
+else env.KITI_SIM = sim;
+const app = spawn(bin, [], { env, stdio: "ignore" });
 await sleep(warmup * 1000);
 
 const ours = () =>

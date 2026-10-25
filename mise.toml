@@ -32,8 +32,17 @@ description = "Benchmark de 50 agentes (local, WebKit headed)"
 run = "pnpm -C ui exec playwright test --project=webkit-perf"
 
 [tasks."app:dev"]
-description = "Abre la app nativa (Tauri) con 20 agentes simulados; KITI_SIM=N:SEED[:freeze] para cambiarlo"
+description = "Abre la app nativa (Tauri) con los agentes reales de esta máquina"
 run = "pnpm exec tauri dev"
+
+[tasks."app:sim"]
+description = "Abre la app nativa con 20 agentes simulados; KITI_SIM=N:SEED[:freeze] para cambiarlo"
+env = { KITI_SIM = "20:42" }
+run = "pnpm exec tauri dev"
+
+[tasks.scan]
+description = "Muestra qué procesos detecta Kiti como agentes y por qué (solo lectura)"
+run = "cargo run -q -p kiti-core --example scan"
 
 [tasks."app:build"]
 description = "Compila la app nativa en release sin empaquetar: target/release/kiti-app"
@@ -46,6 +55,7 @@ run = [
   "node scripts/measure.mjs --sim=20:42:freeze",
   "node scripts/measure.mjs --sim=20:42",
   "node scripts/measure.mjs --sim=50:1",
+  "node scripts/measure.mjs --sim=live",
 ]
 
 [tasks.deny]

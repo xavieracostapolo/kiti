@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 3, "Procesos reales", en curso en la rama `hito-3-procesos-reales`. Hitos 1 y 2 cerrados y fusionados en `main` (2026-10-24); el usuario aceptó el presupuesto de RAM revisado.
+- **Fase:** Hito 3, "Procesos reales", implementado en la rama `hito-3-procesos-reales`: la app muestra los agentes reales (modo por defecto; `KITI_SIM` para el simulador). Pendiente de que el usuario lo pruebe con `mise run app:dev`. Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-3). Hitos 1 y 2 cerrados y fusionados en `main` (2026-10-24); el usuario aceptó el presupuesto de RAM revisado.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -128,7 +128,7 @@ Verificado en el [ADR 0005](docs/decisiones/0005-integracion-clis-agentes/README
 
 | CLI | Proceso | Hooks | Sesiones y transcripts |
 |---|---|---|---|
-| Claude Code | Binario nativo (también en npm), en `~/.local/share/claude/versions/<semver>`. Excluir `Claude.app` | Tipo `http` nativo. Kiti se suscribe a `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied`, `Notification`, `Stop`, `StopFailure` y `SessionEnd`. `Stop` **no** llega si el usuario interrumpe con Esc | `~/.claude/sessions/<pid>.json` (pid ↔ sesión, `busy`/`idle`) y `~/.claude/projects/<cwd>/<session>.jsonl` |
+| Claude Code | Binario nativo (también en npm). sysinfo ve el symlink `~/.local/bin/claude`; `lsof` muestra `~/.local/share/claude/versions/<semver>`. Excluir `Claude.app` | Tipo `http` nativo. Kiti se suscribe a `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied`, `Notification`, `Stop`, `StopFailure` y `SessionEnd`. `Stop` **no** llega si el usuario interrumpe con Esc | `~/.claude/sessions/<pid>.json` (pid ↔ sesión, `busy`/`idle`) y `~/.claude/projects/<cwd>/<session>.jsonl` |
 | Codex CLI | Binario Rust. Con npm hay **2 procesos** (`node` lanzador y el binario hijo, que es el agente) | **No hay `http`**: `command` vía forwarder en `~/.codex/hooks.json`. El usuario debe **confiar** en el hook en `/hooks`. No hay `Notification`; sí `PermissionRequest` e `Interrupt` | `~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl` (no es interfaz estable; migra a SQLite) |
 | Gemini CLI | **`node`** en todas las instalaciones, con **2 procesos** por sesión (el agente es el hijo relanzado). Excluir `Gemini.app` | Solo `command` y síncronos, vía forwarder, que debe imprimir `{}`. Eventos `BeforeAgent`, `BeforeTool`, `AfterTool`, `AfterAgent`, `Notification`, `SessionStart` y `SessionEnd` | `~/.gemini/tmp/<slug>/chats/session-*.jsonl` |
 
@@ -161,7 +161,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 
 - [x] **1. Oficina visual simulada:** `crates/protocol` + `ui/` en el navegador con `SimTransport`. Grilla de 20 oficinas, cámara (zoom, pan, doble clic para enfocar), LOD, culling, semáforos, diálogo de cierre, telemetría y panel de debug. Capturas con Playwright en 3 niveles de zoom.
 - [x] **2. Shell Tauri y core con simulador:** `src-tauri` (Channel, capabilities, CSP, `tracing`), dominio y reducer de `kiti-core`, `SimFleet` y `TauriTransport`. Medir RAM y CPU.
-- [ ] **3. Procesos reales:** `sysinfo`, `classify` con roles y cerrar oficina de verdad, con verificación.
+- [x] **3. Procesos reales:** `sysinfo`, `classify` con roles y cerrar oficina de verdad, con verificación.
 - [ ] **4. Hooks de Claude Code:** HookServer, token, instalador de hooks, `sessions/<pid>.json` y experimento E1.
 - [ ] **5. Forwarder:** hooks para Codex y Gemini.
 - [ ] **6. Tailer de transcripts** y panel lateral con la última herramienta, el cwd y el último evento.
@@ -204,9 +204,11 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run ui:e2e        # Playwright funcional (Chromium)
   mise run ui:visual     # regresión visual (solo macOS, WebKit)
   mise run ui:perf       # 50 agentes, WebKit headed, solo local
-  mise run app:dev       # app nativa con 20 agentes simulados (KITI_SIM=N:SEED[:freeze])
+  mise run app:dev       # app nativa con los agentes reales (KITI_SCAN_MS cambia el intervalo, 3 s)
+  mise run app:sim       # app nativa con 20 agentes simulados (KITI_SIM=N:SEED[:freeze])
+  mise run scan          # qué procesos detecta Kiti como agentes y por qué (solo lectura)
   mise run app:build     # release sin empaquetar: target/release/kiti-app
-  mise run app:measure   # RAM y CPU con 20 y 50 agentes (footprint + tiempo de CPU)
+  mise run app:measure   # RAM y CPU con 20 y 50 agentes simulados y en modo real
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
