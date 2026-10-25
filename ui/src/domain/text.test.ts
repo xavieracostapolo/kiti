@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitLines, fontFor } from "./text";
+import { charsIn, fitLines, fitWords, fontFor } from "./text";
 
 describe("fontFor", () => {
   it("mantiene el tamaño en pantalla: más zoom, letra más pequeña en el mundo", () => {
@@ -38,5 +38,15 @@ describe("fitLines", () => {
 
   it("texto vacío", () => {
     expect(fitLines("", 10, 2)).toBe("");
+  });
+});
+
+describe("fitWords", () => {
+  it("baja la letra hasta que la palabra más larga cabe entera", () => {
+    const size = fitWords("Revisar vulnerabilidades", 172, 20, 9);
+    expect(size).toBeLessThan(20);
+    expect(charsIn(172, size)).toBeGreaterThanOrEqual("vulnerabilidades".length);
+    expect(fitWords("Hola", 172, 20, 9)).toBe(20);
+    expect(fitWords("x".repeat(80), 172, 20, 9)).toBe(9);
   });
 });

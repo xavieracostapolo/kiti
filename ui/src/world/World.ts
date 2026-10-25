@@ -29,12 +29,19 @@ import {
   type Viewport,
   zoomAt,
 } from "../domain/camera";
-import { DEFAULT_LAYOUT, type LayoutOpts, type Rect, TERMINAL_FRACTION } from "../domain/layout";
+import {
+  DEFAULT_LAYOUT,
+  type LayoutOpts,
+  type Rect,
+  TERMINAL_FRACTION,
+  union,
+} from "../domain/layout";
 import { LOD_SCALE, type Lod, lodFor } from "../domain/lod";
 import { fontFor } from "../domain/text";
 import { layoutZones, type Zone, type ZoneSlots } from "../domain/zones";
 import type { AgentId, AgentState, ConversationInfo } from "../protocol";
 import { planScene } from "../state/agents";
+import { isActive, matchesAgent, matchesConversation } from "../state/filter";
 import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
@@ -74,6 +81,8 @@ export type WorldHandle = {
   scale(): number;
   /** Zonas por proyecto con su número de oficinas (tests E2E). */
   zones(): { name: string; count: number }[];
+  /** Ids de las oficinas atenuadas por el filtro (tests E2E). */
+  dimmed(): string[];
   dispose(): void;
 };
 
@@ -233,6 +242,16 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           }
           scheduler?.request();
         }
+        if (
+          s.filter !== prev.filter ||
+          s.agents.agents !== prev.agents.agents ||
+          s.dormant !== prev.dormant
+        ) {
+          applyFilter();
+          scheduler?.request();
+        }
+        // Al cambiar el filtro, la cámara encuadra lo que coincide (o todo, si se quita).
+        if (s.filter !== prev.filter) setCamera(filterCamera(), true);
         if (s.view.selectedId !== prev.view.selectedId) {
           if (prev.view.selectedId) views.get(prev.view.selectedId)?.setSelected(false);
           if (s.view.selectedId) views.get(s.view.selectedId)?.setSelected(true);
@@ -415,6 +434,29 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     });
   }
 
+  /** ¿La oficina (encendida o apagada) coincide con el filtro actual? */
+  function roomMatches(id: string): boolean {
+    const { filter, agents, dormant } = store.getState();
+    const agent = agents.agents.get(id);
+    if (agent) return matchesAgent(agent, filter);
+    const conv = dormant.get(id);
+    return conv ? matchesConversation(conv, filter) : false;
+  }
+
+  /** Atenúa las oficinas que no coinciden con el filtro (Hito 13). */
+  function applyFilter() {
+    const active = isActive(store.getState().filter);
+    for (const [id, view] of views) view.setDimmed(active && !roomMatches(id));
+  }
+
+  /** Encuadre de las oficinas que coinciden con el filtro; todas si no hay filtro o ninguna. */
+  function filterCamera(): Camera {
+    if (!isActive(store.getState().filter)) return fitAllCamera();
+    let box: Rect | undefined;
+    for (const [id, r] of rooms) if (roomMatches(id)) box = box ? union(box, r) : r;
+    return box ? fitInto(box, vp, insets(), FIT_PADDING, DEFAULT_LIMITS) : fitAllCamera();
+  }
+
   /** Pantalla ocupada por la barra superior y, si está abierta, la terminal. */
   function insets() {
     const right = store.getState().openTerminalId ? Math.round(vp.w * TERMINAL_FRACTION) + 12 : 0;
@@ -513,6 +555,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     },
     scale: () => cam.k,
     zones: () => zones.map((z) => ({ name: z.name, count: z.count })),
+    dimmed: () => [...views].filter(([, v]) => v.root.alpha < 1).map(([id]) => id),
     async bench(durationMs = 10_000) {
       await ready;
       const s = scheduler;

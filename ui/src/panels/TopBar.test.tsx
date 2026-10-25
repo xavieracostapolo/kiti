@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createKitiStore } from "../state/store";
 import { TopBar } from "./TopBar";
@@ -32,5 +32,47 @@ describe("TopBar", () => {
   it("sin terminales (simulador) no hay botón de lanzar", () => {
     render(<TopBar store={createKitiStore()} />);
     expect(screen.queryByRole("button", { name: /nuevo agente/i })).toBeNull();
+  });
+
+  it("los contadores filtran por estado y se pueden combinar", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const store = createKitiStore();
+    render(<TopBar store={store} />);
+    const waiting = screen.getByTestId("count-waiting");
+    await userEvent.click(waiting);
+    expect(waiting.getAttribute("aria-pressed")).toBe("true");
+    await userEvent.click(screen.getByTestId("count-error"));
+    expect([...store.getState().filter.kinds]).toEqual(["waiting", "error"]);
+    await userEvent.click(screen.getByRole("button", { name: "Quitar filtro" }));
+    expect(store.getState().filter.kinds.size).toBe(0);
+    expect(screen.queryByRole("button", { name: "Quitar filtro" })).toBeNull();
+  });
+
+  it("las apagadas tienen su contador solo si hay alguna", () => {
+    const store = createKitiStore();
+    render(<TopBar store={store} />);
+    expect(screen.queryByTestId("count-dormant")).toBeNull();
+    act(() =>
+      store
+        .getState()
+        .setConversations([
+          { sessionId: "s1", provider: "claude", cwd: "/w", project: "/w", updatedAt: 0 },
+        ]),
+    );
+    expect(screen.getByTestId("count-dormant").textContent).toContain("1 apagadas");
+  });
+
+  it("/ enfoca el buscador y Esc limpia el filtro", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const store = createKitiStore();
+    render(<TopBar store={store} />);
+    await userEvent.keyboard("/");
+    const search = screen.getByRole("searchbox", { name: "Buscar oficinas" });
+    expect(document.activeElement).toBe(search);
+    await userEvent.keyboard("thoth");
+    expect(store.getState().filter.text).toBe("thoth");
+    await userEvent.keyboard("{Escape}");
+    expect(store.getState().filter.text).toBe("");
+    expect(document.activeElement).not.toBe(search);
   });
 });

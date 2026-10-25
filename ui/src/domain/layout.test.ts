@@ -1,6 +1,17 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { assignSlots } from "./layout";
+import { assignSlots, union } from "./layout";
+
+describe("union", () => {
+  it("contiene a los dos rectángulos", () => {
+    expect(union({ x: 0, y: 10, w: 5, h: 5 }, { x: 20, y: 0, w: 10, h: 2 })).toEqual({
+      x: 0,
+      y: 0,
+      w: 30,
+      h: 15,
+    });
+  });
+});
 
 describe("assignSlots", () => {
   it("un agente nuevo ocupa el hueco libre más bajo y nadie se mueve", () => {
