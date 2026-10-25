@@ -39,14 +39,15 @@ import {
 import { LOD_SCALE, type Lod, lodFor } from "../domain/lod";
 import { fontFor } from "../domain/text";
 import { layoutZones, type Zone, type ZoneSlots } from "../domain/zones";
-import type { AgentId, AgentState, ConversationInfo } from "../protocol";
+import type { AgentId, AgentState, ConversationInfo, Provider } from "../protocol";
 import { planScene } from "../state/agents";
 import { isActive, matchesAgent, matchesConversation } from "../state/filter";
 import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
 import { attachCameraInput } from "./camera/CameraInput";
-import { FONT, OfficeView } from "./OfficeView";
+import { loadSheets, PEOPLE_BACK_COLUMN, PEOPLE_ROWS, tileTexture } from "./kenney";
+import { FONT, type OfficeArt, OfficeView } from "./OfficeView";
 import { drawOfficeTemplate } from "./officeTemplate";
 import { PAL } from "./palette";
 import { RenderScheduler } from "./RenderScheduler";
@@ -121,7 +122,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   const zonesLayer = new Container();
   const officesLayer = new Container();
   let corridor: TilingSprite | undefined;
-  let template: Texture | undefined;
+  let art: OfficeArt | undefined;
 
   const ready = (async () => {
     TextureStyle.defaultOptions.scaleMode = "nearest";
@@ -163,7 +164,22 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       textureStyle: { scaleMode: "linear" },
     });
 
-    template = app.renderer.generateTexture({ target: drawOfficeTemplate(room), resolution: 1 });
+    // Tiles de Kenney (ADR 0013): una sala rasterizada por proveedor, compartida por sus oficinas.
+    const sheets = await loadSheets();
+    if (disposed) return;
+    const templateFor = (provider: Provider) =>
+      app.renderer.generateTexture({
+        target: drawOfficeTemplate(room, sheets, provider),
+        resolution: 1,
+      });
+    art = {
+      templates: {
+        claude: templateFor("claude"),
+        codex: templateFor("codex"),
+        gemini: templateFor("gemini"),
+      },
+      people: PEOPLE_ROWS.map((row) => tileTexture(sheets, "urban", PEOPLE_BACK_COLUMN, row)),
+    };
     const tile = new Graphics()
       .rect(0, 0, layout.tile, layout.tile)
       .fill(PAL.corridor)
@@ -305,7 +321,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   }
 
   function newView(id: string): OfficeView {
-    const view = new OfficeView(template as Texture, room);
+    const view = new OfficeView(art as OfficeArt, room);
     view.setLod(lod);
     view.setTextScale(cam.k);
     view.setSelected(store.getState().view.selectedId === id);
@@ -321,7 +337,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
 
   /** Aplica a la escena lo que cambió en agentes y conversaciones cerradas, y recoloca todo. */
   function sync(prev: ReadonlyMap<AgentId, AgentState>, prevDormant: ReadonlyMap<string, unknown>) {
-    if (!template) return;
+    if (!art) return;
     const { agents: state, dormant, terminals } = store.getState();
     const next = state.agents;
     const ops = planScene(prev, next);

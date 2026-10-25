@@ -127,16 +127,16 @@ mise run app:bundle    # build Kiti.app and copy it to the Desktop
 
 Stack: Tauri v2, Rust (`tokio`, `axum`, `sysinfo`), TypeScript 7, PixiJS v8, React, zustand, xterm.js. Tests: Vitest, fast-check and Playwright in the UI; nextest, proptest and insta in Rust.
 
-The design is documented in ten ADRs (in Spanish), from the [stack choice](docs/decisiones/0001-stack/README.md) to [notifications](docs/decisiones/0010-avisos/README.md). [AGENTS.md](AGENTS.md) is the full guide to the codebase.
+The design is documented in ADRs (in Spanish), from the [stack choice](docs/decisiones/0001-stack/README.md) to [pixel art](docs/decisiones/0013-pixel-art-kenney/README.md). [AGENTS.md](AGENTS.md) is the full guide to the codebase.
 
 ## Roadmap
 
 - [x] Simulated office, native shell, real processes, hooks for all three CLIs
 - [x] Transcript tailer, menu bar, embedded terminal, persistent `tmux` sessions
 - [x] Project zones, resumable conversations, notifications
+- [x] Readable far view and office filter, focus the terminal tab of an external agent
+- [x] Pixel art from [Kenney](https://kenney.nl) tilesheets
 - [ ] Windows support
-- [ ] Focus the Ghostty tab of an external agent
-- [ ] Pixel art from [Kenney](https://kenney.nl) tilesheets
 - [ ] Signed and notarized releases
 
 ## Contributing
@@ -146,3 +146,5 @@ Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: the pr
 ## License
 
 [MIT](LICENSE) © 2026 Xavier Acosta Polo
+
+The office art comes from [Kenney](https://www.kenney.nl) (Roguelike RPG Pack, Roguelike Indoors and RPG Urban Pack) under [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Each pack keeps its license file in [`ui/public/assets/kenney/`](ui/public/assets/kenney/).
