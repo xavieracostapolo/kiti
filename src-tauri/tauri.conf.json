@@ -45,7 +45,7 @@
         "frame-src": "'none'",
         "form-action": "'none'"
       },
-      "freezePrototype": true
+      "freezePrototype": false
     }
   },
   "bundle": {

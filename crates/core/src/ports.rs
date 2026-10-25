@@ -38,6 +38,12 @@ pub trait AgentKiller: Send + Sync + 'static {
     ) -> impl std::future::Future<Output = Result<KillOutcome, KillError>> + Send;
 }
 
+/// RSS (bytes) y CPU (%) del propio proceso, para `CoreMetrics` (ADR 0004 §3).
+/// Solo se muestrea con el stream de debug activo.
+pub trait SelfMonitor: Send + 'static {
+    fn sample(&mut self) -> (u64, f64);
+}
+
 pub trait DiffPublisher: Send + 'static {
     fn publish(&mut self, msg: ServerMsg);
 }

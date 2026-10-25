@@ -25,6 +25,8 @@ async function bootstrap() {
   let simAdvancer: { advance(n: number): void } | undefined;
 
   if (isTauri) {
+    const { installLogBridge } = await import("./transport/tauri/logBridge");
+    installLogBridge();
     const { TauriTransport } = await import("./transport/tauri/TauriTransport");
     transport = new TauriTransport();
     getNow = () => Date.now();

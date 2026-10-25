@@ -201,6 +201,12 @@
           "markdownDescription": "Enables the subscribe command without any pre-configured scope."
         },
         {
+          "description": "Enables the ui_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-ui-log",
+          "markdownDescription": "Enables the ui_log command without any pre-configured scope."
+        },
+        {
           "description": "Denies the kill_agent command without any pre-configured scope.",
           "type": "string",
           "const": "deny-kill-agent",
@@ -223,6 +229,12 @@
           "type": "string",
           "const": "deny-subscribe",
           "markdownDescription": "Denies the subscribe command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the ui_log command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-ui-log",
+          "markdownDescription": "Denies the ui_log command without any pre-configured scope."
         },
         {
           "description": "Default core plugins set.\n#### This default permission set includes:\n\n- `core:path:default`\n- `core:event:default`\n- `core:window:default`\n- `core:webview:default`\n- `core:app:default`\n- `core:image:default`\n- `core:resources:default`\n- `core:menu:default`\n- `core:tray:default`",

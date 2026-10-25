@@ -9,8 +9,8 @@ use rand_chacha::ChaCha8Rng;
 use serde::Deserialize;
 
 use crate::domain::{
-    AgentId, DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Signal, ToolName,
-    ToolOutcome, ToolUseKey, WorkingDir,
+    AgentId, AgentInput, DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Signal,
+    StatusKind, ToolName, ToolOutcome, ToolUseKey, WorkingDir,
 };
 
 pub const TICK_MS: u64 = 100;
@@ -94,7 +94,10 @@ struct SimAgent {
     permission_pending: bool,
     next_at: u64,
     current_tool_key: u64,
-    current_status_kind: String, // "idle", "working", "waiting", "dead", "error"
+    /// Ya se emitió `ProcessGone`: el agente no vuelve a hablar.
+    gone_sent: bool,
+    /// Lo que el simulador cree que verá el core; solo guía el modelo de turnos.
+    kind: StatusKind,
 }
 
 impl SimAgent {
@@ -108,40 +111,57 @@ impl SimAgent {
         self.rng.random::<f64>() < p
     }
 
+    fn silence(&mut self) {
+        self.next_at = u64::MAX;
+        self.kind = StatusKind::Dead;
+    }
+
+    fn next_input(&mut self, now: u64) -> Option<AgentInput> {
+        self.next_signal(now).map(AgentInput::Signal).or_else(|| {
+            // `next_signal` devuelve None solo al caerse el proceso (o si ya estaba caído).
+            (self.next_at == u64::MAX && self.kind == StatusKind::Dead && !self.gone_sent).then(
+                || {
+                    self.gone_sent = true;
+                    AgentInput::ProcessGone
+                },
+            )
+        })
+    }
+
     fn next_signal(&mut self, now: u64) -> Option<Signal> {
-        match self.current_status_kind.as_str() {
-            "dead" => {
+        match self.kind {
+            StatusKind::Dead => {
                 self.next_at = u64::MAX;
                 None
             }
-            "idle" | "error" => {
+            StatusKind::Idle | StatusKind::Error => {
                 let u: f64 = self.rng.random();
                 let tools =
                     1 + (-self.profile.mean_tools_per_turn * (1.0f64 - u).ln()).floor() as i32;
                 self.tools_left = tools.max(1);
                 let wait = self.exp_ms(self.profile.mean_think_ms);
                 self.next_at = now + wait;
-                self.current_status_kind = "working".to_string();
+                self.kind = StatusKind::Working;
                 Some(Signal::PromptSubmit)
             }
-            "waiting" => {
+            StatusKind::Waiting => {
                 self.tool_open = false;
                 self.tools_left -= 1;
                 let wait = self.exp_ms(self.profile.mean_think_ms);
                 self.next_at = now + wait;
-                self.current_status_kind = "working".to_string();
+                self.kind = StatusKind::Working;
                 let key = ToolUseKey::new(format!("sim-tool-{}", self.current_tool_key));
                 Some(Signal::ToolEnd {
                     key,
                     outcome: ToolOutcome::Ok,
                 })
             }
-            "working" => {
+            StatusKind::Working => {
                 if self.tool_open && self.permission_pending {
                     self.permission_pending = false;
                     let wait = self.exp_ms(self.profile.mean_permission_wait_ms);
                     self.next_at = now + wait;
-                    self.current_status_kind = "waiting".to_string();
+                    self.kind = StatusKind::Waiting;
                     return Some(Signal::AwaitingInput);
                 }
                 if self.tool_open {
@@ -163,20 +183,19 @@ impl SimAgent {
                 if self.tools_left <= 0 {
                     let wait = self.exp_ms(self.profile.mean_idle_ms);
                     self.next_at = now + wait;
-                    self.current_status_kind = "idle".to_string();
+                    self.kind = StatusKind::Idle;
                     return Some(Signal::Stop);
                 }
                 if self.chance(self.profile.crash_prob_per_turn / self.profile.mean_tools_per_turn)
                 {
-                    self.next_at = u64::MAX;
-                    self.current_status_kind = "dead".to_string();
+                    self.silence();
                     return None;
                 }
                 if self.chance(self.profile.error_prob_per_turn / self.profile.mean_tools_per_turn)
                 {
                     let wait = self.exp_ms(self.profile.mean_idle_ms);
                     self.next_at = now + wait;
-                    self.current_status_kind = "error".to_string();
+                    self.kind = StatusKind::Error;
                     return Some(Signal::Failure);
                 }
 
@@ -197,7 +216,6 @@ impl SimAgent {
                     tool: ToolName::new(tool_name),
                 })
             }
-            _ => None,
         }
     }
 }
@@ -209,13 +227,24 @@ pub struct SimFleet {
 }
 
 impl SimFleet {
+    /// Reloj virtual desde `epochMs` del fixture: determinista para tests y benches.
     pub fn new(spec: SimSpec) -> Self {
+        Self::build(spec, None)
+    }
+
+    /// Reloj virtual alineado con el reloj real (`Clock::now()`), para la app: si no, la
+    /// caducidad del runtime vería a todos los agentes en silencio desde hace meses.
+    pub fn starting_at(spec: SimSpec, epoch_ms: u64) -> Self {
+        Self::build(spec, Some(epoch_ms))
+    }
+
+    fn build(spec: SimSpec, epoch_ms: Option<u64>) -> Self {
         let config_str = include_str!("../../../../fixtures/sim/profiles.json");
         let config: ProfilesConfig =
             serde_json::from_str(config_str).expect("fixtures/sim/profiles.json válido");
 
         let mut agents = Vec::with_capacity(spec.count);
-        let now = config.epoch_ms;
+        let now = epoch_ms.unwrap_or(config.epoch_ms);
 
         for i in 0..spec.count {
             // seed ^ índice multiplicado para dispersión uniforme
@@ -296,7 +325,8 @@ impl SimFleet {
                 permission_pending: false,
                 next_at: now + initial_wait,
                 current_tool_key: 0,
-                current_status_kind: "idle".to_string(),
+                gone_sent: false,
+                kind: StatusKind::Idle,
             });
         }
 
@@ -311,25 +341,81 @@ impl SimFleet {
         self.agents.iter().map(|a| a.detected.clone()).collect()
     }
 
-    pub fn step(&mut self) -> Vec<(AgentId, Signal)> {
-        self.now += TICK_MS;
-        let mut signals = Vec::new();
+    /// El usuario cerró la oficina: el agente deja de emitir (el runtime ya lo quitó).
+    pub fn forget(&mut self, id: AgentId) {
+        if let Some(a) = self.agents.iter_mut().find(|a| a.id == id) {
+            a.silence();
+            a.gone_sent = true;
+        }
+    }
 
+    pub fn step(&mut self) -> Vec<(AgentId, AgentInput)> {
+        self.now += TICK_MS;
+        let mut inputs = Vec::new();
         for agent in &mut self.agents {
-            if agent.next_at <= self.now
-                && let Some(sig) = agent.next_signal(self.now)
-            {
-                signals.push((agent.id, sig));
+            let due =
+                agent.next_at <= self.now || (agent.kind == StatusKind::Dead && !agent.gone_sent);
+            if due && let Some(input) = agent.next_input(self.now) {
+                inputs.push((agent.id, input));
             }
         }
-
-        signals
+        inputs
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn spec(count: usize, seed: u64) -> SimSpec {
+        SimSpec {
+            count,
+            seed,
+            freeze: false,
+        }
+    }
+
+    #[test]
+    fn un_crash_emite_process_gone_y_el_agente_calla() {
+        let mut fleet = SimFleet::new(spec(20, 42));
+        let mut gone = std::collections::HashSet::new();
+        for _ in 0..2_000 {
+            for (id, input) in fleet.step() {
+                assert!(!gone.contains(&id), "{id} habló después de morir");
+                if input == AgentInput::ProcessGone {
+                    gone.insert(id);
+                }
+            }
+        }
+        assert!(
+            !gone.is_empty(),
+            "con el perfil flaky algún agente debe caerse"
+        );
+    }
+
+    #[test]
+    fn starting_at_alinea_el_reloj_virtual_con_el_real() {
+        let fleet = SimFleet::starting_at(spec(3, 1), 1_800_000_000_000);
+        assert_eq!(fleet.now, 1_800_000_000_000);
+        for d in fleet.detected_agents() {
+            assert!(d.identity.start_time.0 < 1_800_000_000_000);
+        }
+    }
+
+    #[test]
+    fn forget_silencia_al_agente_cerrado() {
+        let mut fleet = SimFleet::new(spec(5, 7));
+        let target = fleet.detected_agents()[0].clone();
+        let id = AgentId {
+            provider: target.provider,
+            pid: target.identity.pid,
+            start_time: target.identity.start_time,
+        };
+        fleet.forget(id);
+        for _ in 0..500 {
+            assert!(fleet.step().iter().all(|(a, _)| *a != id));
+        }
+    }
 
     #[test]
     fn parse_sim_spec_formats() {

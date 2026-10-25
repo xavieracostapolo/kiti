@@ -5,6 +5,7 @@ fn main() {
             "kill_agent",
             "report_ui_metrics",
             "set_debug_stream",
+            "ui_log",
         ]),
     ))
     .expect("tauri build");

@@ -12,7 +12,9 @@ use tokio::time::{Instant, interval};
 use crate::application::projection::{project_diff, project_snapshot};
 use crate::application::telemetry::Telemetry;
 use crate::domain::{AgentId, AgentInput, AgentRegistry, DetectedAgent, StalePolicy, Timestamp};
-use crate::ports::{AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget};
+use crate::ports::{
+    AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
+};
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
 
 pub const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
@@ -109,6 +111,7 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     /// Para que las tareas de kill devuelvan su resultado al actor.
     self_tx: mpsc::Sender<RuntimeCommand>,
     publisher: Option<Box<dyn DiffPublisher>>,
+    monitor: Option<Box<dyn SelfMonitor>>,
     killer: K,
     clock: C,
     telemetry: Arc<Telemetry>,
@@ -135,6 +138,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             rx,
             self_tx: tx.clone(),
             publisher: None,
+            monitor: None,
             killer,
             clock,
             telemetry: Arc::clone(&telemetry),
@@ -145,6 +149,12 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             stale_policy: StalePolicy::default(),
         };
         (runtime, RuntimeHandle { tx, telemetry })
+    }
+
+    /// Muestreo de RSS y CPU del proceso para el panel de debug.
+    pub fn with_monitor(mut self, monitor: impl SelfMonitor) -> Self {
+        self.monitor = Some(Box::new(monitor));
+        self
     }
 
     /// Atajo para tests y binarios que ya están dentro de un runtime de tokio.
@@ -237,9 +247,10 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         let Some(publisher) = self.publisher.as_mut() else {
             return;
         };
+        let (rss, cpu) = self.monitor.as_mut().map_or((0, 0.0), |m| m.sample());
         let metrics = self
             .telemetry
-            .snapshot_core_metrics(self.registry.len() as u32, 0, 0.0);
+            .snapshot_core_metrics(self.registry.len() as u32, rss, cpu);
         publisher.publish(ServerMsg::Metrics(metrics));
     }
 

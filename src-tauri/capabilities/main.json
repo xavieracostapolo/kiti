@@ -7,6 +7,7 @@
     "allow-subscribe",
     "allow-kill-agent",
     "allow-report-ui-metrics",
-    "allow-set-debug-stream"
+    "allow-set-debug-stream",
+    "allow-ui-log"
   ]
 }
