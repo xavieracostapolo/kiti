@@ -10,6 +10,7 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, interval};
 
 use crate::application::projection::{project_diff, project_snapshot};
+use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
     AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Pid, Provider, SessionId,
@@ -66,6 +67,8 @@ pub enum RuntimeCommand {
         reply: oneshot::Sender<Hello>,
     },
     SetDebugStream(bool),
+    /// Cuenta de agentes por color, para la barra de menú.
+    Summary(oneshot::Sender<Summary>),
     KillAgent {
         id: AgentId,
         reply: oneshot::Sender<KillResult>,
@@ -160,6 +163,14 @@ impl RuntimeHandle {
             .await
             .map_err(|e| e.to_string())?;
         reply_rx.await.map_err(|e| e.to_string())
+    }
+
+    pub async fn summary(&self) -> Summary {
+        let (reply, rx) = oneshot::channel();
+        if self.tx.send(RuntimeCommand::Summary(reply)).await.is_err() {
+            return Summary::default();
+        }
+        rx.await.unwrap_or_default()
     }
 
     pub async fn set_debug_stream(&self, on: bool) {
@@ -367,8 +378,11 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             } => {
                 self.seq = 0;
                 let snapshot_agents = self.registry.snapshot();
-                publisher.publish(project_snapshot(self.seq, &snapshot_agents));
-                self.publisher = Some(publisher);
+                if publisher.publish(project_snapshot(self.seq, &snapshot_agents)) {
+                    self.publisher = Some(publisher);
+                } else {
+                    self.drop_publisher();
+                }
                 let _ = reply.send(Hello {
                     protocol_version: PROTOCOL_VERSION,
                     app_version: self.app_version.clone(),
@@ -376,6 +390,13 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 });
             }
             RuntimeCommand::SetDebugStream(on) => self.debug_stream = on,
+            RuntimeCommand::Summary(reply) => {
+                let mut summary = Summary::default();
+                for agent in self.registry.agents() {
+                    summary.add(agent.status().kind);
+                }
+                let _ = reply.send(summary);
+            }
             RuntimeCommand::KillAgent { id, reply } => self.start_kill(id, reply),
             RuntimeCommand::KillFinished { id, outcome, reply } => {
                 let _ = reply.send(self.finish_kill(id, outcome));
@@ -392,7 +413,10 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             return;
         }
         self.seq += 1;
-        publisher.publish(project_diff(self.seq, self.clock.now().ms(), diff));
+        if !publisher.publish(project_diff(self.seq, self.clock.now().ms(), diff)) {
+            self.drop_publisher();
+            return;
+        }
         self.telemetry.record_flush();
         if let Some(received) = self.oldest_unpublished_hook.take() {
             // ADR 0006, ficha del Hito 4: hook recibido → Diff publicado.
@@ -409,7 +433,17 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         let metrics = self
             .telemetry
             .snapshot_core_metrics(self.registry.len() as u32, rss, cpu);
-        publisher.publish(ServerMsg::Metrics(metrics));
+        if !publisher.publish(ServerMsg::Metrics(metrics)) {
+            self.drop_publisher();
+        }
+    }
+
+    /// La ventana se cerró: se deja de publicar hasta que se vuelva a suscribir.
+    fn drop_publisher(&mut self) {
+        if self.publisher.take().is_some() {
+            info!(event = "ipc.subscriber_dropped");
+        }
+        self.debug_stream = false;
     }
 
     /// Marca la salida como esperada y termina el proceso en otra tarea: la gracia de 5 s

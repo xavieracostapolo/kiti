@@ -56,15 +56,18 @@ pub trait SelfMonitor: Send + 'static {
     fn sample(&mut self) -> (u64, f64);
 }
 
+/// `publish` devuelve `false` si el destino ya no existe (ventana cerrada): el runtime deja de
+/// publicarle hasta la siguiente suscripción.
 pub trait DiffPublisher: Send + 'static {
-    fn publish(&mut self, msg: ServerMsg);
+    fn publish(&mut self, msg: ServerMsg) -> bool;
 }
 
 impl<F> DiffPublisher for F
 where
     F: FnMut(ServerMsg) + Send + 'static,
 {
-    fn publish(&mut self, msg: ServerMsg) {
+    fn publish(&mut self, msg: ServerMsg) -> bool {
         (self)(msg);
+        true
     }
 }

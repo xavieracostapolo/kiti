@@ -18,10 +18,12 @@ use kiti_protocol::{Hello, IpcError, KillResult, ServerMsg, Source, UiMetrics};
 use std::sync::Arc;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::ipc::Channel;
-use tauri::{AppHandle, Manager, State};
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
+use tauri::{AppHandle, Manager, RunEvent, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -48,10 +50,9 @@ struct LogGuard(#[allow(dead_code)] WorkerGuard);
 struct ChannelPublisher(Channel<ServerMsg>);
 
 impl DiffPublisher for ChannelPublisher {
-    fn publish(&mut self, msg: ServerMsg) {
-        if let Err(e) = self.0.send(msg) {
-            warn!(error = %e, "no se pudo enviar por el Channel IPC");
-        }
+    /// Falla cuando la ventana se cerró: el runtime deja de publicarle.
+    fn publish(&mut self, msg: ServerMsg) -> bool {
+        self.0.send(msg).is_ok()
     }
 }
 
@@ -337,6 +338,7 @@ pub fn run() {
                     handle
                 }
             };
+            start_tray(app.handle(), handle.clone())?;
             app.manage(AppState { runtime: handle });
             Ok(())
         })
@@ -347,6 +349,82 @@ pub fn run() {
             set_debug_stream,
             ui_log,
         ])
-        .run(tauri::generate_context!())
-        .expect("error al ejecutar la aplicación Tauri");
+        .build(tauri::generate_context!())
+        .expect("error al construir la aplicación Tauri")
+        .run(|app, event| match event {
+            // Cerrar la última ventana no cierra Kiti: sigue en la barra de menú. Solo "Salir"
+            // (exit con código) termina el proceso.
+            RunEvent::ExitRequested {
+                code: None, api, ..
+            } => {
+                info!(event = "window.closed", "Kiti sigue en la barra de menú");
+                api.prevent_exit();
+            }
+            // Clic en el icono del Dock sin ventanas abiertas.
+            RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } => show_window(app),
+            _ => {}
+        });
+}
+
+/// Muestra la ventana principal o la vuelve a crear: cerrarla la destruye para liberar el
+/// WebView (~150 MB). Al recrearla, la UI se suscribe de nuevo y recibe un Snapshot.
+fn show_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+        return;
+    }
+    let Some(config) = app.config().app.windows.first() else {
+        return;
+    };
+    match tauri::WebviewWindowBuilder::from_config(app, config).and_then(|b| b.build()) {
+        Ok(window) => {
+            info!(event = "window.reopened");
+            let _ = window.set_focus();
+        }
+        Err(e) => error!(event = "window.reopen", error = %e),
+    }
+}
+
+/// Icono en la barra de menú con el resumen del semáforo, actualizado cada segundo.
+fn start_tray(app: &AppHandle, runtime: RuntimeHandle) -> tauri::Result<()> {
+    let show = MenuItem::with_id(app, "show", "Mostrar Kiti", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Salir de Kiti", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let mut tray = TrayIconBuilder::with_id("kiti")
+        .title("Kiti")
+        .tooltip("Kiti")
+        .menu(&menu)
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "show" => show_window(app),
+            "quit" => app.exit(0),
+            _ => {}
+        });
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    let tray = tray.build(app)?;
+    tauri::async_runtime::spawn(async move {
+        let mut last = None;
+        let mut ticker = tokio::time::interval(Duration::from_secs(1));
+        loop {
+            ticker.tick().await;
+            if runtime.is_closed() {
+                return;
+            }
+            let summary = runtime.summary().await;
+            if last != Some(summary) {
+                let title = summary.title();
+                let _ = tray.set_title(Some(&title));
+                let _ = tray.set_tooltip(Some(summary.tooltip()));
+                debug!(event = "tray.updated", title);
+                last = Some(summary);
+            }
+        }
+    });
+    Ok(())
 }
