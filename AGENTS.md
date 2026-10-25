@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 12 fusionados en `main`. El último, "Avisos", está en el [ADR 0010](docs/decisiones/0010-avisos/README.md).
+- **Fase:** Hito 13, "Ver desde lejos y filtrar", en la rama `hito-13-ver-de-lejos` ([ADR 0011](docs/decisiones/0011-filtro-y-vista-lejana/README.md)). Hitos 1 a 12 fusionados en `main`.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -40,6 +40,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0008](docs/decisiones/0008-sesiones-persistentes/README.md) | Sesiones persistentes: los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar sesión o continuar conversación |
 | [0009](docs/decisiones/0009-proyectos-conversaciones/README.md) | Zonas por proyecto (repo git), conversaciones cerradas para retomar, y título, actividad y último pedido en cada oficina |
 | [0010](docs/decisiones/0010-avisos/README.md) | Notificaciones de macOS cuando un agente pide permiso, termina un turno largo, falla o se cae (solo si Kiti no está al frente) |
+| [0011](docs/decisiones/0011-filtro-y-vista-lejana/README.md) | Cartel con el título en la vista lejana; contadores y buscador que filtran (lo demás se atenúa) |
 
 ## Decisiones tomadas (no repetir)
 
@@ -175,6 +176,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **10. Sesiones persistentes:** los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar la sesión de una carpeta o continuar la última conversación de Claude.
 - [x] **11. Proyectos y conversaciones:** zonas por proyecto (raíz git o carpeta), conversaciones cerradas de los últimos 7 días como oficinas apagadas que se retoman con `claude --resume`, y título, actividad y último pedido en cada oficina.
 - [x] **12. Avisos:** notificaciones de macOS al pedir permiso, terminar un turno largo, fallar o caerse, solo con Kiti en segundo plano.
+- [x] **13. Ver desde lejos y filtrar:** título legible en la vista lejana, contadores que filtran por estado, buscador (`/`), y atenuar lo que no coincide.
 - [ ] **Después:** soporte para Windows, enfocar las pestañas de Ghostty de los agentes externos (AppleScript) y mejora visual con Kenney.
 
 ## Pendientes de verificar
@@ -227,5 +229,5 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
-- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones` y `dormant`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant` y `dimmed`. El panel de debug se abre con `Cmd+Shift+D`.
 - Los recursos gráficos del MVP son de Kenney.nl (CC0). Los packs de oficina de LimeZu en itch.io quedan pendientes de revisar su licencia.

@@ -12,6 +12,7 @@ import type {
   TerminalInfo,
 } from "../protocol";
 import { type AgentsState, applyMsg, EMPTY_AGENTS } from "./agents";
+import { EMPTY_FILTER, type FilterKind, type OfficeFilter, toggleKind } from "./filter";
 import { dormantRooms } from "./rooms";
 
 export type ViewState = {
@@ -31,6 +32,11 @@ export type KitiState = {
   /** Oficinas apagadas: las conversaciones sin agente encendido, por id de oficina. */
   dormant: ReadonlyMap<string, ConversationInfo>;
   setConversations(list: readonly ConversationInfo[]): void;
+  /** Filtro de oficinas: las que no coinciden se atenúan (Hito 13). */
+  filter: OfficeFilter;
+  toggleFilterKind(kind: FilterKind): void;
+  setFilterText(text: string): void;
+  clearFilter(): void;
   /** Terminales de los agentes lanzados desde Kiti, por pid (ADR 0007). */
   terminals: ReadonlyMap<number, TerminalInfo>;
   openTerminalId: string | undefined;
@@ -73,6 +79,16 @@ export function createKitiStore() {
     agents: EMPTY_AGENTS,
     conversations: [],
     dormant: new Map(),
+    filter: EMPTY_FILTER,
+    toggleFilterKind(kind) {
+      set({ filter: toggleKind(get().filter, kind) });
+    },
+    setFilterText(text) {
+      if (get().filter.text !== text) set({ filter: { ...get().filter, text } });
+    },
+    clearFilter() {
+      if (get().filter !== EMPTY_FILTER) set({ filter: EMPTY_FILTER });
+    },
     setConversations(list) {
       const { agents, dormant: prev, view } = get();
       const dormant = dormantRooms(agents.agents, list, prev);

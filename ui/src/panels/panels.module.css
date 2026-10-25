@@ -106,10 +106,41 @@
   flex-wrap: wrap;
 }
 
+/* Contadores que filtran (Hito 13): sin aspecto de botón hasta que se pulsan. */
 .count {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  font: inherit;
+  color: inherit;
+  padding: 2px 6px;
+  background: none;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.count:hover {
+  border-color: var(--edge);
+}
+
+.count[aria-pressed="true"] {
+  background: var(--panel-3);
+  border-color: var(--text);
+}
+
+.search {
+  width: 180px;
+  font: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 2px solid var(--edge);
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--text);
 }
 
 .dot {
@@ -120,10 +151,6 @@
 
 .spacer {
   flex: 1;
-}
-
-.hint {
-  color: var(--muted);
 }
 
 .agentPanel {

@@ -13,6 +13,13 @@ export type LayoutOpts = {
   tile: number;
 };
 
+/** Rectángulo mínimo que contiene a los dos. */
+export function union(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
+}
+
 /** Ancho del panel de terminal como fracción del viewport (debe coincidir con `.terminalPanel`). */
 export const TERMINAL_FRACTION = 0.46;
 

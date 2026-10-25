@@ -5,7 +5,7 @@
 import { BitmapText, Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
 import type { Lod } from "../domain/lod";
 import { displayName } from "../domain/names";
-import { charsIn, fitLines, fontFor, LINE_H } from "../domain/text";
+import { charsIn, fitLines, fitWords, fontFor, LINE_H } from "../domain/text";
 import type { AgentState, ConversationInfo, StatusKind } from "../protocol";
 import { anchors, type RoomSize } from "./officeTemplate";
 import { PAL, PROVIDER_COLOR, PROVIDER_LETTER, STATUS_COLOR } from "./palette";
@@ -17,6 +17,8 @@ export const FONT = "kiti-pixel";
  */
 const LABEL = { screenPx: 13, min: 4, max: 9, width: 106, height: 24, maxLines: 3 };
 const NOTE = { screenPx: 11, min: 3, max: 7, height: 40, maxLines: 4 };
+/** Cartel de la vista lejana: el título en grande en el centro de la sala. */
+const CARD = { screenPx: 12, min: 9, max: 28, maxLines: 3, pad: 6 };
 /** Nombres de carpeta enteros: el corte lo hace `fitLines`. */
 const FULL = 200;
 
@@ -54,6 +56,15 @@ export class OfficeView {
   private noteRaw = "";
   private labelSize = LABEL.max;
   private noteSize = NOTE.max;
+  private cardSize = CARD.max;
+  /** Lejos se ve el cartel; en mid y near, el título de la pared y la nota. */
+  private far = true;
+  /** Texto oculto que cambió: se recalcula al volver a verse (el zoom continuo no lo paga). */
+  private readonly stale = { label: false, note: false, card: false };
+  /** Cartel de la vista lejana (Hito 13). */
+  private readonly card = new Container();
+  private readonly cardBg = new Graphics();
+  private readonly cardText: BitmapText;
 
   constructor(
     template: Texture,
@@ -73,6 +84,9 @@ export class OfficeView {
     this.noteText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 7 } });
     this.noteText.position.set(6, size.h - 13);
     this.note.addChild(this.noteBg, this.noteText);
+    this.cardText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: CARD.max } });
+    this.card.addChild(this.cardBg, this.cardText);
+    this.card.visible = false;
 
     this.screen.position.set(a.desk.x + size.tile, a.desk.y - 7);
     this.light.position.set(a.light.x, a.light.y);
@@ -98,6 +112,7 @@ export class OfficeView {
       this.light,
       this.label,
       this.note,
+      this.card,
       this.terminalBadge,
       this.selection,
     );
@@ -134,20 +149,48 @@ export class OfficeView {
   setTextScale(k: number): void {
     const label = fontFor(k, LABEL.screenPx, LABEL.min, LABEL.max);
     const note = fontFor(k, NOTE.screenPx, NOTE.min, NOTE.max);
+    const card = fontFor(k, CARD.screenPx, CARD.min, CARD.max);
     if (label !== this.labelSize) {
       this.labelSize = label;
-      this.renderLabel();
+      this.refresh("label");
     }
     if (note !== this.noteSize) {
       this.noteSize = note;
-      this.renderNote();
+      this.refresh("note");
+    }
+    if (card !== this.cardSize) {
+      this.cardSize = card;
+      this.refresh("card");
     }
   }
 
+  /** Recalcula un texto ahora si se ve; si no, lo marca para cuando vuelva a verse. */
+  private refresh(which: "label" | "note" | "card"): void {
+    const visible = which === "card" ? this.far : !this.far;
+    if (!visible) {
+      this.stale[which] = true;
+      return;
+    }
+    this.stale[which] = false;
+    if (which === "label") this.renderLabel();
+    else if (which === "note") this.renderNote();
+    else this.renderCard();
+  }
+
+  /** Atenuada: no coincide con el filtro. */
+  setDimmed(dimmed: boolean): void {
+    this.root.alpha = dimmed ? 0.22 : 1;
+  }
+
   setLod(lod: Lod): void {
-    this.label.visible = lod !== "far";
-    this.note.visible = lod !== "far";
+    this.far = lod === "far";
+    this.card.visible = this.far;
+    this.label.visible = !this.far;
+    this.note.visible = !this.far;
     this.near.visible = lod === "near";
+    for (const which of ["label", "note", "card"] as const) {
+      if (this.stale[which]) this.refresh(which);
+    }
   }
 
   setHasTerminal(has: boolean): void {
@@ -165,7 +208,25 @@ export class OfficeView {
 
   private setLabel(text: string): void {
     this.labelRaw = text;
-    this.renderLabel();
+    this.refresh("label");
+    this.refresh("card");
+  }
+
+  private renderCard(): void {
+    const width = this.size.w - 2 * CARD.pad - 8;
+    const size = fitWords(this.labelRaw, width, this.cardSize, CARD.min);
+    const text = fitLines(this.labelRaw, charsIn(width, size), CARD.maxLines);
+    this.cardText.style.fontSize = size;
+    this.cardText.text = text;
+    this.cardBg.clear();
+    if (text === "") return;
+    const lines = text.split("\n").length;
+    const height = Math.ceil(lines * size * LINE_H) + 8;
+    const top = Math.round((this.size.h - height) / 2) + 8;
+    this.cardText.position.set(CARD.pad + 4, top + 4);
+    this.cardBg
+      .rect(CARD.pad, top, this.size.w - 2 * CARD.pad, height)
+      .fill({ color: PAL.housing, alpha: 0.8 });
   }
 
   private renderLabel(): void {
@@ -177,7 +238,7 @@ export class OfficeView {
 
   private drawNote(text: string): void {
     this.noteRaw = text;
-    this.renderNote();
+    this.refresh("note");
   }
 
   private renderNote(): void {

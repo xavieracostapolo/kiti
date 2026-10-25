@@ -48,3 +48,13 @@ export function fitLines(text: string, perLine: number, maxLines: number): strin
   if (rest !== "") lines.push(rest.length > perLine ? `${rest.slice(0, perLine - 1)}…` : rest);
   return lines.join("\n");
 }
+
+/**
+ * Tamaño (≤ `size`, ≥ `min`) con el que la palabra más larga de `text` cabe entera en `width`:
+ * mejor letra algo más pequeña que cortar "vulnerabilidades" en dos.
+ */
+export function fitWords(text: string, width: number, size: number, min: number): number {
+  const longest = Math.max(1, ...text.split(/\s+/).map((w) => w.length));
+  const fits = Math.floor((width / (longest * CHAR_W)) * 2) / 2;
+  return Math.max(min, Math.min(size, fits));
+}
