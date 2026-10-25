@@ -86,6 +86,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
         world={() => world.current}
         now={now}
         terminalsAvailable={terminals !== undefined}
+        {...(terminals ? { onFocusExternal: (id: string) => terminals.focusExternal(id) } : {})}
       />
       <ConversationPanel
         store={store}

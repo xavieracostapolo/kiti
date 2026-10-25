@@ -2,6 +2,7 @@
 import type {
   AgentId,
   ConversationInfo,
+  FocusResult,
   Hello,
   KillResult,
   Provider,
@@ -19,6 +20,8 @@ export interface TerminalApi {
   attach(id: string, onData: (bytes: Uint8Array) => void): Promise<void>;
   input(id: string, data: string): Promise<void>;
   resize(id: string, cols: number, rows: number): Promise<void>;
+  /** Agente abierto fuera de Kiti: muestra su pestaña en Ghostty o Terminal.app (ADR 0012). */
+  focusExternal(agentId: AgentId): Promise<FocusResult>;
 }
 
 /** Conversaciones cerradas de Claude que se pueden retomar (ADR 0009). Solo en la app nativa. */

@@ -3,6 +3,7 @@ export type { AgentId } from "./generated/AgentId";
 export type { AgentState } from "./generated/AgentState";
 export type { ConversationInfo } from "./generated/ConversationInfo";
 export type { CoreMetrics } from "./generated/CoreMetrics";
+export type { FocusResult } from "./generated/FocusResult";
 export type { Hello } from "./generated/Hello";
 export type { IpcError } from "./generated/IpcError";
 export type { KillResult } from "./generated/KillResult";

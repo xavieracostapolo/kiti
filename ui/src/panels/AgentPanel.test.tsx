@@ -1,13 +1,17 @@
 // @vitest-environment jsdom
 import { act, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import type { AgentState } from "../protocol";
+import { describe, expect, it, vi } from "vitest";
+import type { AgentState, FocusResult } from "../protocol";
 import { createKitiStore } from "../state/store";
 import { AgentPanel } from "./AgentPanel";
 
 const NOW = 1_000_000;
 
-function setup(agent: AgentState, terminalsAvailable = false) {
+function setup(
+  agent: AgentState,
+  terminalsAvailable = false,
+  onFocusExternal?: (id: string) => Promise<FocusResult>,
+) {
   const store = createKitiStore();
   store.getState().receive({ type: "Snapshot", seq: 0, agents: [agent] });
   store.getState().select(agent.id);
@@ -17,6 +21,7 @@ function setup(agent: AgentState, terminalsAvailable = false) {
       world={() => undefined}
       now={() => NOW}
       terminalsAvailable={terminalsAvailable}
+      {...(onFocusExternal ? { onFocusExternal } : {})}
     />,
   );
   return store;
@@ -94,5 +99,21 @@ describe("AgentPanel", () => {
       store.getState().openTerminal("pty-7");
     });
     expect(screen.queryByRole("complementary", { name: "Agente seleccionado" })).toBeNull();
+  });
+
+  it("un agente abierto fuera de Kiti lleva a su terminal y dice dónde estaba", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const focus = vi.fn(async (): Promise<FocusResult> => ({ kind: "focused", app: "Ghostty" }));
+    setup(base, true, focus);
+    await userEvent.click(screen.getByRole("button", { name: "Ir a su terminal" }));
+    expect(focus).toHaveBeenCalledWith(base.id);
+    expect((await screen.findByRole("status")).textContent).toContain("Abierto en Ghostty");
+  });
+
+  it("si no sabe la pestaña o la terminal, lo dice", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    setup(base, true, async () => ({ kind: "appOnly", app: "Visual Studio Code" }));
+    await userEvent.click(screen.getByRole("button", { name: "Ir a su terminal" }));
+    expect((await screen.findByRole("status")).textContent).toContain("no supe cuál es su pestaña");
   });
 });

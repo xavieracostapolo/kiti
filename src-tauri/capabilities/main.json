@@ -16,6 +16,7 @@
     "allow-terminal-resize",
     "allow-list-conversations",
     "allow-resume-conversation",
-    "allow-hide-conversation"
+    "allow-hide-conversation",
+    "allow-focus-agent-terminal"
   ]
 }
