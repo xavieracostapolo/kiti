@@ -31,6 +31,7 @@ import {
 } from "../domain/camera";
 import { DEFAULT_LAYOUT, type LayoutOpts, type Rect, TERMINAL_FRACTION } from "../domain/layout";
 import { LOD_SCALE, type Lod, lodFor } from "../domain/lod";
+import { fontFor } from "../domain/text";
 import { layoutZones, type Zone, type ZoneSlots } from "../domain/zones";
 import type { AgentId, AgentState, ConversationInfo } from "../protocol";
 import { planScene } from "../state/agents";
@@ -94,6 +95,9 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   let zoneSlots: ZoneSlots = new Map();
   let rooms = new Map<string, Rect>();
   let zones: Zone[] = [];
+  /** Rótulos de las zonas: su letra también se adapta al zoom. */
+  let zoneLabels: { text: BitmapText; zone: Zone }[] = [];
+  let zoneFont = 18;
   let bounds: Rect = layoutZones(zoneSlots, [], layout).bounds;
   let vp: Viewport = { w: el.clientWidth || 1, h: el.clientHeight || 1 };
   let cam: Camera = { x: bounds.w / 2, y: bounds.h / 2, k: 1 };
@@ -276,6 +280,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   function newView(id: string): OfficeView {
     const view = new OfficeView(template as Texture, room);
     view.setLod(lod);
+    view.setTextScale(cam.k);
     view.setSelected(store.getState().view.selectedId === id);
     views.set(id, view);
     officesLayer.addChild(view.root);
@@ -341,6 +346,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     zones = next;
     if (same) return;
     for (const child of zonesLayer.removeChildren()) child.destroy({ children: true });
+    zoneLabels = [];
     const t = layout.tile;
     for (const z of zones) {
       const g = new Graphics()
@@ -352,11 +358,21 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
         .stroke({ color: PAL.zoneBorder, width: 2 });
       const name = new BitmapText({
         text: `${z.name}  ·  ${z.count}`,
-        style: { fontFamily: FONT, fontSize: 18 },
+        style: { fontFamily: FONT, fontSize: zoneFont },
       });
       name.tint = PAL.zoneText;
-      name.position.set(z.x + t * 0.75, z.y + 7);
       zonesLayer.addChild(g, name);
+      zoneLabels.push({ text: name, zone: z });
+    }
+    placeZoneLabels();
+  }
+
+  /** Tamaño y posición de los rótulos de zona: centrados en su franja de 2 tiles. */
+  function placeZoneLabels() {
+    const t = layout.tile;
+    for (const { text, zone } of zoneLabels) {
+      text.style.fontSize = zoneFont;
+      text.position.set(zone.x + t * 0.75, zone.y + Math.max(1, (2 * t - zoneFont * 1.15) / 2));
     }
   }
 
@@ -364,6 +380,13 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     cam = clampToBounds(cam, bounds);
     worldRoot.scale.set(cam.k);
     worldRoot.position.set(vp.w / 2 - cam.x * cam.k, vp.h / 2 - cam.y * cam.k);
+    // Cada vista recalcula su texto solo si cambia el tamaño cuantizado (domain/text).
+    for (const v of views.values()) v.setTextScale(cam.k);
+    const nextZoneFont = fontFor(cam.k, 15, 6, 18);
+    if (nextZoneFont !== zoneFont) {
+      zoneFont = nextZoneFont;
+      placeZoneLabels();
+    }
     const nextLod = lodFor(cam.k, lod);
     if (nextLod !== lod) {
       lod = nextLod;

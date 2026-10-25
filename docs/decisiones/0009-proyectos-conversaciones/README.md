@@ -70,6 +70,7 @@ Todo queda **en la máquina**: viaja solo del core a la UI por IPC, **nunca se e
 - **Permisos de los commands:** `list_conversations` y `resume_conversation` estaban registrados, pero faltaban en `build.rs` y en la capability. Tauri los rechazaba ("not allowed by ACL"). Ahora `src-tauri/tests/acl.rs` falla si un command registrado no está permitido.
 - **"Cerrar oficina" no hacía nada en la app nativa** (desde el Hito 2): el botón marcaba la oficina como pendiente, pero solo el diálogo del simulador consumía esa marca. `NativeCloseOffice` pasa cada petición a `kill_agent`, que enseña el diálogo nativo.
 - **Archivar** (pedido del usuario): una oficina apagada se puede archivar desde su panel, con confirmación. Su id se guarda en `hidden-conversations.json`, en la carpeta de datos de Kiti, y `list_conversations` la descarta. No se borra nada de Claude: la conversación se puede seguir retomando con `claude --resume`. No hay "desarchivar" en la UI; se hace quitando el id de ese archivo.
+- **Texto que se adapta al zoom** (pedido del usuario): el título de la pared, la nota inferior y los rótulos de zona miden más o menos lo mismo en pantalla. Al acercarse, la letra se hace más pequeña en el mundo, así caben el título entero (hasta 3 líneas) y el pedido o la actividad (hasta 4 líneas). `domain/text.ts` (`fontFor`, `fitLines`) es puro y cuantiza a medio píxel para no recalcular el texto en cada frame del zoom.
 - El puente de logs de la UI escribe los errores de los commands como JSON en lugar de `[object Object]`.
 
 ## Ficha de observabilidad
