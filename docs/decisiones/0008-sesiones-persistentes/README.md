@@ -1,0 +1,34 @@
+# ADR 0008: Sesiones persistentes con tmux
+
+- **Fecha:** 2026-10-25
+- **Estado:** Aceptada
+- **Decisión:** los agentes lanzados desde Kiti viven en sesiones de **tmux** (socket propio `-L kiti`, sesiones `kiti-N`). Kiti es solo un cliente: "Salir de Kiti" ya no termina las sesiones, y al reabrir las recupera. Además, "Nuevo agente" ofrece reutilizar la sesión de Kiti de esa carpeta o continuar la última conversación de Claude, para no crear sesiones de más.
+
+## Contexto
+
+Con el ADR 0007, el PTY de cada agente pertenece a Kiti: si Kiti sale, el agente muere. El usuario quiere poder retomar sus sesiones y no acumular sesiones nuevas. Se valoraron tres opciones y el usuario eligió la primera:
+
+1. **tmux.** Un multiplexor estándar mantiene vivo el proceso; Kiti se conecta como cliente.
+2. Un servicio propio de Kiti en segundo plano (launchd), separado de la ventana. Sin dependencias externas, pero es un cambio grande de arquitectura.
+3. Solo retomar la conversación con `claude --resume`, sin mantener vivo el proceso.
+
+## Decisión
+
+- **tmux 3.8** (Homebrew). Socket propio `tmux -L kiti`, aislado del tmux personal del usuario, con un archivo de configuración de Kiti:
+  - `status off`: la barra de tmux no aparece dentro de Kiti.
+  - `history-limit 50000`, `escape-time 0`, `mouse on` y `default-terminal xterm-256color`.
+- **Lanzar:** `tmux new-session -d -s kiti-N -c <carpeta> "<shell> -lic 'exec <cli>'"`.
+  - El CLI se guarda en la opción de sesión `@kiti_provider`.
+  - El PID del agente es el `pane_pid` (por el `exec`), y el escáner lo detecta como cualquier otro.
+- **Ver la terminal:** `PtyManager` lanza `tmux attach-session -t kiti-N` como cliente. Al cerrar la ventana o salir de Kiti, solo muere el cliente.
+- **Reabrir Kiti:** `list_terminals` lee `tmux list-panes -a` con el formato `#{session_name} #{pane_pid} #{pane_start_path} #{@kiti_provider}`.
+- **Desde otra terminal:** `tmux -L kiti attach -t kiti-N`.
+- **Sin tmux:** se mantiene el PTY directo del ADR 0007 y la sesión termina al salir.
+- **Evitar duplicados:** si la carpeta elegida ya tiene una sesión `kiti-*`, un diálogo nativo ofrece abrirla o crear otra.
+- **Continuar conversación (Claude):** si `~/.claude/projects/<carpeta codificada>/` tiene conversaciones, el diálogo ofrece `claude --continue` o empezar una nueva. La codificación sustituye por `-` todo carácter no alfanumérico, como se observó en local.
+
+## Consecuencias
+
+- Las sesiones sobreviven a Kiti, pero no a un reinicio del Mac (tmux tampoco).
+- Hay una dependencia externa; si falta, todo sigue funcionando sin persistencia.
+- Cerrar una oficina mata el proceso del agente, y la sesión tmux desaparece con él (`remain-on-exit off`).

@@ -37,6 +37,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0005](docs/decisiones/0005-integracion-clis-agentes/README.md) | Contrato con los CLIs: hooks como fuente del semáforo, 8 eventos normalizados, detección por `exe`/`argv` y fixtures |
 | [0006](docs/decisiones/0006-arquitectura-consolidada/README.md) | Arquitectura consolidada: decisiones de los conflictos, dependencias aprobadas y plan del Hito 1 |
 | [0007](docs/decisiones/0007-terminal-embebida/README.md) | Terminal embebida: lanzar agentes desde Kiti en un PTY (`portable-pty`) y verlos con xterm.js; los externos solo muestran un aviso |
+| [0008](docs/decisiones/0008-sesiones-persistentes/README.md) | Sesiones persistentes: los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar sesión o continuar conversación |
 
 ## Decisiones tomadas (no repetir)
 
