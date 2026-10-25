@@ -1,12 +1,13 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use kiti_core::application::{Runtime, Telemetry};
+use kiti_core::application::{Runtime, RuntimeHandle, Telemetry};
 use kiti_core::domain::{
     AgentId, AgentInput, DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Signal,
     Timestamp, WorkingDir,
 };
 use kiti_core::ports::{AgentKiller, DiffPublisher, KillOutcome, KillTarget};
+use kiti_core::testing::ManualClock;
 use kiti_protocol::{KillResult, PROTOCOL_VERSION, ServerMsg, Source};
 
 #[derive(Clone)]
@@ -41,6 +42,24 @@ impl DiffPublisher for TestPublisher {
     }
 }
 
+fn spawn<K: AgentKiller + Clone>(killer: K, clock: ManualClock) -> RuntimeHandle {
+    Runtime::spawn(
+        killer,
+        clock,
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "0.1.0-test",
+    )
+}
+
+fn id_of(d: &DetectedAgent) -> AgentId {
+    AgentId {
+        provider: d.provider,
+        pid: d.identity.pid,
+        start_time: d.identity.start_time,
+    }
+}
+
 fn sample_agent(pid: u32) -> DetectedAgent {
     DetectedAgent {
         provider: Provider::Claude,
@@ -56,8 +75,7 @@ fn sample_agent(pid: u32) -> DetectedAgent {
 
 #[tokio::test(start_paused = true)]
 async fn snapshot_primero_y_coalescencia_de_diffs() {
-    let telem = Arc::new(Telemetry::new());
-    let handle = Runtime::spawn(TestKiller, telem, Source::Sim, "0.1.0-test");
+    let handle = spawn(TestKiller, ManualClock::new(1000));
 
     // Registrar un agente
     let detected = sample_agent(1234);
@@ -140,8 +158,7 @@ async fn snapshot_primero_y_coalescencia_de_diffs() {
 
 #[tokio::test(start_paused = true)]
 async fn stream_de_debug_emite_metricas_a_1hz_solo_cuando_esta_activo() {
-    let telem = Arc::new(Telemetry::new());
-    let handle = Runtime::spawn(TestKiller, telem, Source::Sim, "0.1.0-test");
+    let handle = spawn(TestKiller, ManualClock::new(1000));
     let publisher = TestPublisher::new();
     let msgs = publisher.messages.clone();
 
@@ -166,8 +183,7 @@ async fn stream_de_debug_emite_metricas_a_1hz_solo_cuando_esta_activo() {
 
 #[tokio::test(start_paused = true)]
 async fn kill_agent_elimina_la_oficina() {
-    let telem = Arc::new(Telemetry::new());
-    let handle = Runtime::spawn(TestKiller, telem, Source::Sim, "0.1.0-test");
+    let handle = spawn(TestKiller, ManualClock::new(1000));
 
     let detected = sample_agent(4321);
     let agent_id = AgentId {
@@ -199,4 +215,103 @@ async fn kill_agent_elimina_la_oficina() {
             _ => panic!("esperaba Diff con removed"),
         }
     }
+}
+
+/// Killer que tarda en terminar, como el periodo de gracia real de SIGTERM → SIGKILL.
+#[derive(Clone)]
+struct SlowKiller;
+
+impl AgentKiller for SlowKiller {
+    async fn terminate(
+        &self,
+        _target: KillTarget,
+        grace: Duration,
+    ) -> Result<KillOutcome, kiti_core::ports::KillError> {
+        tokio::time::sleep(grace).await;
+        Ok(KillOutcome::Killed)
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_kill_lento_no_bloquea_el_actor() {
+    let handle = spawn(SlowKiller, ManualClock::new(1000));
+    let victim = sample_agent(1);
+    let other = sample_agent(2);
+    let (victim_id, other_id) = (id_of(&victim), id_of(&other));
+    handle.register_agent(victim, Timestamp(1000)).await;
+    handle.register_agent(other, Timestamp(1000)).await;
+    let publisher = TestPublisher::new();
+    let msgs = publisher.messages.clone();
+    handle.subscribe(publisher).await.unwrap();
+
+    let killing = tokio::spawn({
+        let handle = handle.clone();
+        async move { handle.kill_agent(victim_id).await }
+    });
+    tokio::task::yield_now().await;
+
+    // Mientras dura la gracia de 5 s, el actor sigue procesando y publicando.
+    handle
+        .apply_input(
+            other_id,
+            AgentInput::Signal(Signal::PromptSubmit),
+            Timestamp(1100),
+        )
+        .await;
+    tokio::time::advance(Duration::from_millis(150)).await;
+    tokio::task::yield_now().await;
+    assert!(!killing.is_finished());
+    assert!(msgs.lock().unwrap().iter().any(|m| matches!(
+        m,
+        ServerMsg::Diff { upserts, .. } if upserts.iter().any(|a| a.id.0 == other_id.to_string())
+    )));
+
+    tokio::time::advance(Duration::from_secs(5)).await;
+    assert_eq!(killing.await.unwrap().unwrap(), KillResult::Killed);
+    tokio::time::advance(Duration::from_millis(150)).await;
+    tokio::task::yield_now().await;
+    assert!(msgs.lock().unwrap().iter().any(|m| matches!(
+        m,
+        ServerMsg::Diff { removed, .. } if removed.iter().any(|r| r.0 == victim_id.to_string())
+    )));
+}
+
+#[tokio::test(start_paused = true)]
+async fn la_caducidad_usa_el_reloj_del_port_clock() {
+    let clock = ManualClock::new(1_000);
+    let handle = spawn(TestKiller, clock.clone());
+    let agent = sample_agent(9);
+    let id = id_of(&agent);
+    handle.register_agent(agent, Timestamp(1_000)).await;
+    handle
+        .apply_input(
+            id,
+            AgentInput::Signal(Signal::PromptSubmit),
+            Timestamp(1_000),
+        )
+        .await;
+    let publisher = TestPublisher::new();
+    let msgs = publisher.messages.clone();
+    handle.subscribe(publisher).await.unwrap();
+
+    // 29 s de reloj del dominio: sigue verde aunque pasen ticks de caducidad.
+    clock.set(30_000);
+    tokio::time::advance(Duration::from_secs(3)).await;
+    tokio::task::yield_now().await;
+    let kind_now = |msgs: &Arc<Mutex<Vec<ServerMsg>>>| {
+        msgs.lock().unwrap().iter().rev().find_map(|m| match m {
+            ServerMsg::Snapshot { agents, .. }
+            | ServerMsg::Diff {
+                upserts: agents, ..
+            } => agents.first().map(|a| a.status.kind),
+            _ => None,
+        })
+    };
+    assert_eq!(kind_now(&msgs), Some(kiti_protocol::StatusKind::Working));
+
+    // A los 30 s pasa a gris por caducidad.
+    clock.set(31_000);
+    tokio::time::advance(Duration::from_secs(3)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(kind_now(&msgs), Some(kiti_protocol::StatusKind::Idle));
 }

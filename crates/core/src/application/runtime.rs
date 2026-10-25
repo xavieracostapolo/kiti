@@ -2,6 +2,7 @@
 //!
 //! Una única tarea es dueña del `AgentRegistry` (sin contención de `Mutex`).
 //! Coalesce los cambios a ~10 Hz (máx. 1 `Diff` cada 100 ms si hay cambios).
+//! La hora siempre sale del port `Clock`; los kills corren fuera del actor.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,12 +12,14 @@ use tokio::time::{Instant, interval};
 use crate::application::projection::{project_diff, project_snapshot};
 use crate::application::telemetry::Telemetry;
 use crate::domain::{AgentId, AgentInput, AgentRegistry, DetectedAgent, StalePolicy, Timestamp};
-use crate::ports::{AgentKiller, DiffPublisher, KillOutcome, KillTarget};
+use crate::ports::{AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget};
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
 
 pub const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 pub const METRICS_INTERVAL: Duration = Duration::from_secs(1);
 pub const STALE_TICK_INTERVAL: Duration = Duration::from_secs(2);
+/// Gracia entre SIGTERM y SIGKILL (ADR 0002 §5).
+pub const KILL_GRACE: Duration = Duration::from_secs(5);
 
 pub enum RuntimeCommand {
     RegisterAgent {
@@ -35,6 +38,13 @@ pub enum RuntimeCommand {
     SetDebugStream(bool),
     KillAgent {
         id: AgentId,
+        reply: oneshot::Sender<KillResult>,
+    },
+    /// Interno: la tarea de kill terminó y devuelve el resultado al actor.
+    #[doc(hidden)]
+    KillFinished {
+        id: AgentId,
+        outcome: Result<KillOutcome, KillError>,
         reply: oneshot::Sender<KillResult>,
     },
 }
@@ -93,11 +103,14 @@ impl RuntimeHandle {
     }
 }
 
-pub struct Runtime<K: AgentKiller> {
+pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     registry: AgentRegistry,
     rx: mpsc::Receiver<RuntimeCommand>,
+    /// Para que las tareas de kill devuelvan su resultado al actor.
+    self_tx: mpsc::Sender<RuntimeCommand>,
     publisher: Option<Box<dyn DiffPublisher>>,
     killer: K,
+    clock: C,
     telemetry: Arc<Telemetry>,
     seq: u64,
     debug_stream: bool,
@@ -106,19 +119,24 @@ pub struct Runtime<K: AgentKiller> {
     stale_policy: StalePolicy,
 }
 
-impl<K: AgentKiller> Runtime<K> {
-    pub fn spawn(
+impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
+    /// Crea el actor sin arrancarlo: quien llama decide en qué runtime de tokio corre `run()`
+    /// (en la app, el de Tauri).
+    pub fn new(
         killer: K,
+        clock: C,
         telemetry: Arc<Telemetry>,
         source: Source,
         app_version: impl Into<String>,
-    ) -> RuntimeHandle {
+    ) -> (Self, RuntimeHandle) {
         let (tx, rx) = mpsc::channel(1024);
         let runtime = Self {
             registry: AgentRegistry::new(),
             rx,
+            self_tx: tx.clone(),
             publisher: None,
             killer,
+            clock,
             telemetry: Arc::clone(&telemetry),
             seq: 0,
             debug_stream: false,
@@ -126,13 +144,23 @@ impl<K: AgentKiller> Runtime<K> {
             app_version: app_version.into(),
             stale_policy: StalePolicy::default(),
         };
-
-        tokio::spawn(runtime.run());
-
-        RuntimeHandle { tx, telemetry }
+        (runtime, RuntimeHandle { tx, telemetry })
     }
 
-    async fn run(mut self) {
+    /// Atajo para tests y binarios que ya están dentro de un runtime de tokio.
+    pub fn spawn(
+        killer: K,
+        clock: C,
+        telemetry: Arc<Telemetry>,
+        source: Source,
+        app_version: impl Into<String>,
+    ) -> RuntimeHandle {
+        let (runtime, handle) = Self::new(killer, clock, telemetry, source, app_version);
+        tokio::spawn(runtime.run());
+        handle
+    }
+
+    pub async fn run(mut self) {
         let mut flush_timer = interval(FLUSH_INTERVAL);
         let mut metrics_timer = interval(METRICS_INTERVAL);
         let mut stale_timer = interval(STALE_TICK_INTERVAL);
@@ -140,55 +168,51 @@ impl<K: AgentKiller> Runtime<K> {
         loop {
             tokio::select! {
                 cmd = self.rx.recv() => {
-                    match cmd {
-                        Some(RuntimeCommand::RegisterAgent { detected, now }) => {
-                            self.registry.register(detected, now);
-                            self.telemetry.record_event();
-                        }
-                        Some(RuntimeCommand::ApplyInput { id, input, now }) => {
-                            self.registry.apply(&id, &input, now);
-                            self.telemetry.record_event();
-                        }
-                        Some(RuntimeCommand::Subscribe { mut publisher, reply }) => {
-                            // Al suscribirse enviamos el Snapshot inicial con seq = 0
-                            self.seq = 0;
-                            let snapshot_agents = self.registry.snapshot();
-                            let msg = project_snapshot(self.seq, &snapshot_agents);
-                            publisher.publish(msg);
-                            self.publisher = Some(publisher);
-                            let _ = reply.send(Hello {
-                                protocol_version: PROTOCOL_VERSION,
-                                app_version: self.app_version.clone(),
-                                source: self.source,
-                            });
-                        }
-                        Some(RuntimeCommand::SetDebugStream(on)) => {
-                            self.debug_stream = on;
-                        }
-                        Some(RuntimeCommand::KillAgent { id, reply }) => {
-                            let result = self.handle_kill(id).await;
-                            let _ = reply.send(result);
-                        }
-                        None => break,
-                    }
+                    let Some(cmd) = cmd else { break };
+                    self.handle(cmd);
                 }
-                _ = flush_timer.tick() => {
-                    self.flush_diff();
-                }
+                _ = flush_timer.tick() => self.flush_diff(),
                 _ = metrics_timer.tick() => {
                     if self.debug_stream {
                         self.send_metrics();
                     }
                 }
                 _ = stale_timer.tick() => {
-                    let now = Timestamp(
-                        std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as u64,
-                    );
+                    let now = self.clock.now();
                     self.registry.tick(&self.stale_policy, now);
                 }
+            }
+        }
+    }
+
+    fn handle(&mut self, cmd: RuntimeCommand) {
+        match cmd {
+            RuntimeCommand::RegisterAgent { detected, now } => {
+                self.registry.register(detected, now);
+                self.telemetry.record_event();
+            }
+            RuntimeCommand::ApplyInput { id, input, now } => {
+                self.registry.apply(&id, &input, now);
+                self.telemetry.record_event();
+            }
+            RuntimeCommand::Subscribe {
+                mut publisher,
+                reply,
+            } => {
+                self.seq = 0;
+                let snapshot_agents = self.registry.snapshot();
+                publisher.publish(project_snapshot(self.seq, &snapshot_agents));
+                self.publisher = Some(publisher);
+                let _ = reply.send(Hello {
+                    protocol_version: PROTOCOL_VERSION,
+                    app_version: self.app_version.clone(),
+                    source: self.source,
+                });
+            }
+            RuntimeCommand::SetDebugStream(on) => self.debug_stream = on,
+            RuntimeCommand::KillAgent { id, reply } => self.start_kill(id, reply),
+            RuntimeCommand::KillFinished { id, outcome, reply } => {
+                let _ = reply.send(self.finish_kill(id, outcome));
             }
         }
     }
@@ -201,16 +225,9 @@ impl<K: AgentKiller> Runtime<K> {
         if diff.is_empty() {
             return;
         }
-
         self.seq += 1;
-        let ingest_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis() as u64;
-
         let start_send = Instant::now();
-        let msg = project_diff(self.seq, ingest_ms, diff);
-        publisher.publish(msg);
+        publisher.publish(project_diff(self.seq, self.clock.now().ms(), diff));
         self.telemetry.record_flush();
         self.telemetry
             .record_publish_latency_ms(start_send.elapsed().as_millis() as u64);
@@ -226,25 +243,34 @@ impl<K: AgentKiller> Runtime<K> {
         publisher.publish(ServerMsg::Metrics(metrics));
     }
 
-    async fn handle_kill(&mut self, id: AgentId) -> KillResult {
-        let agent = match self.registry.get(&id) {
-            Some(a) => a,
-            None => return KillResult::NotFound,
+    /// Marca la salida como esperada y termina el proceso en otra tarea: la gracia de 5 s
+    /// no puede congelar el actor (ni los diffs que ve la UI).
+    fn start_kill(&mut self, id: AgentId, reply: oneshot::Sender<KillResult>) {
+        let Some(agent) = self.registry.get(&id) else {
+            let _ = reply.send(KillResult::NotFound);
+            return;
         };
         let target = KillTarget {
             id,
             identity: *agent.identity(),
         };
-
-        // Marcamos KillRequested en el agente
         self.registry
-            .apply(&id, &AgentInput::KillRequested, Timestamp(0));
+            .apply(&id, &AgentInput::KillRequested, self.clock.now());
+        let killer = self.killer.clone();
+        let back = self.self_tx.clone();
+        tokio::spawn(async move {
+            let outcome = killer.terminate(target, KILL_GRACE).await;
+            let _ = back
+                .send(RuntimeCommand::KillFinished { id, outcome, reply })
+                .await;
+        });
+    }
 
-        match self.killer.terminate(target, Duration::from_secs(5)).await {
+    fn finish_kill(&mut self, id: AgentId, outcome: Result<KillOutcome, KillError>) -> KillResult {
+        match outcome {
             Ok(KillOutcome::Killed) => {
-                // Notificamos que el proceso se fue
                 self.registry
-                    .apply(&id, &AgentInput::ProcessGone, Timestamp(0));
+                    .apply(&id, &AgentInput::ProcessGone, self.clock.now());
                 KillResult::Killed
             }
             Ok(KillOutcome::Cancelled) => KillResult::Cancelled,

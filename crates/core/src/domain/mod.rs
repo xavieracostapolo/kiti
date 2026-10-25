@@ -12,8 +12,8 @@ mod status;
 pub use agent::{Agent, AgentInput, DetectedAgent, Events};
 pub use events::DomainEvent;
 pub use ids::{
-    AgentId, Pid, ProcessIdentity, ProcessStartTime, Provider, Timestamp, ToolName, ToolUseKey,
-    WorkingDir,
+    AgentId, ParseAgentIdError, Pid, ProcessIdentity, ProcessStartTime, Provider, Timestamp,
+    ToolName, ToolUseKey, WorkingDir,
 };
 pub use registry::{AgentRegistry, RegistryDiff};
 pub use signal::{Signal, ToolOutcome};
