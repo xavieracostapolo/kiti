@@ -253,7 +253,7 @@ Lectura:
 
 - **CPU en reposo:** cumple (< 1 %).
 - **RAM:** la estimación de 100–150 MB no era realista para WKWebView con WebGL. La base sin agentes ya son 190 MB y el core en Rust ocupa solo 32 MB. Cada agente cuesta ~0,5–1 MB; el proceso GPU pasa de 17 a ~80 MB mientras hay animación.
-- **Propuesta de presupuesto revisado:** ≤ 220 MB en reposo y ≤ 320 MB activa con 50 agentes (medido: 197 y 288 MB), a confirmar por el usuario.
+- **Presupuesto revisado, aceptado por el usuario (2026-10-24):** ≤ 220 MB en reposo y ≤ 320 MB activa con 50 agentes (medido: 197 y 288 MB).
 - **Palancas si hace falta bajar:** destruir el renderer con la ventana oculta (Hito 7, bandeja), canvas a resolución 1 en lugar de 2 (texto menos nítido) y atlas de texturas más pequeños.
 - Pendiente de la ficha: `core.ingest_to_send_ms` como histograma propio (hoy se mide el tiempo de publicación) y `ui.resync_total`.
 

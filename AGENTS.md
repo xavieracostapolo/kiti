@@ -16,16 +16,15 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 2, "Shell Tauri y core con simulador", implementado en la rama `hito-2-tauri-core` (2026-10-24), pendiente de que el usuario pruebe la app (`mise run app:dev`) y confirme el presupuesto de RAM revisado. Hito 1 cerrado y fusionado en `main`.
+- **Fase:** Hito 3, "Procesos reales", en curso en la rama `hito-3-procesos-reales`. Hitos 1 y 2 cerrados y fusionados en `main` (2026-10-24); el usuario aceptó el presupuesto de RAM revisado.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
   - La oficina se dibuja de forma procedural (`world/officeTemplate.ts`); los tilesheets de Kenney, el `.tmj` de Tiled y `domain/tiles` quedan pendientes.
   - Las capturas usan `steps=357` en lugar de `steps=120`: con `seed=42` es el primer paso en el que conviven los cinco colores.
   - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
-  - RAM en reposo ~200 MB frente a la estimación de 100–150 MB: la base de WKWebView + WebGL ocupa ~158 MB. Ver el ADR 0006.
   - Falta verificar a mano el diálogo nativo de cierre (Playwright no lo controla).
-- **Siguiente paso:** cerrar el Hito 2 con el visto bueno del usuario y pasar al Hito 3 (procesos reales).
+- **Siguiente paso:** Hito 3, procesos reales (ver [Roadmap](#roadmap)).
 
 ## Índice de ADRs
 
@@ -143,7 +142,7 @@ Verificado en el [ADR 0005](docs/decisiones/0005-integracion-clis-agentes/README
 
 Objetivo: con 20 agentes activos, la app debe ir "como si nada".
 
-- **Reposo:** CPU por debajo del 1 % (medido: 0,06 %). RAM medida en el Hito 2: 197 MB en reposo y 274 MB activa con 20 agentes (288 MB con 50), de los que ~158 MB son la base de WebKit + WebGL; cada agente añade ~0,5–1 MB.
+- **Reposo:** CPU por debajo del 1 % (medido: 0,06 %). RAM: presupuesto ≤ 220 MB en reposo y ≤ 320 MB activa con 50 agentes (medido en el Hito 2: 197, 274 con 20 y 288 MB), de los que ~158 MB son la base de WebKit + WebGL; cada agente añade ~0,5–1 MB.
 - **Backend:**
   - Los JSONL se leen de forma incremental desde el último offset. Nunca se releen completos.
   - `sysinfo` refresca solo cmd, cwd, exe y usuario, con `OnlyIfNotSet`.
