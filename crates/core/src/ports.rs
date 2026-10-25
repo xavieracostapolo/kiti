@@ -2,9 +2,26 @@
 //!
 //! Despacho estático con genéricos y `async fn` nativo. Sin `async-trait`.
 
-use crate::domain::{AgentId, ProcessIdentity, ProcessSnapshot, Timestamp};
+use crate::domain::{AgentId, AlertKind, ProcessIdentity, ProcessSnapshot, Provider, Timestamp};
 use kiti_protocol::ServerMsg;
 use std::time::Duration;
+
+/// Un aviso listo para mostrar (ADR 0010). Lleva el título de la conversación, nunca el pedido.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlertNotice {
+    pub kind: AlertKind,
+    pub agent: AgentId,
+    pub provider: Provider,
+    pub project: String,
+    pub cwd: String,
+    pub title: Option<String>,
+}
+
+/// Muestra los avisos (notificaciones del sistema en la app). Decide si molestar o no, por
+/// ejemplo si la ventana ya está al frente.
+pub trait AlertSink: Send + 'static {
+    fn alert(&mut self, notice: AlertNotice);
+}
 
 /// Proyecto (raíz git o carpeta) de un `cwd` (ADR 0009). Puede consultar el disco y guardar
 /// en caché: se llama al proyectar cada agente.

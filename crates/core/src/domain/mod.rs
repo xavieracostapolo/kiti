@@ -2,6 +2,7 @@
 //! (el tiempo llega como argumento) y sin aleatoriedad. No depende de `kiti-protocol`.
 
 mod agent;
+mod alerts;
 mod events;
 mod ids;
 mod process;
@@ -12,6 +13,7 @@ mod stale;
 mod status;
 
 pub use agent::{Agent, AgentInput, DetectedAgent, Events, SessionActivity};
+pub use alerts::{Alert, AlertKind, AlertPolicy};
 pub use events::DomainEvent;
 pub use ids::{
     AgentId, ParseAgentIdError, Pid, ProcessIdentity, ProcessStartTime, Provider, SessionId,

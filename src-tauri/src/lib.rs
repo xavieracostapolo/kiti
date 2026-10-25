@@ -11,12 +11,12 @@ use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pum
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
 use kiti_core::adapters::{GitProjects, SysinfoScanner, SystemClock, UnixKiller};
-use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, run_scanner};
+use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, alert_text, run_scanner};
 use kiti_core::domain::{AgentId, Timestamp};
 use kiti_core::ingestion::claude::{has_conversations, is_session_id};
 use kiti_core::ports::{
-    AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, ProjectResolver,
-    SelfMonitor,
+    AgentKiller, AlertNotice, AlertSink, Clock, DiffPublisher, KillError, KillOutcome, KillTarget,
+    ProjectResolver, SelfMonitor,
 };
 use kiti_core::sim::{SimFleet, SimSpec, TICK_MS};
 use kiti_protocol::{
@@ -32,6 +32,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::{mpsc, oneshot};
 use tracing::{debug, error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -741,6 +742,7 @@ async fn run_sim(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let guard = init_tracing(app.handle());
             app.manage(LogGuard(guard.unwrap_or_else(|| {
@@ -791,7 +793,10 @@ pub fn run() {
                     );
                     let runtime = runtime
                         .with_monitor(monitor)
-                        .with_projects(GitProjects::default());
+                        .with_projects(GitProjects::default())
+                        .with_alerts(NativeAlerts {
+                            app: app.handle().clone(),
+                        });
                     tauri::async_runtime::spawn(runtime.run());
                     let home = app.path().home_dir().ok();
                     tauri::async_runtime::spawn(run_scanner(
@@ -897,6 +902,38 @@ fn show_window(app: &AppHandle) {
 }
 
 /// Icono en la barra de menú con el resumen del semáforo, actualizado cada segundo.
+/// Avisos como notificaciones de macOS (ADR 0010). Si la ventana de Kiti está al frente no
+/// molesta: el usuario ya lo ve en el mapa.
+struct NativeAlerts {
+    app: AppHandle,
+}
+
+impl AlertSink for NativeAlerts {
+    fn alert(&mut self, notice: AlertNotice) {
+        let focused = self
+            .app
+            .get_webview_window("main")
+            .and_then(|w| w.is_focused().ok())
+            .unwrap_or(false);
+        if focused {
+            debug!(event = "alert.suppressed", agent_id = %notice.agent, reason = "focused");
+            return;
+        }
+        let (title, body) = alert_text(&notice);
+        match self
+            .app
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+        {
+            Ok(()) => info!(event = "alert.sent", agent_id = %notice.agent, kind = ?notice.kind),
+            Err(e) => warn!(event = "alert.error", error = %e),
+        }
+    }
+}
+
 fn start_tray(app: &AppHandle, runtime: RuntimeHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Mostrar Kiti", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Salir de Kiti", true, None::<&str>)?;

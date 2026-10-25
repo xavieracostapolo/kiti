@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 11 fusionados en `main`. El último, "Proyectos y conversaciones", está en el [ADR 0009](docs/decisiones/0009-proyectos-conversaciones/README.md).
+- **Fase:** Hito 12, "Avisos", en la rama `hito-12-avisos` ([ADR 0010](docs/decisiones/0010-avisos/README.md)). Hitos 1 a 11 fusionados en `main`.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -39,6 +39,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0007](docs/decisiones/0007-terminal-embebida/README.md) | Terminal embebida: lanzar agentes desde Kiti en un PTY (`portable-pty`) y verlos con xterm.js; los externos solo muestran un aviso |
 | [0008](docs/decisiones/0008-sesiones-persistentes/README.md) | Sesiones persistentes: los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar sesión o continuar conversación |
 | [0009](docs/decisiones/0009-proyectos-conversaciones/README.md) | Zonas por proyecto (repo git), conversaciones cerradas para retomar, y título, actividad y último pedido en cada oficina |
+| [0010](docs/decisiones/0010-avisos/README.md) | Notificaciones de macOS cuando un agente pide permiso, termina un turno largo, falla o se cae (solo si Kiti no está al frente) |
 
 ## Decisiones tomadas (no repetir)
 
@@ -173,6 +174,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **9. Oficina primero:** las sesiones lanzadas aparecen como oficina; la terminal se abre desde la oficina sin tapar el resto; insignia `>_`.
 - [x] **10. Sesiones persistentes:** los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar la sesión de una carpeta o continuar la última conversación de Claude.
 - [x] **11. Proyectos y conversaciones:** zonas por proyecto (raíz git o carpeta), conversaciones cerradas de los últimos 7 días como oficinas apagadas que se retoman con `claude --resume`, y título, actividad y último pedido en cada oficina.
+- [x] **12. Avisos:** notificaciones de macOS al pedir permiso, terminar un turno largo, fallar o caerse, solo con Kiti en segundo plano.
 - [ ] **Después:** soporte para Windows, enfocar las pestañas de Ghostty de los agentes externos (AppleScript) y mejora visual con Kenney.
 
 ## Pendientes de verificar

@@ -14,14 +14,14 @@ use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Pid, Provider, StalePolicy,
-    Timestamp,
+    AgentId, AgentInput, AgentRegistry, AlertPolicy, DetectedAgent, DomainEvent, Pid, Provider,
+    StalePolicy, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
 use crate::ports::{
-    AgentKiller, Clock, CwdProjects, DiffPublisher, KillError, KillOutcome, KillTarget,
-    ProjectResolver, SelfMonitor,
+    AgentKiller, AlertNotice, AlertSink, Clock, CwdProjects, DiffPublisher, KillError, KillOutcome,
+    KillTarget, ProjectResolver, SelfMonitor,
 };
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
 use tracing::{debug, info};
@@ -234,6 +234,9 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     app_version: String,
     stale_policy: StalePolicy,
     projects: Box<dyn ProjectResolver>,
+    /// Qué cambios avisan al usuario (ADR 0010) y quién los muestra. Sin sink, no hay avisos.
+    alert_policy: AlertPolicy,
+    alerts: Option<Box<dyn AlertSink>>,
 }
 
 impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
@@ -263,6 +266,8 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             app_version: app_version.into(),
             stale_policy: StalePolicy::default(),
             projects: Box::new(CwdProjects),
+            alert_policy: AlertPolicy::default(),
+            alerts: None,
         };
         (runtime, RuntimeHandle { tx, telemetry })
     }
@@ -277,6 +282,35 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     pub fn with_projects(mut self, projects: impl ProjectResolver) -> Self {
         self.projects = Box::new(projects);
         self
+    }
+
+    /// Avisos al usuario (ADR 0010). En el simulador no se instala: serían ruido.
+    pub fn with_alerts(mut self, sink: impl AlertSink) -> Self {
+        self.alerts = Some(Box::new(sink));
+        self
+    }
+
+    /// Pasa los eventos por la política de avisos y entrega los que tocan.
+    fn notify(&mut self, events: &[DomainEvent], now: Timestamp) {
+        let Some(sink) = self.alerts.as_mut() else {
+            return;
+        };
+        for alert in self.alert_policy.observe(events, now) {
+            let Some(agent) = self.registry.get(&alert.id) else {
+                continue;
+            };
+            let cwd = agent.cwd().as_str().to_owned();
+            let notice = AlertNotice {
+                kind: alert.kind,
+                agent: alert.id,
+                provider: alert.id.provider,
+                project: self.projects.project_of(&cwd),
+                cwd,
+                title: agent.title().map(str::to_owned),
+            };
+            info!(event = "alert.raised", agent_id = %alert.id, kind = ?alert.kind);
+            sink.alert(notice);
+        }
     }
 
     /// Atajo para tests y binarios que ya están dentro de un runtime de tokio.
@@ -311,7 +345,8 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 }
                 _ = stale_timer.tick() => {
                     let now = self.clock.now();
-                    self.registry.tick(&self.stale_policy, now);
+                    let events = self.registry.tick(&self.stale_policy, now);
+                    self.notify(&events, now);
                 }
             }
         }
@@ -352,6 +387,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     }
                 }
                 log_status_changes(&events);
+                self.notify(&events, now);
                 for ev in events {
                     match ev {
                         DomainEvent::AgentAppeared { id } => {
@@ -382,6 +418,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     now,
                 );
                 log_status_changes(&events);
+                self.notify(&events, now);
                 self.telemetry.record_event();
                 self.oldest_unpublished_hook.get_or_insert(received);
             }
