@@ -284,6 +284,23 @@ Lectura:
 - **Kill real:** `UnixKiller` probado contra procesos lanzados por los tests (SIGTERM, SIGKILL tras la gracia, identidad distinta → no envía señales, PID 1 y propio rechazados). Falta probar a mano el diálogo nativo con un agente real.
 - **Fallo encontrado y corregido:** el reporte `UiMetrics` de cada 2 s había quedado dentro de la rama de resincronización y nunca se enviaba. Ahora está en `telemetry/report.ts`, con su test.
 
+## Plan del Hito 4: "Hooks de Claude Code"
+
+**Alcance:** ACL de Claude (payload → `Signal`), correlación `session_id` ↔ agente con `~/.claude/sessions/<pid>.json`, `SessionFile` (`busy`/`idle`) en el reducer, HookServer (feature `hooks`), token `0600`, instalador de hooks en `~/.claude/settings.json` con desinstalación, y experimento E1 (con permiso del usuario, 2026-10-24).
+
+**Decisión:** `sessions/<pid>.json` se lee en cada escaneo (3 s) en lugar de vigilarlo con `notify`. Son pocos archivos pequeños, los hooks son la fuente principal y ese archivo solo cubre la interrupción con Esc. Se reevalúa si la latencia de esa caída a gris molesta.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿Cuánto tarda un hook en verse? | `hook.received` → `Diff` (`core.hook_to_publish_ms`) | p95 < 120 ms |
+| ¿Se rechazan peticiones ajenas? | `hook.rejected` con `reason` (`host`, `origin`, `token`, `content_type`, `size`) | Cualquier rechazo queda en el log |
+| ¿Cada sesión encuentra su oficina? | `session.linked` / `session.unlinked` con la fuente (`session_file`, `cwd`) | 0 sesiones sin oficina tras 5 s |
+| ¿Se pierden eventos? | `hook.dropped` (canal lleno) | 0 |
+| ¿El instalador respeta lo ajeno? | Tests con settings reales: hooks de otros, orden de claves y backup | Byte a byte igual salvo lo de Kiti |
+| ¿Molesta con Kiti cerrada? | E1 | Sin avisos en el TUI de Claude |
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.

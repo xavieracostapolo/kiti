@@ -5,9 +5,10 @@
 
 use std::collections::HashMap;
 
-use super::agent::{Agent, AgentInput, DetectedAgent, Events};
+use super::agent::{Agent, AgentInput, DetectedAgent, Events, SessionActivity};
 use super::events::DomainEvent;
-use super::ids::{AgentId, Timestamp};
+use super::ids::{AgentId, Pid, Provider, SessionId, Timestamp};
+use super::signal::Signal;
 use super::stale::StalePolicy;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -22,8 +23,24 @@ impl RegistryDiff {
     }
 }
 
+/// Cuánto se retiene un hook cuya sesión aún no tiene oficina (ADR 0002 §2, Correlator).
+const PENDING_TTL_MS: u64 = 5_000;
+const PENDING_MAX: usize = 64;
+
+struct Pending {
+    first_at: Timestamp,
+    signals: Vec<(Signal, Timestamp)>,
+}
+
 pub struct AgentRegistry {
     agents: HashMap<AgentId, Agent>,
+    /// Correlator: `session_id` → agente.
+    sessions: HashMap<SessionId, AgentId>,
+    /// Hooks de sesiones aún sin enlazar.
+    pending: HashMap<SessionId, Pending>,
+    /// Último `status` visto en `sessions/<pid>.json` por agente: solo cuentan los cambios.
+    file_status: HashMap<AgentId, SessionActivity>,
+    dropped_hooks: u64,
     last_sent_revisions: HashMap<AgentId, u64>,
     removed_since_last_diff: Vec<AgentId>,
 }
@@ -32,6 +49,10 @@ impl AgentRegistry {
     pub fn new() -> Self {
         Self {
             agents: HashMap::new(),
+            sessions: HashMap::new(),
+            pending: HashMap::new(),
+            file_status: HashMap::new(),
+            dropped_hooks: 0,
             last_sent_revisions: HashMap::new(),
             removed_since_last_diff: Vec::new(),
         }
@@ -102,8 +123,117 @@ impl AgentRegistry {
         events
     }
 
+    /// Hooks descartados porque su sesión no encontró oficina en 5 s.
+    pub fn dropped_hooks(&self) -> u64 {
+        self.dropped_hooks
+    }
+
+    fn live_agent(&self, provider: Provider, pid: Pid) -> Option<AgentId> {
+        self.agents
+            .values()
+            .find(|a| !a.is_dead() && a.id().provider == provider && a.id().pid == pid)
+            .map(Agent::id)
+    }
+
+    /// Enlaza la sesión con su agente (y desenlaza otras sesiones del mismo proceso, que tras
+    /// un `/clear` ya no volverán), y aplica los hooks que esperaban.
+    fn link(&mut self, session: &SessionId, id: AgentId) -> Events {
+        self.sessions.retain(|s, a| *a != id || s == session);
+        self.sessions.insert(session.clone(), id);
+        let mut events = Events::new();
+        if let Some(p) = self.pending.remove(session) {
+            for (signal, at) in p.signals {
+                events.extend(self.apply(&id, &AgentInput::Signal(signal), at));
+            }
+        }
+        events
+    }
+
+    /// Un hook ya traducido por la ACL. Orden de enlace: sesión conocida, luego un único agente
+    /// del mismo provider y `cwd` sin sesión; si no, se retiene hasta 5 s.
+    pub fn hook(
+        &mut self,
+        provider: Provider,
+        session: &SessionId,
+        cwd: &str,
+        signal: &Signal,
+        now: Timestamp,
+    ) -> Events {
+        if let Some(id) = self.sessions.get(session).copied() {
+            return self.apply(&id, &AgentInput::Signal(signal.clone()), now);
+        }
+        let linked: std::collections::HashSet<AgentId> = self.sessions.values().copied().collect();
+        let mut candidates = self.agents.values().filter(|a| {
+            !a.is_dead()
+                && a.id().provider == provider
+                && a.cwd().as_str() == cwd
+                && !linked.contains(&a.id())
+        });
+        if let (Some(only), None) = (candidates.next(), candidates.next()) {
+            let id = only.id();
+            let mut events = self.link(session, id);
+            events.extend(self.apply(&id, &AgentInput::Signal(signal.clone()), now));
+            return events;
+        }
+        let p = self.pending.entry(session.clone()).or_insert(Pending {
+            first_at: now,
+            signals: Vec::new(),
+        });
+        if p.signals.len() < PENDING_MAX {
+            p.signals.push((signal.clone(), now));
+        } else {
+            self.dropped_hooks += 1;
+        }
+        Events::new()
+    }
+
+    /// `~/.claude/sessions/<pid>.json`: enlaza `pid` ↔ `session_id` y aplica su `status` solo si
+    /// cambió y su `updatedAt` es posterior al último evento del agente. El archivo se lee cada
+    /// escaneo y puede ir por detrás de los hooks: un `idle` atrasado no debe apagar un verde.
+    pub fn session_file(
+        &mut self,
+        provider: Provider,
+        pid: Pid,
+        session: &SessionId,
+        activity: Option<(SessionActivity, Timestamp)>,
+        now: Timestamp,
+    ) -> Events {
+        let Some(id) = self.live_agent(provider, pid) else {
+            return Events::new();
+        };
+        let mut events = if self.sessions.get(session) == Some(&id) {
+            Events::new()
+        } else {
+            self.link(session, id)
+        };
+        if let Some((activity, updated_at)) = activity {
+            let changed = self.file_status.insert(id, activity) != Some(activity);
+            let newer = self
+                .agents
+                .get(&id)
+                .is_some_and(|a| updated_at > a.last_event_at());
+            if changed && newer {
+                events.extend(self.apply(&id, &AgentInput::SessionFile(activity), now));
+            }
+        }
+        events
+    }
+
+    fn expire_pending(&mut self, now: Timestamp) {
+        let mut dropped = 0;
+        self.pending.retain(|_, p| {
+            let keep = now.0.saturating_sub(p.first_at.0) < PENDING_TTL_MS;
+            if !keep {
+                dropped += p.signals.len() as u64;
+            }
+            keep
+        });
+        self.dropped_hooks += dropped;
+    }
+
     /// Pasa el Tick por todos los agentes registrados.
     pub fn tick(&mut self, policy: &StalePolicy, now: Timestamp) -> Events {
+        self.expire_pending(now);
         let mut all_events = Events::new();
         let ids: Vec<AgentId> = self.agents.keys().copied().collect();
         let input = AgentInput::Tick(*policy);
@@ -127,6 +257,8 @@ impl AgentRegistry {
             }
         }
         if to_remove {
+            self.sessions.retain(|_, a| a != id);
+            self.file_status.remove(id);
             self.agents.remove(id);
             self.last_sent_revisions.remove(id);
             self.removed_since_last_diff.push(*id);
@@ -301,5 +433,175 @@ mod tests {
         reg.reconcile(&[], Timestamp(20));
         assert!(reg.get(&id_of(&a)).is_none());
         assert_eq!(reg.flush_diff().removed, vec![id_of(&a)]);
+    }
+
+    fn claude_at(pid: u32, cwd: &str) -> DetectedAgent {
+        DetectedAgent {
+            cwd: WorkingDir::new(cwd),
+            ..sample_detected(pid)
+        }
+    }
+
+    fn sid(s: &str) -> SessionId {
+        SessionId::new(s)
+    }
+
+    fn kind_of(reg: &AgentRegistry, d: &DetectedAgent) -> Option<StatusKind> {
+        reg.get(&id_of(d)).map(|a| a.status().kind)
+    }
+
+    #[test]
+    fn un_hook_llega_a_su_oficina_por_el_archivo_de_sesion() {
+        let mut reg = AgentRegistry::new();
+        let (a, b) = (claude_at(1, "/w/x"), claude_at(2, "/w/x"));
+        reg.reconcile(&[a.clone(), b.clone()], Timestamp(10));
+        reg.session_file(Provider::Claude, Pid(2), &sid("s-b"), None, Timestamp(11));
+
+        reg.hook(
+            Provider::Claude,
+            &sid("s-b"),
+            "/w/x",
+            &Signal::PromptSubmit,
+            Timestamp(12),
+        );
+        assert_eq!(kind_of(&reg, &b), Some(StatusKind::Working));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn sin_archivo_enlaza_por_cwd_si_hay_un_unico_candidato() {
+        let mut reg = AgentRegistry::new();
+        let (a, b) = (claude_at(1, "/w/uno"), claude_at(2, "/w/dos"));
+        reg.reconcile(&[a.clone(), b.clone()], Timestamp(10));
+        reg.hook(
+            Provider::Claude,
+            &sid("s"),
+            "/w/dos",
+            &Signal::PromptSubmit,
+            Timestamp(11),
+        );
+        assert_eq!(kind_of(&reg, &b), Some(StatusKind::Working));
+        // Desde ahí la sesión ya está enlazada.
+        reg.hook(
+            Provider::Claude,
+            &sid("s"),
+            "/otro",
+            &Signal::Stop,
+            Timestamp(12),
+        );
+        assert_eq!(kind_of(&reg, &b), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn con_varios_candidatos_retiene_el_hook_hasta_saber_de_quien_es() {
+        let mut reg = AgentRegistry::new();
+        let (a, b) = (claude_at(1, "/w/x"), claude_at(2, "/w/x"));
+        reg.reconcile(&[a.clone(), b.clone()], Timestamp(10));
+        reg.hook(
+            Provider::Claude,
+            &sid("s-a"),
+            "/w/x",
+            &Signal::PromptSubmit,
+            Timestamp(11),
+        );
+        assert_eq!(
+            kind_of(&reg, &a),
+            Some(StatusKind::Idle),
+            "ambiguo: no adivina"
+        );
+        // Llega el archivo de sesión: se aplican los hooks retenidos.
+        reg.session_file(Provider::Claude, Pid(1), &sid("s-a"), None, Timestamp(12));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Working));
+        assert_eq!(kind_of(&reg, &b), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn los_hooks_retenidos_caducan_a_los_5_s() {
+        let mut reg = AgentRegistry::new();
+        let (a, b) = (claude_at(1, "/w/x"), claude_at(2, "/w/x"));
+        reg.reconcile(&[a.clone(), b], Timestamp(10));
+        reg.hook(
+            Provider::Claude,
+            &sid("s-a"),
+            "/w/x",
+            &Signal::PromptSubmit,
+            Timestamp(11),
+        );
+        reg.tick(&StalePolicy::default(), Timestamp(5_100));
+        reg.session_file(
+            Provider::Claude,
+            Pid(1),
+            &sid("s-a"),
+            None,
+            Timestamp(5_200),
+        );
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Idle));
+        assert_eq!(reg.dropped_hooks(), 1);
+    }
+
+    #[test]
+    fn el_archivo_de_sesion_aplica_busy_e_idle_cuando_cambian() {
+        let mut reg = AgentRegistry::new();
+        let a = claude_at(1, "/w/x");
+        reg.reconcile(std::slice::from_ref(&a), Timestamp(10));
+        let busy = Some((SessionActivity::Busy, Timestamp(11)));
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), busy, Timestamp(11));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Working));
+        let idle = Some((SessionActivity::Idle, Timestamp(12)));
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), idle, Timestamp(12));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn un_archivo_de_sesion_atrasado_no_pisa_un_hook_mas_reciente() {
+        let mut reg = AgentRegistry::new();
+        let a = claude_at(1, "/w/x");
+        reg.reconcile(std::slice::from_ref(&a), Timestamp(10));
+        let idle = Some((SessionActivity::Idle, Timestamp(10)));
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), idle, Timestamp(10));
+        // El prompt llega por hook; el archivo aún dice idle con su updatedAt viejo.
+        reg.hook(
+            Provider::Claude,
+            &sid("s"),
+            "/w/x",
+            &Signal::PromptSubmit,
+            Timestamp(20),
+        );
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), idle, Timestamp(23));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Working));
+        // Mismo status repetido con un updatedAt nuevo tampoco cuenta: no es un cambio.
+        let idle_later = Some((SessionActivity::Idle, Timestamp(30)));
+        reg.session_file(
+            Provider::Claude,
+            Pid(1),
+            &sid("s"),
+            idle_later,
+            Timestamp(31),
+        );
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Working));
+        // Un cambio real posterior al hook sí se aplica (Esc: busy → idle).
+        let busy = Some((SessionActivity::Busy, Timestamp(40)));
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), busy, Timestamp(41));
+        let idle_esc = Some((SessionActivity::Idle, Timestamp(50)));
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), idle_esc, Timestamp(51));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn clear_cambia_la_sesion_del_mismo_proceso() {
+        let mut reg = AgentRegistry::new();
+        let a = claude_at(1, "/w/x");
+        let b = claude_at(2, "/w/x");
+        reg.reconcile(&[a.clone(), b.clone()], Timestamp(10));
+        reg.session_file(Provider::Claude, Pid(1), &sid("vieja"), None, Timestamp(11));
+        reg.session_file(Provider::Claude, Pid(1), &sid("nueva"), None, Timestamp(12));
+        reg.hook(
+            Provider::Claude,
+            &sid("nueva"),
+            "/w/x",
+            &Signal::PromptSubmit,
+            Timestamp(13),
+        );
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Working));
     }
 }

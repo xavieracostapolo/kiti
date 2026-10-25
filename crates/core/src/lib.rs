@@ -6,6 +6,7 @@
 pub mod adapters;
 pub mod application;
 pub mod domain;
+pub mod ingestion;
 pub mod ports;
 
 #[cfg(feature = "testing")]

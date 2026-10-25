@@ -144,6 +144,10 @@ string_value!(
     /// Directorio de trabajo del agente.
     WorkingDir
 );
+string_value!(
+    /// Conversación del CLI (`session_id`). Un mismo proceso puede encadenar varias (`/clear`).
+    SessionId
+);
 
 #[cfg(test)]
 mod tests {
