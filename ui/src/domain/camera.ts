@@ -47,10 +47,7 @@ export function panBy(cam: Camera, dx: number, dy: number): Camera {
 
 /** Encuadra `rect` completo con `padding` px de pantalla a cada lado. */
 export function fitRect(rect: Rect, vp: Viewport, padding: number, limits: Limits): Camera {
-  const k = clampK(
-    Math.min(vp.w / (rect.w + 2 * padding), vp.h / (rect.h + 2 * padding)),
-    limits,
-  );
+  const k = clampK(Math.min(vp.w / (rect.w + 2 * padding), vp.h / (rect.h + 2 * padding)), limits);
   return { x: rect.x + rect.w / 2, y: rect.y + rect.h / 2, k };
 }
 

@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "tickMs": 100,
+  "epochMs": 1767225600000,
+  "providers": [
+    { "provider": "claude", "weight": 0.5, "tools": ["Bash", "Edit", "Read", "Grep", "Write", "WebFetch", "Task"] },
+    { "provider": "codex", "weight": 0.3, "tools": ["shell", "apply_patch", "read_file", "update_plan"] },
+    { "provider": "gemini", "weight": 0.2, "tools": ["run_shell_command", "replace", "read_file", "google_web_search"] }
+  ],
+  "projects": [
+    "kiti", "api-gateway", "billing", "web-app", "infra", "mobile", "docs-site", "auth-service",
+    "data-pipeline", "design-system", "search", "notifications", "analytics", "cli-tools", "payments"
+  ],
+  "profiles": [
+    {
+      "name": "steady",
+      "weight": 0.55,
+      "meanIdleMs": 4000,
+      "meanThinkMs": 1200,
+      "meanToolMs": 1800,
+      "meanToolsPerTurn": 4,
+      "permissionProb": 0.15,
+      "meanPermissionWaitMs": 6000,
+      "errorProbPerTurn": 0.02,
+      "crashProbPerTurn": 0.0
+    },
+    {
+      "name": "bursty",
+      "weight": 0.3,
+      "meanIdleMs": 9000,
+      "meanThinkMs": 600,
+      "meanToolMs": 700,
+      "meanToolsPerTurn": 8,
+      "permissionProb": 0.05,
+      "meanPermissionWaitMs": 4000,
+      "errorProbPerTurn": 0.03,
+      "crashProbPerTurn": 0.01
+    },
+    {
+      "name": "flaky",
+      "weight": 0.15,
+      "meanIdleMs": 2000,
+      "meanThinkMs": 800,
+      "meanToolMs": 1200,
+      "meanToolsPerTurn": 2,
+      "permissionProb": 0.3,
+      "meanPermissionWaitMs": 8000,
+      "errorProbPerTurn": 0.35,
+      "crashProbPerTurn": 0.2
+    }
+  ]
+}

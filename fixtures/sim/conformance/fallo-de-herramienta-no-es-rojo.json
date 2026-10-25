@@ -1,0 +1,8 @@
+{
+  "name": "Un fallo de herramienta no pone el semáforo en rojo",
+  "steps": [
+    { "signal": { "type": "PromptSubmitted" }, "expect": { "kind": "working", "reason": "hook" } },
+    { "signal": { "type": "ToolStarted", "tool": "Edit" }, "expect": { "kind": "working", "reason": "hook", "lastTool": "Edit" } },
+    { "signal": { "type": "ToolFinished", "failed": true }, "expect": { "kind": "working", "reason": "hook", "lastTool": "Edit" } }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "SessionEnded es una salida esperada; ProcessGone sin SessionEnded es muerte",
+  "steps": [
+    { "signal": { "type": "PromptSubmitted" }, "expect": { "kind": "working", "reason": "hook" } },
+    { "signal": { "type": "ProcessGone" }, "expect": { "kind": "dead", "reason": "processGone" } },
+    { "signal": { "type": "PromptSubmitted" }, "expect": { "kind": "dead", "reason": "processGone" } }
+  ],
+  "then": [
+    { "signal": { "type": "SessionStarted" }, "expect": { "kind": "idle", "reason": "hook" } },
+    { "signal": { "type": "SessionEnded" }, "expect": "removed" }
+  ]
+}
