@@ -16,15 +16,15 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 1, "Oficina visual simulada", implementado en la rama `hito-1-oficina-visual` y pendiente de revisión visual del usuario (ver [Roadmap](#roadmap) y el [plan del ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#plan-del-hito-1-oficina-visual-simulada)).
+- **Fase:** Hito 1, "Oficina visual simulada", **cerrado** (2026-10-24) en la rama `hito-1-oficina-visual`: el usuario aprobó el estilo y las baselines `webkit-darwin` están fijadas en `ui/e2e/__screenshots__/` (ver [Roadmap](#roadmap) y el [plan del ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#plan-del-hito-1-oficina-visual-simulada)).
 - **Hecho:** `kiti-protocol` con tipos TS generados, simulador TS con conformidad compartida, dominio (layout, cámara, LOD), store, mundo Pixi con render bajo demanda, paneles React, telemetría, E2E y benchmark.
-- **Desviaciones del plan del Hito 1** (a resolver en la siguiente iteración):
+- **Pendientes que deja el Hito 1** (desviaciones del plan, a resolver en iteraciones siguientes):
   - La oficina se dibuja de forma procedural (`world/officeTemplate.ts`); los tilesheets de Kenney, el `.tmj` de Tiled y `domain/tiles` quedan pendientes.
   - Las capturas usan `steps=357` en lugar de `steps=120`: con `seed=42` es el primer paso en el que conviven los cinco colores.
   - `ui.react_commits_total` sube cuando cambian los contadores de la barra superior, no con cada diff.
   - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales: 601 frames en 10 s) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
   - Faltan `lefthook`, commitlint, Renovate, `deny.toml` y el workflow de CI.
-- **Siguiente paso:** que el usuario revise las capturas; con su visto bueno, fijar las baselines con `mise run ui:visual -- --update-snapshots` y cerrar el hito.
+- **Siguiente paso:** Hito 2, shell Tauri y core con simulador. Cualquier cambio visual se itera con `mise run ui:shots` y, con el visto bueno del usuario, se refijan las baselines con `pnpm -C ui exec playwright test --project=webkit-visual --update-snapshots`.
 
 ## Índice de ADRs
 
@@ -159,7 +159,7 @@ Objetivo: con 20 agentes activos, la app debe ir "como si nada".
 
 Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md).
 
-- [ ] **1. Oficina visual simulada:** `crates/protocol` + `ui/` en el navegador con `SimTransport`. Grilla de 20 oficinas, cámara (zoom, pan, doble clic para enfocar), LOD, culling, semáforos, diálogo de cierre, telemetría y panel de debug. Capturas con Playwright en 3 niveles de zoom.
+- [x] **1. Oficina visual simulada:** `crates/protocol` + `ui/` en el navegador con `SimTransport`. Grilla de 20 oficinas, cámara (zoom, pan, doble clic para enfocar), LOD, culling, semáforos, diálogo de cierre, telemetría y panel de debug. Capturas con Playwright en 3 niveles de zoom.
 - [ ] **2. Shell Tauri y core con simulador:** `src-tauri` (Channel, capabilities, CSP, `tracing`), dominio y reducer de `kiti-core`, `SimFleet` y `TauriTransport`. Medir RAM y CPU.
 - [ ] **3. Procesos reales:** `sysinfo`, `classify` con roles y cerrar oficina de verdad, con verificación.
 - [ ] **4. Hooks de Claude Code:** HookServer, token, instalador de hooks, `sessions/<pid>.json` y experimento E1.
