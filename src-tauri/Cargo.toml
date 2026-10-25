@@ -14,6 +14,7 @@ kiti-core = { workspace = true, features = ["sim", "scanner", "killer", "hooks",
 kiti-protocol.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
+tauri-plugin-notification.workspace = true
 sysinfo.workspace = true
 tokio.workspace = true
 tracing.workspace = true
