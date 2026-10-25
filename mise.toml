@@ -1,0 +1,43 @@
+[tools]
+node = "24.22.1"
+pnpm = "12.15.0"
+
+[tasks.gen-types]
+description = "Genera los tipos TS del protocolo desde crates/protocol (ts-rs)"
+run = "cargo test -p kiti-protocol export_bindings"
+
+[tasks."ui:dev"]
+description = "Levanta la UI en modo sim en http://127.0.0.1:5173"
+run = "pnpm -C ui dev --host 127.0.0.1 --port 5173 --strictPort"
+
+[tasks."ui:test"]
+description = "Tests unitarios de la UI (Vitest)"
+run = "pnpm -C ui test"
+
+[tasks."ui:e2e"]
+description = "E2E funcionales (Playwright, Chromium)"
+run = "pnpm -C ui exec playwright test --project=chromium"
+
+[tasks."ui:visual"]
+description = "Regresión visual (solo macOS, WebKit)"
+run = "pnpm -C ui exec playwright test --project=webkit-visual"
+
+[tasks."ui:shots"]
+description = "Capturas far/mid/near/focus3 en ui/.shots/ (necesita ui:dev levantado)"
+run = "pnpm -C ui shots"
+
+[tasks."ui:perf"]
+description = "Benchmark de 50 agentes (local, WebKit headed)"
+run = "pnpm -C ui exec playwright test --project=webkit-perf"
+
+[tasks.check]
+description = "Todo lo que debe estar en verde antes de un commit"
+run = [
+  "cargo fmt --all --check",
+  "cargo clippy --workspace --all-targets -- -D warnings",
+  "cargo test --workspace",
+  "pnpm -C ui exec biome ci .",
+  "pnpm -C ui typecheck",
+  "pnpm -C ui test --coverage",
+  "pnpm -C ui exec playwright test --project=chromium",
+]

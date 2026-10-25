@@ -1,0 +1,35 @@
+:root {
+  --font: ui-monospace, Menlo, Monaco, monospace;
+  --text: #f5f7fa;
+  --muted: #a3acc0;
+  --panel: #262b3d;
+  --panel-2: #313852;
+  --panel-3: #3b4363;
+  --edge: #0e1018;
+  --shadow: #0a0c12;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #1a1d29;
+  color: var(--text);
+  font-family: var(--font);
+}
+
+#root {
+  position: relative;
+}
+
+canvas {
+  display: block;
+  touch-action: none;
+}

@@ -1,0 +1,11 @@
+{
+  "name": "Un turno con una herramienta que pide permiso",
+  "steps": [
+    { "signal": { "type": "SessionStarted" }, "expect": { "kind": "idle", "reason": "hook" } },
+    { "signal": { "type": "PromptSubmitted" }, "expect": { "kind": "working", "reason": "hook" } },
+    { "signal": { "type": "ToolStarted", "tool": "Bash" }, "expect": { "kind": "working", "reason": "hook", "lastTool": "Bash" } },
+    { "signal": { "type": "AwaitingInput" }, "expect": { "kind": "waiting", "reason": "hook", "lastTool": "Bash" } },
+    { "signal": { "type": "ToolFinished" }, "expect": { "kind": "working", "reason": "hook", "lastTool": "Bash" } },
+    { "signal": { "type": "Stopped" }, "expect": { "kind": "idle", "reason": "hook", "lastTool": "Bash" } }
+  ]
+}

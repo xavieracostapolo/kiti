@@ -1,0 +1,8 @@
+{
+  "name": "Un error del agente es rojo hasta el siguiente prompt",
+  "steps": [
+    { "signal": { "type": "PromptSubmitted" }, "expect": { "kind": "working", "reason": "hook" } },
+    { "signal": { "type": "Error" }, "expect": { "kind": "error", "reason": "failure" } },
+    { "signal": { "type": "PromptSubmitted" }, "expect": { "kind": "working", "reason": "hook" } }
+  ]
+}
