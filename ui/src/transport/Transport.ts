@@ -27,6 +27,8 @@ export interface ConversationApi {
   list(): Promise<ConversationInfo[]>;
   /** `claude --resume <id>` en su carpeta, dentro de una terminal de Kiti. */
   resume(sessionId: string): Promise<TerminalInfo>;
+  /** Archiva: deja de salir en Kiti para siempre. No borra la conversación de Claude. */
+  hide(sessionId: string): Promise<void>;
 }
 
 export interface Transport {

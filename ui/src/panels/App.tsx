@@ -9,6 +9,7 @@ import { AgentPanel } from "./AgentPanel";
 import { CloseOfficeDialog } from "./CloseOfficeDialog";
 import { ConversationPanel } from "./ConversationPanel";
 import { DebugPanel } from "./DebugPanel";
+import { NativeCloseOffice } from "./NativeCloseOffice";
 import { OfficeTooltip } from "./OfficeTooltip";
 import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
@@ -65,6 +66,17 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
     [store, conversations, terminals],
   );
 
+  /** Archiva una conversación cerrada: sale del mapa ahora y no vuelve (ADR 0009). */
+  const archive = useCallback(
+    async (sessionId: string) => {
+      if (!conversations) return;
+      await conversations.hide(sessionId);
+      const st = store.getState();
+      st.setConversations(st.conversations.filter((c) => c.sessionId !== sessionId));
+    },
+    [store, conversations],
+  );
+
   return (
     <Profiler id="panels" onRender={() => metrics.reactCommit()}>
       <WorldHost store={store} metrics={metrics} params={params} onWorld={handleWorld} />
@@ -79,12 +91,14 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
         store={store}
         world={() => world.current}
         now={now}
-        {...(conversations ? { onResume: resume } : {})}
+        {...(conversations ? { onResume: resume, onArchive: archive } : {})}
       />
       {terminals && <TerminalPanel store={store} api={terminals} />}
       <OfficeTooltip store={store} now={now} />
-      {transport.killConfirmation === "in-app" && (
+      {transport.killConfirmation === "in-app" ? (
         <CloseOfficeDialog store={store} killAgent={killAgent} />
+      ) : (
+        <NativeCloseOffice store={store} killAgent={killAgent} />
       )}
       <DebugPanel metrics={metrics} store={store} transport={transport} />
     </Profiler>

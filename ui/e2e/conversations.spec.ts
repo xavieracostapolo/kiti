@@ -49,3 +49,17 @@ test("el detalle de un agente de Claude dice en qué trabaja", async ({ page }) 
   const panel = page.getByRole("complementary", { name: "Agente seleccionado" });
   await expect(panel).toContainText("último pedido");
 });
+
+test("archivar una oficina apagada la quita del mapa", async ({ page }) => {
+  await openWorld(page, Q);
+  await expect.poll(() => page.evaluate(() => window.__kiti?.dormant().length)).toBe(4);
+  const id = await page.evaluate(() => window.__kiti?.dormant()[1]);
+  const c = await page.evaluate((i) => window.__kiti?.screenCenter(i ?? ""), id);
+  if (!c) throw new Error("sin oficina apagada");
+  await page.mouse.click(c.x, c.y);
+  const panel = page.getByRole("complementary", { name: "Conversación cerrada" });
+  await panel.getByRole("button", { name: "Archivar" }).click();
+  await panel.getByRole("button", { name: "Sí, archivar" }).click();
+  await expect.poll(() => page.evaluate(() => window.__kiti?.dormant().length)).toBe(3);
+  await expect(panel).toBeHidden();
+});

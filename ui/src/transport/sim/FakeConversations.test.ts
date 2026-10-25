@@ -20,6 +20,19 @@ describe("FakeConversations", () => {
     await expect(fake.resume(id)).rejects.toMatchObject({ code: "CONVERSATION_NOT_FOUND" });
   });
 
+  it("archivar la quita de la lista", async () => {
+    const list = fakeConversations("/w/kiti", 0);
+    const fake = new FakeConversations(list, {
+      id: "x",
+      pid: 1,
+      provider: "claude",
+      cwd: "/w",
+      running: true,
+    });
+    await fake.hide(list[1]?.sessionId ?? "");
+    expect(await fake.list()).toHaveLength(3);
+  });
+
   it("el simulador solo las ofrece con ?conversations=1", () => {
     expect(new SimTransport({ count: 3, seed: 1 }).conversations).toBeUndefined();
     expect(

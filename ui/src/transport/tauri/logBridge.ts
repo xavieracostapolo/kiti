@@ -4,8 +4,20 @@ import { invoke } from "@tauri-apps/api/core";
 
 type Level = "info" | "warn" | "error";
 
-const text = (args: unknown[]) =>
-  args.map((a) => (a instanceof Error ? `${a.message}\n${a.stack ?? ""}` : String(a))).join(" ");
+function one(a: unknown): string {
+  if (a instanceof Error) return `${a.message}\n${a.stack ?? ""}`;
+  // Los errores de los commands llegan como objetos ({ code, message }): sin esto, "[object Object]".
+  if (typeof a === "object" && a !== null) {
+    try {
+      return JSON.stringify(a);
+    } catch {
+      return String(a);
+    }
+  }
+  return String(a);
+}
+
+const text = (args: unknown[]) => args.map(one).join(" ");
 
 export function installLogBridge(
   send = (level: Level, message: string) => {

@@ -15,6 +15,7 @@
     "allow-terminal-input",
     "allow-terminal-resize",
     "allow-list-conversations",
-    "allow-resume-conversation"
+    "allow-resume-conversation",
+    "allow-hide-conversation"
   ]
 }
