@@ -1,7 +1,10 @@
-// Plantilla estática de una oficina, dibujada una vez y rasterizada a una textura que comparten
-// todas las oficinas (ADR 0003 §5). Procedural mientras no haya tilesheets de Kenney.
+// Plantilla estática de una oficina con tiles de Kenney (ADR 0013): se dibuja una vez por proveedor
+// (cambia la alfombra) y se rasteriza a una textura que comparten todas sus oficinas (ADR 0003 §5).
+// Lo funcional (semáforo, pantalla del monitor, títulos, insignias) lo pinta OfficeView encima.
 
-import { Container, Graphics } from "pixi.js";
+import { Container, Graphics, Sprite } from "pixi.js";
+import type { Provider } from "../protocol";
+import { RUG, type Sheets, TILES, type TileRef, tileTexture } from "./kenney";
 import { PAL } from "./palette";
 
 export type RoomSize = { w: number; h: number; tile: number };
@@ -13,81 +16,58 @@ export function anchors({ w, tile }: RoomSize) {
     label: { x: tile * 0.75, y: 4 },
     badge: { x: tile * 0.5, y: tile * 2.5 },
     desk: { x: tile * 4, y: tile * 4 },
-    avatar: { x: tile * 5.5, y: tile * 5.6 },
+    /** Esquina superior izquierda de la persona (un tile), sentada de espaldas al monitor. */
+    person: { x: tile * 5, y: tile * 5 },
     bubble: { x: tile * 6.5, y: tile * 3.1 },
   };
 }
 
-export function drawOfficeTemplate({ w, h, tile }: RoomSize): Container {
+export function drawOfficeTemplate(
+  { w, h, tile }: RoomSize,
+  sheets: Sheets,
+  provider: Provider,
+): Container {
   const root = new Container();
-  const g = new Graphics();
-  root.addChild(g);
+  const put = ([sheet, col, row]: TileRef, x: number, y: number) => {
+    const s = new Sprite(tileTexture(sheets, sheet, col, row));
+    s.position.set(x, y);
+    root.addChild(s);
+  };
+  const cols = w / tile;
+  const rows = h / tile;
 
-  // Suelo de madera en damero.
-  for (let ty = 2; ty < h / tile; ty++) {
-    for (let tx = 0; tx < w / tile; tx++) {
-      g.rect(tx * tile, ty * tile, tile, tile).fill((tx + ty) % 2 ? PAL.floorA : PAL.floorB);
-    }
-  }
-  // Vetas.
-  for (let ty = 2; ty < h / tile; ty++) {
-    g.rect(0, ty * tile + tile - 1, w, 1).fill({ color: 0x000000, alpha: 0.08 });
-  }
-
-  // Pared superior con zócalo.
-  g.rect(0, 0, w, tile * 2).fill(PAL.wall);
-  g.rect(0, tile * 2 - 3, w, 3).fill(PAL.wallTrim);
-
-  // Ventana: estrecha y a la derecha, para dejar sitio al título de la conversación (ADR 0009).
-  const wx = tile * 7.75;
-  g.rect(wx - 2, 6, tile * 2 + 4, tile + 8).fill(PAL.windowFrame);
-  g.rect(wx, 8, tile * 2, tile + 4).fill(PAL.window);
-  g.rect(wx + tile - 1, 8, 2, tile + 4).fill(PAL.windowFrame);
-  g.rect(wx + 3, 11, 5, 2).fill(PAL.windowShine);
-  g.rect(wx + 3, 14, 3, 2).fill(PAL.windowShine);
-
-  // Alfombra.
-  g.rect(tile * 2.5, tile * 6.5, tile * 6, tile * 2).fill(PAL.rugEdge);
-  g.rect(tile * 2.5 + 2, tile * 6.5 + 2, tile * 6 - 4, tile * 2 - 4).fill(PAL.rug);
-
-  // Escritorio con monitor (la pantalla es dinámica) y silla.
-  const dx = tile * 4;
-  const dy = tile * 4;
-  g.rect(dx, dy, tile * 3, tile).fill(PAL.deskTop);
-  g.rect(dx, dy + tile, tile * 3, 5).fill(PAL.deskSide);
-  g.rect(dx + 2, dy + tile + 5, 3, 6).fill(PAL.deskSide);
-  g.rect(dx + tile * 3 - 5, dy + tile + 5, 3, 6).fill(PAL.deskSide);
-  g.rect(dx + tile - 2, dy - 9, tile + 4, 11).fill(PAL.monitor);
-  g.rect(dx + tile * 1.5 - 1, dy + 1, 2, 3).fill(PAL.monitor);
-  g.rect(dx + tile * 1.5 - 4, dy + 3, 8, 2).fill(PAL.monitor);
-  g.rect(dx + tile * 2.4, dy + 4, 6, 4).fill(0xf5f5f5); // papeles
-  g.rect(dx + tile * 1.1, dy + tile * 2.1, tile * 0.8, tile * 0.7).fill(PAL.chair);
-
-  // Estantería con libros.
-  const sx = tile * 9;
-  g.rect(sx, tile * 2 + 2, tile * 2, tile * 2.5).fill(PAL.shelf);
-  for (let row = 0; row < 3; row++) {
-    for (let b = 0; b < 5; b++) {
-      g.rect(sx + 3 + b * 5, tile * 2 + 5 + row * 12, 4, 9).fill(
-        PAL.books[(row + b) % PAL.books.length] as number,
-      );
-    }
+  // Pared de dos filas y suelo de madera.
+  for (let x = 0; x < cols; x++) {
+    put(TILES.wallUpper, x * tile, 0);
+    put(TILES.wallLower, x * tile, tile);
+    for (let y = 2; y < rows; y++) put(TILES.floor, x * tile, y * tile);
   }
 
-  // Planta.
-  const px = tile * 0.6;
-  const py = tile * 7.2;
-  g.rect(px + 3, py + 8, 10, 8).fill(PAL.potA);
-  g.circle(px + 8, py + 4, 7).fill(PAL.leafB);
-  g.circle(px + 5, py + 2, 4).fill(PAL.leafA);
-  g.circle(px + 11, py + 3, 4).fill(PAL.leafA);
+  // Alfombra del color del proveedor bajo la silla.
+  const [rc, rr] = RUG[provider];
+  for (let dx = 0; dx < 3; dx++) {
+    for (let dy = 0; dy < 3; dy++) put(["rpg", rc + dx, rr + dy], (4 + dx) * tile, (5 + dy) * tile);
+  }
 
-  // Puerta (hueco en la pared inferior) y contorno.
-  g.rect(0, 0, w, 2).fill(PAL.outline);
-  g.rect(0, h - 2, tile * 5, 2).fill(PAL.outline);
-  g.rect(tile * 7, h - 2, w - tile * 7, 2).fill(PAL.outline);
-  g.rect(0, 0, 2, h).fill(PAL.outline);
-  g.rect(w - 2, 0, 2, h).fill(PAL.outline);
+  // Cuadro entre el título y el semáforo, estantería contra la pared y plantas.
+  put(TILES.paintingA, tile * 7.75, 8);
+  put(TILES.paintingB, tile * 8.75, 8);
+  put(TILES.shelfA, tile * 8, tile * 2);
+  put(TILES.shelfB, tile * 9, tile * 2);
+  put(TILES.shelfC, tile * 10, tile * 2);
+  put(TILES.plantA, tile, tile * 7);
+  put(TILES.plantB, tile * 10, tile * 7);
 
+  // Escritorio, silla y monitor (la pantalla, con el color del estado, la pinta OfficeView).
+  put(TILES.deskLeft, tile * 4, tile * 4);
+  put(TILES.deskMid, tile * 5, tile * 4);
+  put(TILES.deskRight, tile * 6, tile * 4);
+  put(TILES.chair, tile * 5, tile * 5);
+  const monitor = new Graphics()
+    .rect(tile * 5 - 2, tile * 4 - 9, tile + 4, 11)
+    .fill(PAL.monitor)
+    .rect(tile * 5.5 - 1, tile * 4 + 1, 2, 3)
+    .fill(PAL.monitor);
+  root.addChild(monitor);
   return root;
 }

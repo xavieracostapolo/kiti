@@ -1,4 +1,5 @@
-// Paleta pixel-art de la oficina y colores del semáforo. Un solo lugar para iterar el estilo.
+// Colores de lo que se dibuja por código (semáforo, monitor, insignias, zonas). La sala usa tiles
+// de Kenney (ADR 0013). Un solo lugar para iterar el estilo.
 import type { Provider, StatusKind } from "../protocol";
 
 export const STATUS_COLOR: Record<StatusKind, number> = {
@@ -21,27 +22,7 @@ export const PAL = {
   background: 0x1a1d29,
   corridor: 0x232838,
   corridorDot: 0x2b3145,
-  outline: 0x0e1018,
-  floorA: 0xc9a47c,
-  floorB: 0xbd976f,
-  wall: 0x4a5a78,
-  wallTrim: 0x34405a,
-  window: 0x9fd3ff,
-  windowShine: 0xd9f0ff,
-  windowFrame: 0x2a3348,
-  deskTop: 0x8d5d38,
-  deskSide: 0x6b4426,
   monitor: 0x1c1f27,
-  chair: 0x3b4252,
-  rug: 0x6d8bb5,
-  rugEdge: 0x56719a,
-  potA: 0xa0522d,
-  leafA: 0x4caf50,
-  leafB: 0x2e7d32,
-  shelf: 0x5c3b22,
-  books: [0xe57373, 0x64b5f6, 0xffd54f, 0x81c784] as const,
-  skin: 0xf1c27d,
-  hair: 0x3e2723,
   lampOff: 0x2a2f3d,
   housing: 0x14171f,
   text: 0xf5f7fa,

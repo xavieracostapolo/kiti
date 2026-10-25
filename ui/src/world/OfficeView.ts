@@ -1,16 +1,24 @@
-// Una oficina: textura compartida + lo dinámico (semáforo, nombre, avatar, herramienta, qué hace).
+// Una oficina: textura compartida (tiles de Kenney, ADR 0013) + lo dinámico (semáforo, nombre,
+// persona, herramienta, qué hace).
 // Encendida muestra un agente; apagada, una conversación cerrada que se puede retomar (ADR 0009).
 // Solo traduce el estado a Pixi; la lógica vive en domain/ y state/.
 
 import { BitmapText, Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
 import type { Lod } from "../domain/lod";
 import { displayName } from "../domain/names";
+import { personFor } from "../domain/people";
 import { charsIn, fitLines, fitWords, fontFor, LINE_H } from "../domain/text";
-import type { AgentState, ConversationInfo, StatusKind } from "../protocol";
+import type { AgentState, ConversationInfo, Provider, StatusKind } from "../protocol";
 import { anchors, type RoomSize } from "./officeTemplate";
 import { PAL, PROVIDER_COLOR, PROVIDER_LETTER, STATUS_COLOR } from "./palette";
 
 export const FONT = "kiti-pixel";
+
+/** Lo que comparten todas las oficinas: la sala de cada proveedor (cambia la alfombra) y las personas. */
+export type OfficeArt = {
+  templates: Record<Provider, Texture>;
+  people: readonly Texture[];
+};
 /**
  * Texto que se adapta al zoom: mide más o menos lo mismo en pantalla, así al acercarse caben más
  * caracteres y más líneas. Título en la pared (entre el borde y la ventana) y nota abajo.
@@ -39,7 +47,9 @@ export class OfficeView {
   private readonly near = new Container();
   private readonly badge = new Graphics();
   private readonly badgeText: BitmapText;
-  private readonly avatar = new Graphics();
+  private readonly background: Sprite;
+  /** Quien trabaja en la oficina: siempre la misma persona para el mismo agente. */
+  private readonly person = new Sprite();
   private readonly bubble = new Graphics();
   private readonly bubbleText: BitmapText;
   private readonly deadShade = new Graphics();
@@ -67,9 +77,10 @@ export class OfficeView {
   private readonly cardText: BitmapText;
 
   constructor(
-    template: Texture,
+    private readonly art: OfficeArt,
     private readonly size: RoomSize,
   ) {
+    this.background = new Sprite(art.templates.claude);
     const a = anchors(size);
     this.root.cullable = true;
     this.root.cullArea = new Rectangle(-4, -4, size.w + 8, size.h + 8);
@@ -90,9 +101,10 @@ export class OfficeView {
 
     this.screen.position.set(a.desk.x + size.tile, a.desk.y - 7);
     this.light.position.set(a.light.x, a.light.y);
-    this.avatar.position.set(a.avatar.x, a.avatar.y);
+    this.person.position.set(a.person.x, a.person.y);
+    this.person.visible = false;
 
-    this.near.addChild(this.badge, this.badgeText, this.avatar, this.bubble, this.bubbleText);
+    this.near.addChild(this.badge, this.badgeText, this.bubble, this.bubbleText);
     const badgeBg = new Graphics()
       .roundRect(0, 0, 22, 14, 3)
       .fill(PAL.housing)
@@ -104,7 +116,8 @@ export class OfficeView {
     this.terminalBadge.position.set(size.w - 52, 7);
     this.terminalBadge.visible = false;
     this.root.addChild(
-      new Sprite(template),
+      this.background,
+      this.person,
       this.screen,
       this.near,
       this.deadShade,
@@ -273,7 +286,8 @@ export class OfficeView {
     const a = anchors(this.size);
     this.badge.clear().roundRect(a.badge.x, a.badge.y, 12, 11, 2).fill(PROVIDER_COLOR[c.provider]);
     this.badgeText.text = PROVIDER_LETTER[c.provider];
-    this.avatar.clear();
+    this.background.texture = this.art.templates[c.provider];
+    this.person.visible = false;
     this.bubbleText.text = "zZ";
     this.bubble
       .clear()
@@ -324,20 +338,11 @@ export class OfficeView {
       .roundRect(a.badge.x, a.badge.y, 12, 11, 2)
       .fill(PROVIDER_COLOR[agent.provider]);
     this.badgeText.text = PROVIDER_LETTER[agent.provider];
-
-    // Avatar sentado: cabeza, pelo y torso con el color del proveedor.
-    this.avatar
-      .clear()
-      .rect(-5, 2, 10, 9)
-      .fill(PROVIDER_COLOR[agent.provider])
-      .rect(-4, -7, 8, 8)
-      .fill(PAL.skin)
-      .rect(-4, -8, 8, 3)
-      .fill(PAL.hair)
-      .rect(-2, -4, 1, 1)
-      .fill(PAL.outline)
-      .rect(1, -4, 1, 1)
-      .fill(PAL.outline);
+    // La alfombra lleva el color del proveedor; la persona se elige por el id del agente.
+    this.background.texture = this.art.templates[agent.provider];
+    const people = this.art.people;
+    this.person.texture = people[personFor(agent.id, people.length)] as Texture;
+    this.person.visible = true;
   }
 
   private drawBubble(agent: AgentState): void {

@@ -16,11 +16,10 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 15 en `main`. El último, "Arreglos", amplía el [ADR 0010](docs/decisiones/0010-avisos/README.md) (clic en el aviso) y el [ADR 0009](docs/decisiones/0009-proyectos-conversaciones/README.md) (verde desde el arranque).
+- **Fase:** Hitos 1 a 16 en `main`. El último, "Pixel art con Kenney", está en el [ADR 0013](docs/decisiones/0013-pixel-art-kenney/README.md).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
-  - La oficina se dibuja de forma procedural (`world/officeTemplate.ts`); los tilesheets de Kenney, el `.tmj` de Tiled y `domain/tiles` quedan pendientes.
   - Las capturas usan `steps=357` en lugar de `steps=120`: con `seed=42` es el primer paso en el que conviven los cinco colores.
   - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
   - Falta verificar a mano el diálogo nativo de cierre (Playwright no lo controla). Hasta el Hito 11 el botón no lo abría (ver ADR 0009).
@@ -42,6 +41,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0010](docs/decisiones/0010-avisos/README.md) | Notificaciones de macOS cuando un agente pide permiso, termina un turno largo, falla o se cae (solo si Kiti no está al frente) |
 | [0011](docs/decisiones/0011-filtro-y-vista-lejana/README.md) | Cartel con el título en la vista lejana; contadores y buscador que filtran (lo demás se atenúa) |
 | [0012](docs/decisiones/0012-ir-a-la-terminal/README.md) | «Ir a su terminal» para agentes abiertos fuera de Kiti: pestaña exacta en Ghostty y Terminal.app; otras apps, al frente |
+| [0013](docs/decisiones/0013-pixel-art-kenney/README.md) | Oficinas con tiles de Kenney (CC0): RPG Pack (sala), Indoors (muebles) y Urban (personas); lo funcional sigue por código |
 
 ## Decisiones tomadas (no repetir)
 
@@ -181,7 +181,8 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **13. Ver desde lejos y filtrar:** título legible en la vista lejana, contadores que filtran por estado, buscador (`/`), y atenuar lo que no coincide.
 - [x] **14. Ir a la terminal:** botón para mostrar la pestaña de Ghostty o Terminal.app de un agente abierto fuera de Kiti.
 - [x] **15. Arreglos:** un agente que ya trabajaba al arrancar Kiti sale en verde; el clic en un aviso abre Kiti y enfoca la oficina.
-- [ ] **Después:** soporte para Windows, enfocar las pestañas de Ghostty de los agentes externos (AppleScript) y mejora visual con Kenney.
+- [x] **16. Pixel art con Kenney:** sala de tiles (madera, muebles), una persona por agente y alfombra del color del proveedor.
+- [ ] **Después:** soporte para Windows.
 
 ## Pendientes de verificar
 
@@ -234,4 +235,4 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   ```
 
 - **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant` y `dimmed`. El panel de debug se abre con `Cmd+Shift+D`.
-- Los recursos gráficos del MVP son de Kenney.nl (CC0). Los packs de oficina de LimeZu en itch.io quedan pendientes de revisar su licencia.
+- Los recursos gráficos son de Kenney.nl (CC0), en `ui/public/assets/kenney/` con sus licencias (ADR 0013).
