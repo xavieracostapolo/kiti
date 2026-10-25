@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Kiti · Your coding agents, as an office</title>
+  <meta name="description" content="A pixel-art virtual office for macOS where every room is a running coding agent: Claude Code, Codex CLI and Gemini CLI, with a traffic light per agent.">
+  <meta property="og:title" content="Kiti · Your coding agents, as an office">
+  <meta property="og:description" content="Every running Claude Code, Codex and Gemini agent is a room on one pixel-art map, with a traffic light that tells you who needs you.">
+  <meta property="og:image" content="https://xavieracostapolo.github.io/kiti/img/sim20-far.png">
+  <meta property="og:url" content="https://xavieracostapolo.github.io/kiti/">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="theme-color" content="#1a1d29">
+  <link rel="icon" type="image/png" href="img/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #1a1d29;
+      --corridor: #232838;
+      --dot: #2b3145;
+      --panel: #262b3d;
+      --panel-2: #313852;
+      --panel-3: #3b4363;
+      --edge: #0e1018;
+      --shadow: #0a0c12;
+      --text: #f5f7fa;
+      --muted: #a3acc0;
+      --working: #3ddc84;
+      --waiting: #ffc93c;
+      --idle: #8a94a6;
+      --error: #ff5c5c;
+      --dead: #7a1f2b;
+      --claude: #d97757;
+      --codex: #10a37f;
+      --gemini: #4285f4;
+      --floor-a: #c9a47c;
+      --floor-b: #bd976f;
+      --pixel: "Silkscreen", ui-monospace, Menlo, monospace;
+      --mono: ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background-color: var(--bg);
+      background-image: radial-gradient(var(--dot) 1.5px, transparent 1.5px);
+      background-size: 24px 24px;
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    img { max-width: 100%; height: auto; display: block; image-rendering: pixelated; }
+
+    a { color: var(--working); }
+
+    code {
+      background: var(--panel-2);
+      padding: 1px 6px;
+      font-size: 0.9em;
+    }
+
+    .wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+    /* Top bar, like the app's status bar */
+    .bar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--panel);
+      border-bottom: 3px solid var(--edge);
+      box-shadow: 0 4px 0 var(--shadow);
+    }
+    .bar .wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      height: 56px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      text-decoration: none;
+      font-family: var(--pixel);
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: 1px;
+    }
+    .brand img { width: 32px; height: 32px; }
+    .bar nav { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
+    .bar nav a { color: var(--muted); text-decoration: none; }
+    .bar nav a:hover { color: var(--text); }
+    @media (max-width: 640px) { .bar nav .opt { display: none; } }
+
+    /* Pixel buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 20px;
+      font-family: var(--pixel);
+      font-size: 15px;
+      text-decoration: none;
+      color: var(--edge);
+      background: var(--working);
+      border: 3px solid var(--edge);
+      box-shadow: 4px 4px 0 var(--shadow);
+      cursor: pointer;
+      transition: transform 80ms, box-shadow 80ms;
+    }
+    .btn:hover { transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--shadow); }
+    .btn:active { transform: translate(3px, 3px); box-shadow: 1px 1px 0 var(--shadow); }
+    .btn.alt { background: var(--panel-3); color: var(--text); }
+
+    /* Hero */
+    .hero { padding-top: 72px; padding-bottom: 40px; text-align: center; }
+    .hero .cat { width: 96px; height: 96px; margin: 0 auto 20px; }
+    .tag {
+      display: inline-block;
+      font-family: var(--pixel);
+      font-size: 12px;
+      color: var(--edge);
+      background: var(--waiting);
+      padding: 2px 10px;
+      border: 2px solid var(--edge);
+      margin-bottom: 20px;
+    }
+    h1, h2, h3 { font-family: var(--pixel); font-weight: 700; line-height: 1.2; margin: 0; }
+    h1 { font-size: clamp(30px, 6vw, 54px); max-width: 900px; margin: 0 auto; }
+    h1 .hl { color: var(--working); }
+    .lede { color: var(--muted); font-size: 18px; max-width: 680px; margin: 20px auto 32px; }
+    .ctas { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .note { color: var(--muted); font-size: 13px; margin-top: 16px; }
+
+    /* Pixel frame, like an office wall */
+    .frame {
+      position: relative;
+      background: var(--edge);
+      border: 4px solid var(--panel-3);
+      box-shadow: 8px 8px 0 var(--shadow);
+      outline: 4px solid var(--edge);
+    }
+    .stage { margin: 40px auto 0; aspect-ratio: 16 / 10; overflow: hidden; }
+    .stage img, .stage iframe { width: 100%; height: 100%; object-fit: cover; border: 0; display: block; }
+    .play {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: rgba(10, 12, 18, 0.35);
+      border: 0;
+      cursor: pointer;
+      width: 100%;
+    }
+    .play span { pointer-events: none; }
+    .stage-links { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; font-size: 13px; color: var(--muted); margin-top: 16px; }
+
+    section { padding: 72px 0; }
+    .kicker { font-family: var(--pixel); font-size: 13px; color: var(--waiting); margin-bottom: 8px; }
+    h2 { font-size: clamp(24px, 4vw, 34px); margin-bottom: 16px; }
+    .sub { color: var(--muted); max-width: 680px; margin: 0 0 32px; }
+
+    .card {
+      background: var(--panel);
+      border: 3px solid var(--edge);
+      box-shadow: 4px 4px 0 var(--shadow);
+      padding: 20px;
+    }
+    .card h3 { font-size: 16px; margin-bottom: 8px; }
+    .card p { margin: 0; color: var(--muted); font-size: 14px; }
+
+    /* Traffic light legend */
+    .lights { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    @media (max-width: 860px) { .lights { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 480px) { .lights { grid-template-columns: 1fr; } }
+    .light { display: flex; gap: 16px; align-items: flex-start; }
+    .pole {
+      flex: none;
+      display: grid;
+      gap: 4px;
+      padding: 5px;
+      background: var(--edge);
+      border: 2px solid var(--panel-3);
+    }
+    .pole i { width: 12px; height: 12px; border-radius: 50%; background: #2a2f3f; display: block; }
+    .light.working .pole i:nth-child(3) { background: var(--working); box-shadow: 0 0 8px var(--working); }
+    .light.waiting .pole i:nth-child(2) { background: var(--waiting); box-shadow: 0 0 8px var(--waiting); }
+    .light.idle .pole i { background: #2a2f3f; }
+    .light.idle .pole i:nth-child(2) { background: var(--idle); }
+    .light.error .pole i:nth-child(1) { background: var(--error); box-shadow: 0 0 8px var(--error); }
+    .light.working { border-color: var(--working); }
+    .light.waiting { border-color: var(--waiting); }
+    .light.idle { border-color: var(--idle); }
+    .light.error { border-color: var(--error); }
+
+    /* Features */
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 860px) { .grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .grid { grid-template-columns: 1fr; } }
+    .icon {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      font-family: var(--pixel);
+      font-size: 16px;
+      color: var(--edge);
+      border: 2px solid var(--edge);
+      margin-bottom: 12px;
+    }
+
+    /* Agents */
+    .agents { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 32px; }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px 6px 6px;
+      background: var(--panel);
+      border: 2px solid var(--edge);
+      font-size: 14px;
+    }
+    .chip b {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      font-family: var(--pixel);
+      color: #fff;
+    }
+
+    /* Screens */
+    .shots { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    @media (max-width: 760px) { .shots { grid-template-columns: 1fr; } }
+    .shots figure { margin: 0; }
+    .shots figcaption { color: var(--muted); font-size: 14px; margin-top: 12px; }
+
+    /* Stats */
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    @media (max-width: 860px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+    .stat .n { font-family: var(--pixel); font-size: clamp(26px, 4vw, 36px); color: var(--working); line-height: 1.1; }
+    .stat .l { color: var(--muted); font-size: 14px; margin-top: 6px; }
+
+    /* Pipeline */
+    .flow { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; gap: 12px; align-items: stretch; }
+    .arrow { display: grid; place-items: center; font-family: var(--pixel); color: var(--muted); font-size: 22px; }
+    @media (max-width: 860px) {
+      .flow { grid-template-columns: 1fr; }
+      .arrow { transform: rotate(90deg); padding: 4px 0; }
+    }
+    .flow ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 14px; }
+
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: start; }
+    @media (max-width: 860px) { .two { grid-template-columns: 1fr; } }
+    .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+    .checks li { padding-left: 28px; position: relative; color: var(--muted); }
+    .checks li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 6px;
+      width: 12px;
+      height: 12px;
+      background: var(--working);
+      border: 2px solid var(--edge);
+    }
+    .checks li strong { color: var(--text); }
+
+    pre {
+      margin: 0;
+      overflow-x: auto;
+      font-size: 14px;
+      line-height: 1.7;
+      color: var(--text);
+    }
+    pre .c { color: var(--muted); }
+    .code { position: relative; padding: 20px 20px 20px 20px; }
+    .copy {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-family: var(--pixel);
+      font-size: 11px;
+      padding: 4px 10px;
+      background: var(--panel-3);
+      color: var(--text);
+      border: 2px solid var(--edge);
+      cursor: pointer;
+    }
+
+    footer {
+      border-top: 3px solid var(--edge);
+      background: var(--panel);
+      padding: 32px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    footer .wrap { display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; align-items: center; }
+    footer a { color: var(--muted); }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .btn { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="bar">
+    <div class="wrap">
+      <a class="brand" href="#top"><img src="img/icon.png" alt="" width="32" height="32">KITI</a>
+      <nav>
+        <a class="opt" href="#features">Features</a>
+        <a class="opt" href="#how">How it works</a>
+        <a href="#start">Get started</a>
+        <a href="https://github.com/xavieracostapolo/kiti">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="wrap hero">
+      <img class="cat" src="img/icon.png" alt="Kiti, a pixel-art orange cat" width="96" height="96">
+      <div class="tag">OPEN SOURCE · macOS</div>
+      <h1>Your coding agents, <span class="hl">as an office.</span></h1>
+      <p class="lede">Every running Claude Code, Codex CLI and Gemini CLI agent becomes a room on one pixel-art map. A traffic light on each door tells you who is working, who is done and who needs you.</p>
+      <div class="ctas">
+        <a class="btn" href="demo/?sim=20&amp;seed=42&amp;conversations=1">▶ Try the live demo</a>
+        <a class="btn alt" href="https://github.com/xavieracostapolo/kiti">★ View on GitHub</a>
+      </div>
+      <p class="note">The demo runs in your browser with 20 simulated agents. Nothing is installed.</p>
+
+      <div class="frame stage" id="stage">
+        <img src="img/sim20-far.png" alt="Kiti map with 20 simulated agents grouped by project, each office with a coloured traffic light" width="1440" height="900">
+        <button class="play" id="play" type="button" aria-label="Run the simulation here">
+          <span class="btn">▶ Run it here</span>
+        </button>
+      </div>
+      <div class="stage-links">
+        <span>Drag to pan · wheel or pinch to zoom · double-click an office to focus · <code>0</code> to see all</span>
+        <a href="demo/?sim=20&amp;seed=42&amp;conversations=1">Open full screen →</a>
+      </div>
+    </div>
+
+    <section id="status">
+      <div class="wrap">
+        <div class="kicker">THE TRAFFIC LIGHT</div>
+        <h2>One glance, four colours.</h2>
+        <p class="sub">The status comes from the agents' own hooks and session files, computed in the Rust core. Kiti does not guess from the screen.</p>
+        <div class="lights">
+          <div class="card light working">
+            <div class="pole" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div><h3>Working</h3><p>A prompt was sent or a tool is running.</p></div>
+          </div>
+          <div class="card light waiting">
+            <div class="pole" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div><h3>Waiting</h3><p>The agent asks for a permission. It needs you.</p></div>
+          </div>
+          <div class="card light idle">
+            <div class="pole" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div><h3>Idle</h3><p>The turn ended, or nothing happened for 30 s.</p></div>
+          </div>
+          <div class="card light error">
+            <div class="pole" aria-hidden="true"><i></i><i></i><i></i></div>
+            <div><h3>Error</h3><p>The turn failed or the process died. A failed tool call is not red.</p></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="features">
+      <div class="wrap">
+        <div class="kicker">FEATURES</div>
+        <h2>Built for a desk full of agents.</h2>
+        <p class="sub">Kiti stays open all day next to your terminals. It finds the agents by itself and only asks for your attention when it matters.</p>
+        <div class="agents">
+          <span class="chip"><b style="background: var(--claude)">C</b>Claude Code</span>
+          <span class="chip"><b style="background: var(--codex)">X</b>Codex CLI</span>
+          <span class="chip"><b style="background: var(--gemini)">G</b>Gemini CLI</span>
+        </div>
+        <div class="grid">
+          <div class="card"><div class="icon" style="background: var(--working)">⌕</div><h3>Automatic detection</h3><p>Finds agent processes by executable and argv, not by name. Launchers and desktop apps are ignored.</p></div>
+          <div class="card"><div class="icon" style="background: var(--waiting)">▦</div><h3>Zones per project</h3><p>Offices are grouped by git root, so each repository is its own neighbourhood on the map.</p></div>
+          <div class="card"><div class="icon" style="background: var(--gemini)">⊕</div><h3>Camera and detail</h3><p>Pan, zoom and focus. Far away you see lights; close up you see the title, the current tool and the last request.</p></div>
+          <div class="card"><div class="icon" style="background: var(--panel-3); color: var(--text)">&gt;_</div><h3>Embedded terminal</h3><p>Launch agents from Kiti. They live in tmux and survive when you close the app.</p></div>
+          <div class="card"><div class="icon" style="background: var(--claude)">↺</div><h3>Resume conversations</h3><p>Closed Claude conversations from the last 7 days stay as dark offices. One click resumes them.</p></div>
+          <div class="card"><div class="icon" style="background: var(--error)">!</div><h3>Notifications</h3><p>macOS tells you when an agent asks for permission, finishes a long turn, fails or crashes, only when Kiti is in the background.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="screens">
+      <div class="wrap">
+        <div class="kicker">UP CLOSE</div>
+        <h2>Zoom in on the one that needs you.</h2>
+        <p class="sub">Double-click an office to see what the agent is doing. Hover for the project and the last request.</p>
+        <div class="shots">
+          <figure>
+            <div class="frame"><img src="img/focus-claude.png" alt="Close-up of a Claude office: the agent sits at the desk with a Grep speech bubble and a green light" loading="lazy" width="1440" height="900"></div>
+            <figcaption>A working Claude agent. The bubble shows the current tool.</figcaption>
+          </figure>
+          <figure>
+            <div class="frame"><img src="img/dormant-panel.png" alt="A closed conversation shown as a dark office, with a side panel to resume it" loading="lazy" width="1440" height="900"></div>
+            <figcaption>A closed conversation, ready to resume with its full context.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </section>
+
+    <section id="perf">
+      <div class="wrap">
+        <div class="kicker">PERFORMANCE FIRST</div>
+        <h2>Twenty agents, and it feels like nothing.</h2>
+        <p class="sub">Render on demand, culling outside the camera, incremental transcript reads and coalesced diffs at about 10 Hz. Measured on the native app.</p>
+        <div class="stats">
+          <div class="card stat"><div class="n">0.06%</div><div class="l">CPU at rest</div></div>
+          <div class="card stat"><div class="n">0</div><div class="l">frames when nothing moves</div></div>
+          <div class="card stat"><div class="n">197 MB</div><div class="l">RAM at rest, mostly WebKit</div></div>
+          <div class="card stat"><div class="n">288 MB</div><div class="l">RAM with 50 active agents</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how">
+      <div class="wrap">
+        <div class="kicker">HOW IT WORKS</div>
+        <h2>Hooks in, map out.</h2>
+        <p class="sub">A pure Rust core collects signals from the CLIs and the operating system, computes each status, and streams small diffs to a PixiJS world inside a Tauri v2 shell.</p>
+        <div class="flow">
+          <div class="card">
+            <h3>Signals</h3>
+            <ul>
+              <li>Claude: native HTTP hooks</li>
+              <li>Codex, Gemini: <code>kiti-hook</code> forwarder</li>
+              <li>Processes via <code>sysinfo</code></li>
+              <li>Session files and transcripts</li>
+            </ul>
+          </div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="card">
+            <h3>Rust core</h3>
+            <ul>
+              <li>Hook server on 127.0.0.1</li>
+              <li>Agent registry</li>
+              <li>Pure status reducer</li>
+              <li>PID ↔ session correlation</li>
+            </ul>
+          </div>
+          <div class="arrow" aria-hidden="true">→</div>
+          <div class="card">
+            <h3>Office UI</h3>
+            <ul>
+              <li>Tauri IPC channel</li>
+              <li>PixiJS v8 world, custom camera</li>
+              <li>React for panels only</li>
+              <li>xterm.js terminal</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy">
+      <div class="wrap two">
+        <div>
+          <div class="kicker">PRIVACY</div>
+          <h2>Everything stays on your Mac.</h2>
+          <p class="sub">Kiti has no server, no account and no telemetry. It watches your agents; it never talks back to them.</p>
+        </div>
+        <ul class="checks">
+          <li><strong>Local only.</strong> The hook server listens on 127.0.0.1 with a per-install token and Host and Origin checks.</li>
+          <li><strong>Read-only towards agents.</strong> Every hook gets an empty 204. Kiti never approves or denies anything.</li>
+          <li><strong>No prompts in logs.</strong> Prompts, code and tool output are never logged or saved.</li>
+          <li><strong>Safe to close.</strong> Before each signal, Kiti verifies pid, start time, user and command, so it never kills a reused PID.</li>
+          <li><strong>Fails open.</strong> The forwarder has a 150 ms budget and always exits 0. If Kiti is closed, your CLI does not notice.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="start">
+      <div class="wrap">
+        <div class="kicker">GET STARTED</div>
+        <h2>Build it in a few minutes.</h2>
+        <p class="sub">Kiti runs on macOS and builds from source for now. Windows support is planned.</p>
+        <div class="frame code">
+          <button class="copy" type="button" data-copy="code-start">COPY</button>
+<pre id="code-start"><span class="c"># tools (tmux is optional, for persistent sessions)</span>
+brew install mise rustup tmux
+export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+
+<span class="c"># clone and install</span>
+git clone https://github.com/xavieracostapolo/kiti.git &amp;&amp; cd kiti
+mise install &amp;&amp; mise exec -- pnpm install
+
+<span class="c"># run with the real agents on this Mac</span>
+mise run app:dev
+
+<span class="c"># or build Kiti.app</span>
+mise run app:bundle</pre>
+        </div>
+        <p class="note" style="text-align: left">Claude Code hooks are added on first start and removed with <code>mise run hooks:uninstall</code>. Codex and Gemini are opt-in: <code>mise run hooks:install-codex</code> or <code>hooks:install-gemini</code>. Full guide in the <a href="https://github.com/xavieracostapolo/kiti#readme">README</a>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <span>Kiti · MIT License · © 2026 Xavier Acosta Polo</span>
+      <span>
+        <a href="https://github.com/xavieracostapolo/kiti">GitHub</a> ·
+        <a href="https://github.com/xavieracostapolo/kiti/tree/main/docs/decisiones">Design records</a> ·
+        <a href="https://github.com/xavieracostapolo/kiti/blob/main/CONTRIBUTING.md">Contribute</a>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById("play").addEventListener("click", () => {
+      const stage = document.getElementById("stage");
+      const frame = document.createElement("iframe");
+      frame.src = "demo/?sim=20&seed=42&conversations=1";
+      frame.title = "Kiti live demo with 20 simulated agents";
+      stage.replaceChildren(frame);
+      frame.focus();
+    });
+
+    for (const button of document.querySelectorAll("[data-copy]")) {
+      button.addEventListener("click", async () => {
+        const text = document.getElementById(button.dataset.copy).innerText;
+        try {
+          await navigator.clipboard.writeText(text);
+          button.textContent = "COPIED";
+        } catch {
+          button.textContent = "SELECT + ⌘C";
+        }
+        setTimeout(() => { button.textContent = "COPY"; }, 1500);
+      });
+    }
+  </script>
+</body>
+</html>
