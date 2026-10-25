@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 9, "Oficina primero", en la rama `hito-9-oficina-primero`: corrige la detección de agentes lanzados desde Kiti y ordena el flujo oficina → semáforo → terminal ([ADR 0007](docs/decisiones/0007-terminal-embebida/README.md)). Hitos 1 a 8 fusionados en `main`.
+- **Fase:** Hito 10, "Sesiones persistentes", en la rama `hito-10-sesiones-persistentes` ([ADR 0008](docs/decisiones/0008-sesiones-persistentes/README.md)). Hitos 1 a 9 fusionados en `main`.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -170,6 +170,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **7. Barra de menú y bandeja**, y pausa del render con la ventana oculta.
 - [x] **8. Terminal embebida:** lanzar agentes desde Kiti en un PTY propio y verlos con xterm.js; tooltip con el nombre; aviso para los agentes abiertos fuera de Kiti (ADR 0007).
 - [x] **9. Oficina primero:** las sesiones lanzadas aparecen como oficina; la terminal se abre desde la oficina sin tapar el resto; insignia `>_`.
+- [x] **10. Sesiones persistentes:** los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar la sesión de una carpeta o continuar la última conversación de Claude.
 - [ ] **Después:** soporte para Windows, enfocar las pestañas de Ghostty de los agentes externos (AppleScript) y mejora visual con Kenney.
 
 ## Pendientes de verificar
@@ -194,7 +195,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 
 - Las nuevas decisiones de arquitectura van en `docs/decisiones/NNNN-titulo/README.md`, con el formato del ADR 0001.
 - Al cerrar un hito: márcalo en el roadmap, actualiza "Estado actual" y los comandos.
-- **Requisitos:** `mise` y `rustup` (Homebrew: `brew install mise rustup`; `rustup` es *keg-only*, así que añade `/opt/homebrew/opt/rustup/bin` al `PATH`). `rust-toolchain.toml` y `mise.toml` fijan las versiones.
+- **Requisitos:** `mise`, `rustup` y `tmux` (opcional, para sesiones persistentes: `brew install tmux`) (Homebrew: `brew install mise rustup`; `rustup` es *keg-only*, así que añade `/opt/homebrew/opt/rustup/bin` al `PATH`). `rust-toolchain.toml` y `mise.toml` fijan las versiones.
 - **Comandos** (definidos en `mise.toml`):
 
   ```bash
@@ -210,6 +211,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run app:dev       # app nativa con los agentes reales (KITI_SCAN_MS cambia el intervalo, 3 s)
   mise run app:sim       # app nativa con 20 agentes simulados (KITI_SIM=N:SEED[:freeze])
   mise run scan          # qué procesos detecta Kiti como agentes y por qué (solo lectura)
+  tmux -L kiti ls        # sesiones persistentes de Kiti; entrar: tmux -L kiti attach -t kiti-N
   mise run hooks:status  # estado de los hooks de Kiti en Claude, Codex y Gemini
   mise run hooks:install-codex  # solo si usas Codex CLI (luego /hooks en Codex)
   mise run hooks:install-gemini # solo si usas Gemini CLI

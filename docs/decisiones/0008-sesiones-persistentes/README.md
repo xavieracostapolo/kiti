@@ -32,3 +32,11 @@ Con el ADR 0007, el PTY de cada agente pertenece a Kiti: si Kiti sale, el agente
 - Las sesiones sobreviven a Kiti, pero no a un reinicio del Mac (tmux tampoco).
 - Hay una dependencia externa; si falta, todo sigue funcionando sin persistencia.
 - Cerrar una oficina mata el proceso del agente, y la sesión tmux desaparece con él (`remain-on-exit off`).
+
+## Resultados (Hito 10)
+
+- **Adapter `Tmux`:** 4 tests contra tmux real en sockets aislados (crear y listar con PID, carpeta y proveedor; nombres únicos; el cliente por PTY escribe y lee, y **la sesión sobrevive al cierre del cliente**; la sesión desaparece cuando termina el agente). Los tests borran sus servidores y sus archivos de socket.
+- **Prueba de extremo a extremo con la app:** una sesión `kiti-1` con un `claude` falso apareció como oficina, siguió viva con el mismo PID tras salir de Kiti y, al reabrir Kiti, `list_terminals` la devolvió con su proveedor y carpeta.
+- **Lanzar:** "Nuevo agente" pregunta si reutilizar una sesión de Kiti en la misma carpeta y, en Claude, si continuar la última conversación (`claude --continue`). Cada lanzamiento registra en el log la orden para entrar desde otra terminal (`tmux -L kiti attach -t kiti-N`).
+- **Sin tmux** (`terminals.ready persistent=false`), Kiti usa el PTY directo del ADR 0007.
+- **Pendiente manual:** los dos diálogos nativos y una sesión real de Claude dentro de tmux.
