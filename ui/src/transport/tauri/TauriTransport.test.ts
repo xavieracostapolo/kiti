@@ -79,3 +79,41 @@ describe("TauriTransport", () => {
     expect(metricsCalled).toBe(true);
   });
 });
+
+describe("TauriTransport.terminals", () => {
+  beforeEach(() => clearMocks());
+
+  it("lanza un agente pidiendo solo el proveedor", async () => {
+    const info = { id: "pty-1", pid: 9, provider: "claude", cwd: "/w", running: true };
+    mockIPC((cmd, args) => {
+      if (cmd === "launch_agent") {
+        expect(args).toEqual({ provider: "claude" });
+        return info;
+      }
+    });
+    expect(await new TauriTransport().terminals.launch("claude")).toEqual(info);
+  });
+
+  it("lista, escribe, redimensiona y se conecta por id", async () => {
+    const calls: [string, unknown][] = [];
+    mockIPC((cmd, args) => {
+      calls.push([cmd, args]);
+      if (cmd === "list_terminals") return [];
+      return null;
+    });
+    const t = new TauriTransport().terminals;
+    expect(await t.list()).toEqual([]);
+    await t.input("pty-1", "hola\r");
+    await t.resize("pty-1", 120, 40);
+    await t.attach("pty-1", () => {});
+    expect(calls.map(([c]) => c)).toEqual([
+      "list_terminals",
+      "terminal_input",
+      "terminal_resize",
+      "attach_terminal",
+    ]);
+    expect(calls[1]?.[1]).toEqual({ id: "pty-1", data: "hola\r" });
+    expect(calls[2]?.[1]).toEqual({ id: "pty-1", cols: 120, rows: 40 });
+    expect(calls[3]?.[1]).toHaveProperty("onData");
+  });
+});

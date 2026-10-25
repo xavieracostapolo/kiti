@@ -70,4 +70,28 @@ describe("store", () => {
     expect(store.getState().agents).toBe(agents);
     expect(store.getState().coreMetrics?.rssBytes).toBe(32_000_000);
   });
+
+  it("une cada terminal con su oficina por pid y abre la del agente seleccionado", () => {
+    const store = createKitiStore();
+    store.getState().receive({ type: "Snapshot", seq: 0, agents: [a] });
+    expect(store.getState().terminalFor(a.pid)).toBeUndefined();
+    store
+      .getState()
+      .setTerminals([{ id: "pty-1", pid: a.pid, provider: "codex", cwd: "/w/a", running: true }]);
+    expect(store.getState().terminalFor(a.pid)?.id).toBe("pty-1");
+    store.getState().openTerminal("pty-1");
+    expect(store.getState().openTerminalId).toBe("pty-1");
+    store.getState().closeTerminal();
+    expect(store.getState().openTerminalId).toBeUndefined();
+  });
+
+  it("el hover solo notifica cuando cambia de oficina", () => {
+    const store = createKitiStore();
+    let calls = 0;
+    store.subscribe(() => calls++);
+    store.getState().setHover({ id: "a", x: 10, y: 20 });
+    store.getState().setHover({ id: "a", x: 12, y: 21 });
+    store.getState().setHover(undefined);
+    expect(calls).toBe(2);
+  });
 });

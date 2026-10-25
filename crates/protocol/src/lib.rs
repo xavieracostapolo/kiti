@@ -156,6 +156,18 @@ pub struct UiMetrics {
     pub offices_visible: u32,
 }
 
+/// Terminal de un agente lanzado desde Kiti (ADR 0007). La UI la une a su oficina por `pid`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TerminalInfo {
+    pub id: String,
+    pub pid: u32,
+    pub provider: Provider,
+    pub cwd: String,
+    pub running: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -257,6 +269,21 @@ mod tests {
         assert_eq!(
             value,
             json!({ "protocolVersion": PROTOCOL_VERSION, "appVersion": "0.1.0", "source": "sim" })
+        );
+    }
+
+    #[test]
+    fn terminal_info_en_camel_case() {
+        let t = TerminalInfo {
+            id: "pty-1".into(),
+            pid: 77,
+            provider: Provider::Claude,
+            cwd: "/w".into(),
+            running: true,
+        };
+        assert_eq!(
+            serde_json::to_value(t).unwrap(),
+            json!({ "id": "pty-1", "pid": 77, "provider": "claude", "cwd": "/w", "running": true })
         );
     }
 

@@ -8,13 +8,20 @@ import s from "./panels.module.css";
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 
-type Props = { store: KitiStore; world: () => WorldHandle | undefined; now: () => number };
+type Props = {
+  store: KitiStore;
+  world: () => WorldHandle | undefined;
+  now: () => number;
+  /** Hay terminales (app nativa): se ofrece abrir la del agente o se explica por qué no. */
+  terminalsAvailable?: boolean;
+};
 
 /** Detalle del agente seleccionado. Solo se re-renderiza cuando cambia ese agente. */
-export function AgentPanel({ store, world, now }: Props) {
+export function AgentPanel({ store, world, now, terminalsAvailable = false }: Props) {
   const agent = useStore(store, (st) =>
     st.view.selectedId ? st.agents.agents.get(st.view.selectedId) : undefined,
   );
+  const terminal = useStore(store, (st) => (agent ? st.terminals.get(agent.pid) : undefined));
   if (!agent) return null;
   return (
     <aside className={s.agentPanel} aria-label="Agente seleccionado">
@@ -40,7 +47,22 @@ export function AgentPanel({ store, world, now }: Props) {
         <dt>cwd</dt>
         <dd>{agent.cwd}</dd>
       </dl>
+      {terminalsAvailable && !terminal && (
+        <p className={s.notice}>
+          Abierto fuera de Kiti: su terminal no se puede mostrar aquí. Lanza agentes con «Nuevo
+          agente» para tenerlos dentro.
+        </p>
+      )}
       <div className={s.panelActions}>
+        {terminal && (
+          <button
+            type="button"
+            className={s.button}
+            onClick={() => store.getState().openTerminal(terminal.id)}
+          >
+            Abrir terminal
+          </button>
+        )}
         <button type="button" className={s.button} onClick={() => world()?.focus(agent.id)}>
           Enfocar
         </button>

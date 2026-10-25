@@ -2,7 +2,8 @@
 
 import type { AgentId, AgentState, Hello, KillResult, ServerMsg, UiMetrics } from "../../protocol";
 import { PROTOCOL_VERSION } from "../../protocol";
-import type { Transport } from "../Transport";
+import type { TerminalApi, Transport } from "../Transport";
+import { FakeTerminals } from "./FakeTerminals";
 import { SimFleet, TICK_MS } from "./fleet";
 
 export type Schedule = (tick: () => void) => () => void;
@@ -15,6 +16,8 @@ export type SimOptions = {
   /** Sin pasos automáticos: el mundo queda quieto (capturas, test de reposo). */
   freeze?: boolean;
   schedule?: Schedule;
+  /** Terminal falsa unida al primer agente (`?terminals=1`). */
+  terminals?: boolean;
 };
 
 const intervalSchedule: Schedule = (tick) => {
@@ -24,6 +27,7 @@ const intervalSchedule: Schedule = (tick) => {
 
 export class SimTransport implements Transport {
   readonly killConfirmation = "in-app" as const;
+  readonly terminals?: TerminalApi;
   private readonly fleet: SimFleet;
   private readonly opts: SimOptions;
   private onMsg: ((msg: ServerMsg) => void) | undefined;
@@ -33,6 +37,8 @@ export class SimTransport implements Transport {
   constructor(opts: SimOptions) {
     this.opts = opts;
     this.fleet = new SimFleet({ count: opts.count, seed: opts.seed });
+    const first = this.fleet.snapshot()[0];
+    if (opts.terminals && first) this.terminals = new FakeTerminals(first);
   }
 
   async connect(onMsg: (msg: ServerMsg) => void): Promise<Hello> {

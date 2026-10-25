@@ -1,5 +1,6 @@
-import { Profiler, useCallback, useRef } from "react";
+import { Profiler, useCallback, useEffect, useRef } from "react";
 import type { Params } from "../dev/params";
+import type { Provider } from "../protocol";
 import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
 import type { Transport } from "../transport/Transport";
@@ -7,6 +8,8 @@ import type { WorldHandle } from "../world/World";
 import { AgentPanel } from "./AgentPanel";
 import { CloseOfficeDialog } from "./CloseOfficeDialog";
 import { DebugPanel } from "./DebugPanel";
+import { OfficeTooltip } from "./OfficeTooltip";
+import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { WorldHost } from "./WorldHost";
 
@@ -29,12 +32,47 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
     [onWorld],
   );
   const killAgent = useCallback((id: string) => transport.killAgent(id), [transport]);
+  const terminals = transport.terminals;
+
+  // Clic en una oficina lanzada desde Kiti: se abre su terminal directamente (ADR 0007).
+  useEffect(
+    () =>
+      store.subscribe((st, prev) => {
+        if (st.view.selectedId === prev.view.selectedId || !st.view.selectedId) return;
+        const agent = st.agents.agents.get(st.view.selectedId);
+        const terminal = agent && st.terminals.get(agent.pid);
+        if (terminal) st.openTerminal(terminal.id);
+      }),
+    [store],
+  );
+
+  const launch = useCallback(
+    async (provider: Provider) => {
+      if (!terminals) return;
+      try {
+        const info = await terminals.launch(provider);
+        if (!info) return; // canceló el selector de carpeta
+        store.getState().setTerminals(await terminals.list());
+        store.getState().openTerminal(info.id);
+      } catch (e) {
+        console.error(`No se pudo lanzar ${provider}: ${JSON.stringify(e)}`);
+      }
+    },
+    [store, terminals],
+  );
 
   return (
     <Profiler id="panels" onRender={() => metrics.reactCommit()}>
       <WorldHost store={store} metrics={metrics} params={params} onWorld={handleWorld} />
-      <TopBar store={store} />
-      <AgentPanel store={store} world={() => world.current} now={now} />
+      <TopBar store={store} {...(terminals ? { onLaunch: launch } : {})} />
+      <AgentPanel
+        store={store}
+        world={() => world.current}
+        now={now}
+        terminalsAvailable={terminals !== undefined}
+      />
+      {terminals && <TerminalPanel store={store} api={terminals} />}
+      <OfficeTooltip store={store} />
       {transport.killConfirmation === "in-app" && (
         <CloseOfficeDialog store={store} killAgent={killAgent} />
       )}

@@ -37,6 +37,7 @@ async function bootstrap() {
       seed: params.seed,
       steps: params.steps,
       freeze: params.freeze,
+      terminals: params.terminals,
     });
     transport = sim;
     getNow = () => sim.now();
@@ -58,6 +59,8 @@ async function bootstrap() {
       })
       .then((hello) => {
         store.getState().setSource(hello.source);
+        // Terminales de agentes lanzados antes de abrir esta ventana (ADR 0007).
+        void transport.terminals?.list().then((list) => store.getState().setTerminals(list));
         console.info(JSON.stringify({ event: "transport.connected", ...hello }));
       });
   }

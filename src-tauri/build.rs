@@ -6,6 +6,11 @@ fn main() {
             "report_ui_metrics",
             "set_debug_stream",
             "ui_log",
+            "launch_agent",
+            "list_terminals",
+            "attach_terminal",
+            "terminal_input",
+            "terminal_resize",
         ]),
     ))
     .expect("tauri build");

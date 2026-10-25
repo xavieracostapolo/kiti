@@ -1,9 +1,30 @@
 // Única puerta entre la UI y el backend (ADR 0003 §2). Sim en el navegador, Tauri en la app.
-import type { AgentId, Hello, KillResult, ServerMsg, UiMetrics } from "../protocol";
+import type {
+  AgentId,
+  Hello,
+  KillResult,
+  Provider,
+  ServerMsg,
+  TerminalInfo,
+  UiMetrics,
+} from "../protocol";
+
+/** Terminales de los agentes lanzados desde Kiti (ADR 0007). Solo existe en la app nativa. */
+export interface TerminalApi {
+  /** Abre el selector nativo de carpeta y lanza el CLI. `null` si el usuario cancela. */
+  launch(provider: Provider): Promise<TerminalInfo | null>;
+  list(): Promise<TerminalInfo[]>;
+  /** Recibe primero el scrollback y después la salida en vivo. */
+  attach(id: string, onData: (bytes: Uint8Array) => void): Promise<void>;
+  input(id: string, data: string): Promise<void>;
+  resize(id: string, cols: number, rows: number): Promise<void>;
+}
 
 export interface Transport {
   /** "in-app": la UI muestra su AlertDialog (Sim). "native": confirma Rust con un diálogo nativo (Tauri). */
   readonly killConfirmation: "in-app" | "native";
+  /** `undefined` en el simulador: no hay terminales que mostrar. */
+  readonly terminals?: TerminalApi;
   /** El primer mensaje es siempre `Snapshot`; después llegan `Diff` (~10 Hz). */
   connect(onMsg: (msg: ServerMsg) => void): Promise<Hello>;
   /** Termina el proceso del agente. Solo tras la confirmación que corresponda. */

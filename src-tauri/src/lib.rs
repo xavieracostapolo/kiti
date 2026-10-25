@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
 use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pump, serve_hooks};
+use kiti_core::adapters::pty::{LaunchSpec, PtyManager, TerminalInfo as PtyInfo};
 use kiti_core::adapters::{SysinfoScanner, SystemClock, UnixKiller};
 use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, run_scanner};
 use kiti_core::domain::{AgentId, Timestamp};
@@ -14,10 +15,11 @@ use kiti_core::ports::{
     AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
 };
 use kiti_core::sim::{SimFleet, SimSpec, TICK_MS};
-use kiti_protocol::{Hello, IpcError, KillResult, ServerMsg, Source, UiMetrics};
+use kiti_protocol::{Hello, IpcError, KillResult, ServerMsg, Source, TerminalInfo, UiMetrics};
 use std::sync::Arc;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::ipc::Channel;
+use tauri::ipc::InvokeResponseBody;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, State};
@@ -42,6 +44,172 @@ const DEFAULT_HOOK_PORT: u16 = 47821;
 
 pub struct AppState {
     pub runtime: RuntimeHandle,
+    /// Terminales de los agentes lanzados desde Kiti (ADR 0007). `None` en modo simulado.
+    pub terminals: Option<Arc<Terminals>>,
+}
+
+pub struct Terminals {
+    pty: PtyManager,
+    providers: std::sync::Mutex<std::collections::HashMap<String, kiti_protocol::Provider>>,
+}
+
+impl Terminals {
+    fn info(&self, t: PtyInfo) -> TerminalInfo {
+        let provider = self
+            .providers
+            .lock()
+            .expect("lock")
+            .get(&t.id)
+            .copied()
+            .unwrap_or(kiti_protocol::Provider::Claude);
+        TerminalInfo {
+            id: t.id,
+            pid: t.pid,
+            provider,
+            cwd: t.cwd,
+            running: t.running,
+        }
+    }
+}
+
+fn terminals(state: &AppState) -> Result<&Arc<Terminals>, IpcError> {
+    state.terminals.as_ref().ok_or_else(|| IpcError {
+        code: "NO_TERMINALS".into(),
+        message: "las terminales solo existen en modo real".into(),
+    })
+}
+
+fn pty_error(e: kiti_core::adapters::pty::PtyError) -> IpcError {
+    IpcError {
+        code: "TERMINAL".into(),
+        message: e.to_string(),
+    }
+}
+
+/// Binario de cada CLI. La UI solo elige el proveedor: nunca envía un comando.
+fn cli_binary(provider: kiti_protocol::Provider) -> &'static str {
+    match provider {
+        kiti_protocol::Provider::Claude => "claude",
+        kiti_protocol::Provider::Codex => "codex",
+        kiti_protocol::Provider::Gemini => "gemini",
+    }
+}
+
+/// Shell de login e interactiva del usuario: el agente hereda el mismo PATH y entorno que en
+/// su terminal (una app abierta desde el Finder solo tiene el PATH mínimo del sistema).
+fn user_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
+}
+
+/// Lanza un CLI de agente en una terminal propia, en la carpeta que el usuario elige con el
+/// selector nativo (ADR 0007). Devuelve `None` si cancela el selector.
+#[tauri::command]
+async fn launch_agent(
+    provider: kiti_protocol::Provider,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<TerminalInfo>, IpcError> {
+    let terminals = terminals(&state)?.clone();
+    let bin = cli_binary(provider);
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title(format!("Carpeta donde trabajará {bin}"))
+        .pick_folder(move |folder| {
+            let _ = tx.send(folder);
+        });
+    let Some(folder) = rx.await.ok().flatten() else {
+        return Ok(None);
+    };
+    let cwd = folder.into_path().map_err(|e| IpcError {
+        code: "FOLDER".into(),
+        message: e.to_string(),
+    })?;
+    let shell = user_shell();
+    // Comprobación previa para dar un error claro en lugar de "command not found" en la terminal.
+    let check_shell = shell.clone();
+    let found = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new(check_shell)
+            .args(["-lic", &format!("command -v {bin}")])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    })
+    .await
+    .unwrap_or(false);
+    if !found {
+        return Err(IpcError {
+            code: "CLI_NOT_FOUND".into(),
+            message: format!("No se encontró `{bin}` en tu PATH"),
+        });
+    }
+    let info = terminals
+        .pty
+        .spawn(LaunchSpec {
+            program: shell.into(),
+            // `exec` sustituye la shell por el CLI: el PID de la terminal es el del agente.
+            args: vec!["-lic".into(), format!("exec {bin}")],
+            cwd: cwd.clone(),
+            cols: 100,
+            rows: 30,
+        })
+        .map_err(pty_error)?;
+    terminals
+        .providers
+        .lock()
+        .expect("lock")
+        .insert(info.id.clone(), provider);
+    info!(event = "agent.launch", provider = bin, cwd = %cwd.display(), pid = info.pid);
+    Ok(Some(terminals.info(info)))
+}
+
+#[tauri::command]
+fn list_terminals(state: State<'_, AppState>) -> Result<Vec<TerminalInfo>, IpcError> {
+    let terminals = terminals(&state)?;
+    Ok(terminals
+        .pty
+        .list()
+        .into_iter()
+        .map(|t| terminals.info(t))
+        .collect())
+}
+
+/// Conecta la ventana a una terminal: primero el scrollback y después la salida en vivo, en
+/// binario por el Channel.
+#[tauri::command]
+fn attach_terminal(
+    id: String,
+    on_data: Channel<InvokeResponseBody>,
+    state: State<'_, AppState>,
+) -> Result<(), IpcError> {
+    terminals(&state)?
+        .pty
+        .attach(&id, move |bytes| {
+            let _ = on_data.send(InvokeResponseBody::Raw(bytes));
+        })
+        .map_err(pty_error)
+}
+
+#[tauri::command]
+fn terminal_input(id: String, data: String, state: State<'_, AppState>) -> Result<(), IpcError> {
+    terminals(&state)?
+        .pty
+        .write(&id, data.as_bytes())
+        .map_err(pty_error)
+}
+
+#[tauri::command]
+fn terminal_resize(
+    id: String,
+    cols: u16,
+    rows: u16,
+    state: State<'_, AppState>,
+) -> Result<(), IpcError> {
+    terminals(&state)?
+        .pty
+        .resize(&id, cols.max(2), rows.max(1))
+        .map_err(pty_error)
 }
 
 /// Mantiene vivo el escritor de logs en segundo plano hasta que la app termina.
@@ -339,7 +507,16 @@ pub fn run() {
                 }
             };
             start_tray(app.handle(), handle.clone())?;
-            app.manage(AppState { runtime: handle });
+            let terminals = std::env::var("KITI_SIM").is_err().then(|| {
+                Arc::new(Terminals {
+                    pty: PtyManager::default(),
+                    providers: Default::default(),
+                })
+            });
+            app.manage(AppState {
+                runtime: handle,
+                terminals,
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -348,6 +525,11 @@ pub fn run() {
             report_ui_metrics,
             set_debug_stream,
             ui_log,
+            launch_agent,
+            list_terminals,
+            attach_terminal,
+            terminal_input,
+            terminal_resize,
         ])
         .build(tauri::generate_context!())
         .expect("error al construir la aplicación Tauri")

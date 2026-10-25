@@ -13,6 +13,8 @@ export type Params = {
   /** Id o índice de la oficina a enfocar. */
   focus?: string;
   bench?: string;
+  /** Terminal falsa en el modo sim, para probar el panel de terminal (ADR 0007). */
+  terminals: boolean;
 };
 
 const MAX_AGENTS = 200;
@@ -32,6 +34,7 @@ export function parseParams(search: string): Params {
     freeze: q.get("freeze") === "1",
     anim: q.get("anim") !== "0",
     zoom: zoom === "mid" || zoom === "near" ? zoom : "far",
+    terminals: q.get("terminals") === "1",
   };
   const focus = q.get("focus");
   if (focus) params.focus = focus;

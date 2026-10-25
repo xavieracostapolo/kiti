@@ -18,4 +18,19 @@ describe("TopBar", () => {
     render(<TopBar store={store} />);
     expect(screen.queryByText("SIMULADO")).toBeNull();
   });
+
+  it("con terminales ofrece lanzar un agente y elegir el CLI", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const store = createKitiStore();
+    const launched: string[] = [];
+    render(<TopBar store={store} onLaunch={(p) => launched.push(p)} />);
+    await userEvent.click(screen.getByRole("button", { name: /nuevo agente/i }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Claude Code" }));
+    expect(launched).toEqual(["claude"]);
+  });
+
+  it("sin terminales (simulador) no hay botón de lanzar", () => {
+    render(<TopBar store={createKitiStore()} />);
+    expect(screen.queryByRole("button", { name: /nuevo agente/i })).toBeNull();
+  });
 });

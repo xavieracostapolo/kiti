@@ -8,12 +8,14 @@ publish.workspace = true
 
 [features]
 # Con --no-default-features solo quedan domain y application (CI lo comprueba, ADR 0002 §6).
-default = ["sim", "testing", "scanner", "killer", "hooks"]
+default = ["sim", "testing", "scanner", "killer", "hooks", "pty"]
 sim = ["dep:rand", "dep:rand_chacha"]
 # Adapters de procesos reales con sysinfo (ADR 0002 §5).
 scanner = ["dep:sysinfo"]
 killer = ["dep:sysinfo"]
 # Servidor HTTP local para los hooks de los CLIs (ADR 0004 §2).
+# Terminales propias para agentes lanzados desde Kiti (ADR 0007).
+pty = ["dep:portable-pty"]
 hooks = ["scanner", "dep:axum", "dep:tower", "dep:tower-http", "dep:getrandom", "dep:constant_time_eq"]
 testing = []
 
@@ -34,6 +36,7 @@ tower = { workspace = true, optional = true }
 tower-http = { workspace = true, optional = true }
 getrandom = { workspace = true, optional = true }
 constant_time_eq = { workspace = true, optional = true }
+portable-pty = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

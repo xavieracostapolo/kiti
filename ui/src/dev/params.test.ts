@@ -10,6 +10,7 @@ describe("parseParams", () => {
       freeze: false,
       anim: true,
       zoom: "far",
+      terminals: false,
     });
   });
 
@@ -25,6 +26,7 @@ describe("parseParams", () => {
       zoom: "near",
       focus: "3",
       bench: "pan",
+      terminals: false,
     });
   });
 
