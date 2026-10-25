@@ -46,8 +46,7 @@ fn lanza_un_proceso_y_su_salida_queda_en_el_scrollback() {
     std::thread::sleep(Duration::from_millis(300));
     // Quien se conecta después recibe lo ya escrito.
     let (buf, sink) = collector();
-    let replay = pty.attach(&info.id, sink).unwrap();
-    buf.lock().unwrap().extend(replay);
+    pty.attach(&info.id, sink).unwrap();
     assert!(wait_for(&buf, "hola-kiti"));
     assert_eq!(
         pty.list().iter().map(|t| t.pid).collect::<Vec<_>>(),
@@ -61,8 +60,7 @@ fn la_entrada_llega_al_proceso_y_su_eco_vuelve() {
     let pty = PtyManager::default();
     let info = pty.spawn(spec("/bin/cat", &[])).unwrap();
     let (buf, sink) = collector();
-    let replay = pty.attach(&info.id, sink).unwrap();
-    buf.lock().unwrap().extend(replay);
+    pty.attach(&info.id, sink).unwrap();
     pty.write(&info.id, b"escrito-desde-kiti\n").unwrap();
     assert!(wait_for(&buf, "escrito-desde-kiti"));
     pty.resize(&info.id, 120, 40).unwrap();
@@ -81,18 +79,12 @@ fn reconectar_no_pierde_bytes() {
             ],
         ))
         .unwrap();
-    let (first, sink1) = collector();
-    first
-        .lock()
-        .unwrap()
-        .extend(pty.attach(&info.id, sink1).unwrap());
+    let (_first, sink1) = collector();
+    pty.attach(&info.id, sink1).unwrap();
     std::thread::sleep(Duration::from_millis(250));
-    // Nueva ventana: el scrollback trae todo lo anterior y el stream sigue desde ahí.
+    // Nueva ventana: primero recibe el scrollback y después el stream, en orden.
     let (second, sink2) = collector();
-    second
-        .lock()
-        .unwrap()
-        .extend(pty.attach(&info.id, sink2).unwrap());
+    pty.attach(&info.id, sink2).unwrap();
     assert!(wait_for(&second, "linea-6"));
     let text = String::from_utf8_lossy(&second.lock().unwrap()).to_string();
     for i in 1..=6 {
@@ -115,8 +107,9 @@ fn el_scrollback_esta_acotado() {
         ))
         .unwrap();
     std::thread::sleep(Duration::from_millis(500));
-    let (_, sink) = collector();
-    assert!(pty.attach(&info.id, sink).unwrap().len() <= 1024);
+    let (buf, sink) = collector();
+    pty.attach(&info.id, sink).unwrap();
+    assert!(buf.lock().unwrap().len() <= 1024);
     pty.kill(&info.id).unwrap();
 }
 

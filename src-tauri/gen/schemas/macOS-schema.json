@@ -177,10 +177,28 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Enables the attach_terminal command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-attach-terminal",
+          "markdownDescription": "Enables the attach_terminal command without any pre-configured scope."
+        },
+        {
           "description": "Enables the kill_agent command without any pre-configured scope.",
           "type": "string",
           "const": "allow-kill-agent",
           "markdownDescription": "Enables the kill_agent command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the launch_agent command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-launch-agent",
+          "markdownDescription": "Enables the launch_agent command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the list_terminals command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-terminals",
+          "markdownDescription": "Enables the list_terminals command without any pre-configured scope."
         },
         {
           "description": "Enables the report_ui_metrics command without any pre-configured scope.",
@@ -201,16 +219,46 @@
           "markdownDescription": "Enables the subscribe command without any pre-configured scope."
         },
         {
+          "description": "Enables the terminal_input command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-terminal-input",
+          "markdownDescription": "Enables the terminal_input command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the terminal_resize command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-terminal-resize",
+          "markdownDescription": "Enables the terminal_resize command without any pre-configured scope."
+        },
+        {
           "description": "Enables the ui_log command without any pre-configured scope.",
           "type": "string",
           "const": "allow-ui-log",
           "markdownDescription": "Enables the ui_log command without any pre-configured scope."
         },
         {
+          "description": "Denies the attach_terminal command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-attach-terminal",
+          "markdownDescription": "Denies the attach_terminal command without any pre-configured scope."
+        },
+        {
           "description": "Denies the kill_agent command without any pre-configured scope.",
           "type": "string",
           "const": "deny-kill-agent",
           "markdownDescription": "Denies the kill_agent command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the launch_agent command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-launch-agent",
+          "markdownDescription": "Denies the launch_agent command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the list_terminals command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-terminals",
+          "markdownDescription": "Denies the list_terminals command without any pre-configured scope."
         },
         {
           "description": "Denies the report_ui_metrics command without any pre-configured scope.",
@@ -229,6 +277,18 @@
           "type": "string",
           "const": "deny-subscribe",
           "markdownDescription": "Denies the subscribe command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the terminal_input command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-terminal-input",
+          "markdownDescription": "Denies the terminal_input command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the terminal_resize command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-terminal-resize",
+          "markdownDescription": "Denies the terminal_resize command without any pre-configured scope."
         },
         {
           "description": "Denies the ui_log command without any pre-configured scope.",

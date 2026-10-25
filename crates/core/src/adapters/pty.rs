@@ -141,18 +141,22 @@ impl PtyManager {
         Ok(info)
     }
 
-    /// Devuelve el scrollback y, desde ese instante, envía la salida nueva a `sink`. Sustituye
-    /// al suscriptor anterior (la ventana que se cerró).
+    /// Envía a `sink` el scrollback y, a continuación, la salida nueva, en orden: las dos cosas
+    /// ocurren bajo el lock que también toma el lector. Sustituye al suscriptor anterior (la
+    /// ventana que se cerró).
     pub fn attach(
         &self,
         id: &str,
         sink: impl Fn(Vec<u8>) + Send + 'static,
-    ) -> Result<Vec<u8>, PtyError> {
+    ) -> Result<(), PtyError> {
         let session = self.get(id)?;
         let mut shared = session.shared.lock().expect("lock");
         let replay: Vec<u8> = shared.scrollback.iter().copied().collect();
+        if !replay.is_empty() {
+            sink(replay);
+        }
         shared.sink = Some(Box::new(sink));
-        Ok(replay)
+        Ok(())
     }
 
     pub fn write(&self, id: &str, data: &[u8]) -> Result<(), PtyError> {

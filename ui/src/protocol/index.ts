@@ -11,6 +11,7 @@ export type { Source } from "./generated/Source";
 export type { Status } from "./generated/Status";
 export type { StatusKind } from "./generated/StatusKind";
 export type { StatusReason } from "./generated/StatusReason";
+export type { TerminalInfo } from "./generated/TerminalInfo";
 export type { UiMetrics } from "./generated/UiMetrics";
 
 export const PROTOCOL_VERSION = 1;

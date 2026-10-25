@@ -10,7 +10,7 @@ publish.workspace = true
 tauri-build.workspace = true
 
 [dependencies]
-kiti-core = { workspace = true, features = ["sim", "scanner", "killer", "hooks"] }
+kiti-core = { workspace = true, features = ["sim", "scanner", "killer", "hooks", "pty"] }
 kiti-protocol.workspace = true
 tauri.workspace = true
 tauri-plugin-dialog.workspace = true
