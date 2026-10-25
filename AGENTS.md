@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 12, "Avisos", en la rama `hito-12-avisos` ([ADR 0010](docs/decisiones/0010-avisos/README.md)). Hitos 1 a 11 fusionados en `main`.
+- **Fase:** Hitos 1 a 12 fusionados en `main`. El último, "Avisos", está en el [ADR 0010](docs/decisiones/0010-avisos/README.md).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
