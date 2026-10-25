@@ -310,6 +310,21 @@ Lectura:
 - **E1:** en las pruebas, Kiti se cerró y se reinició varias veces mientras esta sesión de Claude disparaba hooks hacia el puerto cerrado. Resultado pendiente de lo que el usuario vio en su terminal.
 - **Pendiente:** indicador en la UI del estado de los hooks, acción "Regenerar token" y `hook_to_publish_ms` en el panel de debug con tráfico real.
 
+## Plan del Hito 5: "Forwarder para Codex y Gemini"
+
+**Alcance:** binario `kiti-hook` (crate `crates/forwarder`, con `ureq` sin TLS), ACLs de Codex y Gemini, correlación por ancestros con `X-Kiti-Ppid` e instaladores de `~/.codex/hooks.json` y `~/.gemini/settings.json`.
+
+**Contexto (2026-10-24):** ni Codex CLI ni Gemini CLI están instalados en la máquina del usuario. Todo se construye contra la documentación y con fixtures. **No se instala nada** en las configuraciones de esos CLIs hasta que el usuario los use y dé permiso.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿El forwarder frena al agente? | Duración de `kiti-hook` con Kiti abierta y cerrada | < 150 ms siempre, `exit 0` |
+| ¿Gemini acepta su salida? | stdout del forwarder con `gemini` | Exactamente `{}` |
+| ¿Cada hook encuentra su oficina? | `session.linked` con fuente `ppid` | Enlaza por ancestros sin heurística de `cwd` |
+| ¿Se respeta la config ajena? | Tests de los instaladores con hooks de terceros | Igual salvo lo de Kiti |
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.

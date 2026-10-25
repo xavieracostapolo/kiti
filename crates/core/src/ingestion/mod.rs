@@ -2,6 +2,8 @@
 //! Lee de forma tolerante solo los campos que usa; el resto (prompts, salidas) se descarta.
 
 pub mod claude;
+pub mod codex;
+pub mod gemini;
 
 use crate::domain::{SessionId, Signal};
 

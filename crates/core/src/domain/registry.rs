@@ -149,8 +149,7 @@ impl AgentRegistry {
         events
     }
 
-    /// Un hook ya traducido por la ACL. Orden de enlace: sesión conocida, luego un único agente
-    /// del mismo provider y `cwd` sin sesión; si no, se retiene hasta 5 s.
+    /// Un hook ya traducido por la ACL, sin ancestros (Claude llega por http directo).
     pub fn hook(
         &mut self,
         provider: Provider,
@@ -159,8 +158,31 @@ impl AgentRegistry {
         signal: &Signal,
         now: Timestamp,
     ) -> Events {
+        self.hook_from(provider, session, cwd, &[], signal, now)
+    }
+
+    /// Orden de enlace: sesión conocida; el primer ancestro del forwarder que sea un agente vivo
+    /// del mismo provider (`X-Kiti-Ppid`, ADR 0005 §4); un único agente del mismo provider y
+    /// `cwd` sin sesión; si no, se retiene hasta 5 s.
+    pub fn hook_from(
+        &mut self,
+        provider: Provider,
+        session: &SessionId,
+        cwd: &str,
+        ancestry: &[Pid],
+        signal: &Signal,
+        now: Timestamp,
+    ) -> Events {
         if let Some(id) = self.sessions.get(session).copied() {
             return self.apply(&id, &AgentInput::Signal(signal.clone()), now);
+        }
+        if let Some(id) = ancestry
+            .iter()
+            .find_map(|pid| self.live_agent(provider, *pid))
+        {
+            let mut events = self.link(session, id);
+            events.extend(self.apply(&id, &AgentInput::Signal(signal.clone()), now));
+            return events;
         }
         let linked: std::collections::HashSet<AgentId> = self.sessions.values().copied().collect();
         let mut candidates = self.agents.values().filter(|a| {
@@ -603,5 +625,53 @@ mod tests {
             Timestamp(13),
         );
         assert_eq!(kind_of(&reg, &a), Some(StatusKind::Working));
+    }
+
+    #[test]
+    fn el_ppid_del_forwarder_enlaza_aunque_el_cwd_sea_ambiguo() {
+        let mut reg = AgentRegistry::new();
+        let codex = |pid| DetectedAgent {
+            provider: Provider::Codex,
+            ..claude_at(pid, "/w/x")
+        };
+        let (a, b) = (codex(10), codex(20));
+        reg.reconcile(&[a.clone(), b.clone()], Timestamp(1));
+        // kiti-hook → sh -c → codex (pid 20) → zsh
+        let ancestry = [Pid(901), Pid(20), Pid(5)];
+        reg.hook_from(
+            Provider::Codex,
+            &sid("thr_1"),
+            "/w/x",
+            &ancestry,
+            &Signal::PromptSubmit,
+            Timestamp(2),
+        );
+        assert_eq!(kind_of(&reg, &b), Some(StatusKind::Working));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Idle));
+        // Ya enlazada, la sesión no necesita más ancestros.
+        reg.hook(
+            Provider::Codex,
+            &sid("thr_1"),
+            "/w/x",
+            &Signal::Stop,
+            Timestamp(3),
+        );
+        assert_eq!(kind_of(&reg, &b), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn un_ancestro_de_otro_cli_no_cuenta() {
+        let mut reg = AgentRegistry::new();
+        let claude = claude_at(20, "/w/x");
+        reg.reconcile(std::slice::from_ref(&claude), Timestamp(1));
+        reg.hook_from(
+            Provider::Codex,
+            &sid("thr_1"),
+            "/otra",
+            &[Pid(20)],
+            &Signal::PromptSubmit,
+            Timestamp(2),
+        );
+        assert_eq!(kind_of(&reg, &claude), Some(StatusKind::Idle));
     }
 }
