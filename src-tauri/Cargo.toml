@@ -1,0 +1,23 @@
+[package]
+name = "kiti-app"
+version = "0.1.0"
+description = "Shell de escritorio Tauri v2 para Kiti"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[dependencies]
+kiti-core = { workspace = true, features = ["sim", "testing"] }
+kiti-protocol.workspace = true
+tauri.workspace = true
+tauri-plugin-dialog.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -7,50 +7,73 @@ import "./styles.css";
 import { createKitiStore } from "./state/store";
 import { createMetrics } from "./telemetry/metrics";
 import { SimTransport } from "./transport/sim/SimTransport";
+import type { Transport } from "./transport/Transport";
 import type { WorldHandle } from "./world/World";
 
-// Hito 1: solo SimTransport. TauriTransport llega en el Hito 2 (import dinámico).
-const params = parseParams(window.location.search);
-const store = createKitiStore();
-const metrics = createMetrics();
-const sim = new SimTransport({
-  count: params.sim,
-  seed: params.seed,
-  steps: params.steps,
-  freeze: params.freeze,
-});
+async function bootstrap() {
+  const params = parseParams(window.location.search);
+  const store = createKitiStore();
+  const metrics = createMetrics();
 
-let world: WorldHandle | undefined;
-const dev = installDevHooks(store, sim, metrics, () => world);
+  const isTauri =
+    typeof window !== "undefined" &&
+    "__TAURI_INTERNALS__" in window &&
+    !window.location.search.includes("sim=");
 
-function connect() {
-  void sim
-    .connect((msg) => {
-      store.getState().receive(msg);
-      if (store.getState().agents.resync) {
-        console.warn(JSON.stringify({ event: "transport.resync" }));
-        sim.dispose();
-        connect();
-      }
-    })
-    .then((hello) => console.info(JSON.stringify({ event: "transport.connected", ...hello })));
+  let transport: Transport;
+  let getNow: () => number;
+  let simAdvancer: { advance(n: number): void } | undefined;
+
+  if (isTauri) {
+    const { TauriTransport } = await import("./transport/tauri/TauriTransport");
+    transport = new TauriTransport();
+    getNow = () => Date.now();
+  } else {
+    const sim = new SimTransport({
+      count: params.sim,
+      seed: params.seed,
+      steps: params.steps,
+      freeze: params.freeze,
+    });
+    transport = sim;
+    getNow = () => sim.now();
+    simAdvancer = sim;
+  }
+
+  let world: WorldHandle | undefined;
+  const dev = installDevHooks(store, simAdvancer, metrics, () => world);
+
+  function connect() {
+    void transport
+      .connect((msg) => {
+        store.getState().receive(msg);
+        if (store.getState().agents.resync) {
+          console.warn(JSON.stringify({ event: "transport.resync" }));
+          transport.dispose();
+          connect();
+        }
+      })
+      .then((hello) => console.info(JSON.stringify({ event: "transport.connected", ...hello })));
+  }
+  connect();
+
+  const root = document.getElementById("root");
+  if (!root) throw new Error("#root missing");
+  createRoot(root).render(
+    <StrictMode>
+      <App
+        store={store}
+        transport={transport}
+        metrics={metrics}
+        params={params}
+        now={getNow}
+        onWorld={(w) => {
+          world = w;
+          dev.ready = w !== undefined;
+        }}
+      />
+    </StrictMode>,
+  );
 }
-connect();
 
-const root = document.getElementById("root");
-if (!root) throw new Error("#root missing");
-createRoot(root).render(
-  <StrictMode>
-    <App
-      store={store}
-      transport={sim}
-      metrics={metrics}
-      params={params}
-      now={() => sim.now()}
-      onWorld={(w) => {
-        world = w;
-        dev.ready = w !== undefined;
-      }}
-    />
-  </StrictMode>,
-);
+void bootstrap();

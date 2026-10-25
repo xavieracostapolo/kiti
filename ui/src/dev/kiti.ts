@@ -3,7 +3,6 @@
 import { type Counts, countsByKind } from "../state/agents";
 import type { KitiStore } from "../state/store";
 import type { Metrics, MetricsSnapshot } from "../telemetry/metrics";
-import type { SimTransport } from "../transport/sim/SimTransport";
 import type { BenchResult, WorldHandle } from "../world/World";
 import type { Zoom } from "./params";
 
@@ -32,14 +31,14 @@ declare global {
 
 export function installDevHooks(
   store: KitiStore,
-  sim: SimTransport,
+  sim: { advance(n: number): void } | undefined,
   metrics: Metrics,
   getWorld: () => WorldHandle | undefined,
 ): KitiDev {
   const ids = () => [...store.getState().agents.agents.keys()];
   const dev: KitiDev = {
     ready: false,
-    step: (n = 1) => sim.advance(n),
+    step: (n = 1) => sim?.advance(n),
     focus: (id) => getWorld()?.focus(id),
     setZoom: (z) => getWorld()?.setZoom(z),
     fitAll: () => getWorld()?.fitAll(),

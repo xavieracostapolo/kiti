@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/core"]
+members = ["crates/protocol", "crates/core", "src-tauri"]
 
 [workspace.package]
 edition = "2024"
@@ -18,6 +18,12 @@ smallvec = "1.16"
 proptest = "1.12.0"
 tokio = { version = "1.54.1", features = ["sync", "time", "macros", "rt"] }
 tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+tracing-appender = "0.2.5"
+anyhow = "1.0.104"
 hdrhistogram = "7.6.0"
 rand = "0.10.3"
 rand_chacha = "0.10.0"
+tauri = { version = "2.12.5", default-features = false, features = ["wry"] }
+tauri-build = "2.7.4"
+tauri-plugin-dialog = "2.8.3"
