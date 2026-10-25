@@ -1,0 +1,148 @@
+<div align="center">
+
+# Kiti
+
+**A pixel-art virtual office where every room is a coding agent running on your Mac.**
+
+Claude Code, Codex CLI and Gemini CLI in one map, with a traffic light per agent.
+
+[![CI](https://github.com/xavieracostapolo/kiti/actions/workflows/ci.yml/badge.svg)](https://github.com/xavieracostapolo/kiti/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
+![Tauri v2](https://img.shields.io/badge/Tauri-v2-24c8db.svg)
+
+[**Try the live demo**](https://xavieracostapolo.github.io/kiti/demo/) · [Website](https://xavieracostapolo.github.io/kiti/) · [Leer en español](README.es.md)
+
+![Kiti showing 20 simulated agents grouped by project](site/img/sim20-far.png)
+
+</div>
+
+## Why
+
+When you run several coding agents at once, you lose track of them. One waits for a permission, another finished ten minutes ago, a third crashed. Kiti watches the agents on your machine and draws each one as an office. You see the whole team at a glance and zoom into the one that needs you.
+
+## Features
+
+- **Automatic detection.** Kiti finds running Claude Code, Codex CLI and Gemini CLI processes. It classifies them by executable and `argv`, never by process name, and ignores launchers and the desktop apps.
+- **Traffic light per agent.** Green is working, yellow is waiting for you, grey is idle, red is an error or a crash. The status comes from the CLI hooks, not from guessing. A failed tool call is not red.
+- **Zones per project.** Offices are grouped by git root (or folder), so each repository is a neighbourhood.
+- **Camera.** Pan, zoom, double-click to focus an office, `0` to see everything. Far away you see rooms and lights; close up you see the title, the current tool and the last request.
+- **Embedded terminal.** Launch a new agent from Kiti. It runs in `tmux` (`-L kiti`), so it survives when you close Kiti.
+- **Resume conversations.** Closed Claude conversations from the last 7 days stay as dark offices. One click runs `claude --resume` in a Kiti terminal.
+- **Menu bar and notifications.** The menu bar shows the counters. macOS notifies you when an agent asks for permission, finishes a long turn, fails or crashes, but only when Kiti is not in front.
+- **Close an office.** Ends the agent process after a confirmation. Kiti checks `(pid, start_time, uid, cmd)` before each signal, so it never kills a reused PID.
+
+<table>
+<tr>
+<td><img src="site/img/focus-claude.png" alt="Close-up of a working Claude office with a Grep speech bubble"></td>
+<td><img src="site/img/live-tooltip.png" alt="Tooltip and side panel with project, last request and resume button"></td>
+</tr>
+</table>
+
+## Built for many agents
+
+Performance is the first priority. The target is 20 or more agents with no visible cost.
+
+| Measure | Result |
+|---|---|
+| CPU at rest | 0.06 % |
+| RAM at rest | 197 MB (about 158 MB is the WebKit and WebGL base) |
+| RAM with 20 / 50 active agents | 274 MB / 288 MB |
+| Frames when nothing moves | 0 (render on demand) |
+
+Transcripts are read incrementally from the last offset, the core sends coalesced diffs at about 10 Hz, and offices outside the camera are culled. See [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2) for the method.
+
+## Privacy and security
+
+Everything stays on your machine. Kiti has no server and no telemetry.
+
+- The hook server listens on `127.0.0.1` only and needs a per-install token. It checks `Host` and `Origin`, limits the body size and always answers `204`: Kiti never sends a decision back to an agent.
+- Prompts, code and tool output are never logged or saved. The title and the last request travel from the core to the UI only.
+- On first start, Kiti adds its HTTP hooks to `~/.claude/settings.json` and leaves your own hooks untouched. `mise run hooks:uninstall` removes them. Hooks for Codex and Gemini are opt-in.
+
+Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+## Getting started
+
+Kiti runs on macOS. Windows is planned; Linux is not. There is no signed release yet, so you build it from source.
+
+### Try it in the browser
+
+The UI runs without the native app, with simulated agents:
+
+```bash
+git clone https://github.com/xavieracostapolo/kiti.git && cd kiti
+brew install mise rustup tmux          # tmux is optional, for persistent sessions
+mise install && mise exec -- pnpm install
+mise run ui:dev                        # http://127.0.0.1:5173/?sim=20&seed=42
+```
+
+Or open the [live demo](https://xavieracostapolo.github.io/kiti/demo/). URL parameters: `sim` (number of agents), `seed`, `conversations=1` (closed conversations), `terminals=1` (fake terminal).
+
+### Run the app
+
+`rustup` is keg-only in Homebrew, so add `/opt/homebrew/opt/rustup/bin` to your `PATH` first. `rust-toolchain.toml` and `mise.toml` pin the versions.
+
+```bash
+mise run app:dev       # native app with the real agents on this machine
+mise run app:sim       # native app with 20 simulated agents
+mise run app:bundle    # build Kiti.app and copy it to the Desktop
+```
+
+### Connect the CLIs
+
+| CLI | How Kiti listens | Setup |
+|---|---|---|
+| Claude Code | Native `http` hooks and `~/.claude/sessions/<pid>.json` | Automatic on first start |
+| Codex CLI | `command` hooks through the `kiti-hook` forwarder | `mise run hooks:install-codex`, then trust the hook in `/hooks` |
+| Gemini CLI | `command` hooks through the `kiti-hook` forwarder | `mise run hooks:install-gemini` |
+
+`mise run hooks:status` shows what is installed. `mise run scan` shows which processes Kiti sees as agents, and why. The forwarder fails open: it has a 150 ms budget, always exits `0`, and does nothing when Kiti is closed.
+
+## How it works
+
+```
+[claude]  --http hook----------------> [core: HookServer, 127.0.0.1]
+[codex]   --command hook--> [kiti-hook] --> [core: HookServer]
+[gemini]  --command hook--> [kiti-hook] --> [core: HookServer]
+[processes] --sysinfo every 2 s------> [core: ProcessScanner]
+[~/.claude/sessions/*.json] --notify-> [core: ClaudeSessionsWatcher]
+[*.jsonl transcripts] --FSEvents-----> [core: TranscriptTailer]
+                                          |
+                          [core: AgentRegistry + status reducer]
+                                          |  coalesced diffs, ~10 Hz
+                          [src-tauri: tauri::ipc::Channel]
+                                          |
+                          [ui: store -> PixiJS world + React panels]
+```
+
+| Path | Content |
+|---|---|
+| `crates/protocol` | Shared DTOs, exported to TypeScript with `ts-rs` |
+| `crates/core` | Pure Rust domain, application, ports and adapters. No Tauri |
+| `crates/forwarder` | `kiti-hook`, the forwarder for Codex and Gemini hooks |
+| `src-tauri` | Thin shell: commands, channel, capabilities, tray |
+| `ui` | Vite, TypeScript and PixiJS v8 with a custom camera; React for panels only |
+| `docs/decisiones` | Architecture decision records |
+
+Stack: Tauri v2, Rust (`tokio`, `axum`, `sysinfo`), TypeScript 7, PixiJS v8, React, zustand, xterm.js. Tests: Vitest, fast-check and Playwright in the UI; nextest, proptest and insta in Rust.
+
+The design is documented in ten ADRs (in Spanish), from the [stack choice](docs/decisiones/0001-stack/README.md) to [notifications](docs/decisiones/0010-avisos/README.md). [AGENTS.md](AGENTS.md) is the full guide to the codebase.
+
+## Roadmap
+
+- [x] Simulated office, native shell, real processes, hooks for all three CLIs
+- [x] Transcript tailer, menu bar, embedded terminal, persistent `tmux` sessions
+- [x] Project zones, resumable conversations, notifications
+- [ ] Windows support
+- [ ] Focus the Ghostty tab of an external agent
+- [ ] Pixel art from [Kenney](https://kenney.nl) tilesheets
+- [ ] Signed and notarized releases
+
+## Contributing
+
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) first: the project uses test-driven development and Conventional Commits. The UI text is in Spanish for now.
+
+## License
+
+[MIT](LICENSE) © 2026 Xavier Acosta Polo

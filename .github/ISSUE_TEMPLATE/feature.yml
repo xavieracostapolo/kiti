@@ -1,0 +1,21 @@
+name: Feature request
+description: Suggest an idea for Kiti
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What do you want to do that Kiti does not let you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How could Kiti solve it? Mockups and screenshots help.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: Other solutions or workarounds you considered.

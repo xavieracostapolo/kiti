@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in Kiti does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `mise run app:dev`
+        2. Start Claude Code in a git repository
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - Native app with real agents
+        - Native app, simulated (app:sim)
+        - Browser, simulated (ui:dev or live demo)
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: macOS version, Kiti commit, and the agent CLI versions involved.
+      placeholder: macOS 26.1, main@abc1234, Claude Code 2.1.310
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and output
+      description: Output of `mise run scan` or `mise run hooks:status` if relevant. Remove prompts, code and paths you do not want to share.
+      render: text
