@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SimFleet } from "./fleet";
+import { projectFor, SimFleet } from "./fleet";
 
 const ids = (f: SimFleet) => f.snapshot().map((a) => a.id);
 
@@ -70,5 +70,33 @@ describe("SimFleet", () => {
       for (const a of f.snapshot()) seen.add(a.status.kind);
     }
     expect([...seen].sort()).toEqual(["dead", "error", "idle", "waiting", "working"]);
+  });
+
+  it("varias oficinas comparten proyecto, sin depender de cuántos agentes haya", () => {
+    const projects = (n: number) =>
+      new SimFleet({ count: n, seed: 1 }).snapshot().map((a) => a.project);
+    const big = projects(20);
+    expect(new Set(big).size).toBeLessThan(big.length);
+    expect(projects(5)).toEqual(big.slice(0, 5));
+    expect(projectFor(0)).toBe(projectFor(2));
+    expect(projectFor(2)).not.toBe(projectFor(3));
+  });
+
+  it("solo Claude trae título, actividad y último pedido", () => {
+    const f = new SimFleet({ count: 20, seed: 42 });
+    const seen = { activity: false, prompt: false };
+    for (let i = 0; i < 400; i++) {
+      for (const a of f.step().upserts) {
+        if (a.provider !== "claude") {
+          expect(a.title ?? a.activity ?? a.lastPrompt).toBeUndefined();
+          continue;
+        }
+        expect(a.title).toBeDefined();
+        if (a.activity) seen.activity = true;
+        if (a.lastPrompt) seen.prompt = true;
+        if (a.status.kind === "idle") expect(a.activity).toBeUndefined();
+      }
+    }
+    expect(seen).toEqual({ activity: true, prompt: true });
   });
 });

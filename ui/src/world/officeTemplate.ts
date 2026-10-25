@@ -38,11 +38,11 @@ export function drawOfficeTemplate({ w, h, tile }: RoomSize): Container {
   g.rect(0, 0, w, tile * 2).fill(PAL.wall);
   g.rect(0, tile * 2 - 3, w, 3).fill(PAL.wallTrim);
 
-  // Ventana.
-  const wx = tile * 6.5;
-  g.rect(wx - 2, 6, tile * 3 + 4, tile + 8).fill(PAL.windowFrame);
-  g.rect(wx, 8, tile * 3, tile + 4).fill(PAL.window);
-  g.rect(wx + tile * 1.5 - 1, 8, 2, tile + 4).fill(PAL.windowFrame);
+  // Ventana: estrecha y a la derecha, para dejar sitio al título de la conversación (ADR 0009).
+  const wx = tile * 7.75;
+  g.rect(wx - 2, 6, tile * 2 + 4, tile + 8).fill(PAL.windowFrame);
+  g.rect(wx, 8, tile * 2, tile + 4).fill(PAL.window);
+  g.rect(wx + tile - 1, 8, 2, tile + 4).fill(PAL.windowFrame);
   g.rect(wx + 3, 11, 5, 2).fill(PAL.windowShine);
   g.rect(wx + 3, 14, 3, 2).fill(PAL.windowShine);
 

@@ -3,4 +3,24 @@ import type { AgentId } from "./AgentId";
 import type { Provider } from "./Provider";
 import type { Status } from "./Status";
 
-export type AgentState = { id: AgentId, provider: Provider, pid: number, cwd: string, startedAt: number, status: Status, lastTool?: string, lastEventAt: number, };
+export type AgentState = { id: AgentId, provider: Provider, pid: number, cwd: string, startedAt: number, status: Status, lastTool?: string, lastEventAt: number, 
+/**
+ * Raíz del repositorio git del `cwd`, o el propio `cwd` (ADR 0009).
+ */
+project: string, 
+/**
+ * Conversación abierta (Claude), si ya se enlazó.
+ */
+sessionId?: string, 
+/**
+ * Título de la conversación.
+ */
+title?: string, 
+/**
+ * Qué hace ahora, en palabras ("Editando main.rs").
+ */
+activity?: string, 
+/**
+ * Último pedido del usuario, recortado.
+ */
+lastPrompt?: string, };

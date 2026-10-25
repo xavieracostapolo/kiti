@@ -1,6 +1,7 @@
 // Reexporta los tipos generados por ts-rs desde crates/protocol. No editar generated/ a mano.
 export type { AgentId } from "./generated/AgentId";
 export type { AgentState } from "./generated/AgentState";
+export type { ConversationInfo } from "./generated/ConversationInfo";
 export type { CoreMetrics } from "./generated/CoreMetrics";
 export type { Hello } from "./generated/Hello";
 export type { IpcError } from "./generated/IpcError";

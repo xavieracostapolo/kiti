@@ -8,6 +8,7 @@ function agent(id: string, kind: StatusKind = "idle"): AgentState {
     provider: "claude",
     pid: 1,
     cwd: `/w/${id}`,
+    project: `/w/${id}`,
     startedAt: 0,
     status: { kind, reason: "hook", since: 0 },
     lastEventAt: 0,

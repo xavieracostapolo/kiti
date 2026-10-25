@@ -12,12 +12,17 @@ import { type AgentStatus, applySignal, type Signal } from "./signals";
 type Profile = (typeof profilesJson.profiles)[number];
 type ProviderSpec = { provider: Provider; weight: number; tools: string[] };
 
-const config = profilesJson as typeof profilesJson & { providers: ProviderSpec[] };
+const config = profilesJson as typeof profilesJson & {
+  providers: ProviderSpec[];
+  activities: Record<string, string>;
+};
 
 export const TICK_MS = config.tickMs;
 
 type SimAgent = {
   state: AgentState;
+  index: number;
+  turns: number;
   rng: RandomGenerator;
   profile: Profile;
   tools: readonly string[];
@@ -43,10 +48,20 @@ const chance = (rng: RandomGenerator, p: number) => uniformFloat64(rng) < p;
 const expMs = (rng: RandomGenerator, mean: number) =>
   Math.max(TICK_MS, Math.round(-mean * Math.log(1 - uniformFloat64(rng))));
 
-function projectFor(index: number): string {
-  const base = config.projects[index % config.projects.length] as string;
-  const round = Math.floor(index / config.projects.length);
-  return round === 0 ? base : `${base}-${round + 1}`;
+/** Oficinas por proyecto, en ciclo (ADR 0009). Igual que `project_index` del simulador del core. */
+const GROUP_SIZES = [3, 1, 4, 2, 2, 1, 3, 2];
+const CYCLE = GROUP_SIZES.reduce((a, b) => a + b, 0);
+
+/** Proyecto del agente `index`: no depende de cuántos agentes haya. */
+export function projectFor(index: number): string {
+  let rest = index % CYCLE;
+  let group = Math.floor(index / CYCLE) * GROUP_SIZES.length;
+  for (const size of GROUP_SIZES) {
+    if (rest < size) break;
+    rest -= size;
+    group++;
+  }
+  return config.projects[group % config.projects.length] as string;
 }
 
 export class SimFleet {
@@ -69,16 +84,25 @@ export class SimFleet {
     const pid = uniformInt(rng, 1000, 99_999);
     const startedAt = this.now - uniformInt(rng, 60_000, 3 * 3_600_000);
     const status = applySignal(undefined, { type: "SessionStarted" }, startedAt) as AgentStatus;
+    const cwd = `/Users/dev/${projectFor(index)}`;
+    const state: AgentState = {
+      id: `${spec.provider}:${pid}:${startedAt}`,
+      provider: spec.provider,
+      pid,
+      cwd,
+      startedAt,
+      status: { kind: status.kind, reason: status.reason, since: status.since },
+      lastEventAt: startedAt,
+      project: cwd,
+    };
+    // Solo Claude da título, actividad y último pedido (ADR 0009). Sin rng: no cambia la flota.
+    if (spec.provider === "claude") {
+      state.title = config.titles[(index * 3) % config.titles.length] as string;
+    }
     return {
-      state: {
-        id: `${spec.provider}:${pid}:${startedAt}`,
-        provider: spec.provider,
-        pid,
-        cwd: `/Users/dev/${projectFor(index)}`,
-        startedAt,
-        status: { kind: status.kind, reason: status.reason, since: status.since },
-        lastEventAt: startedAt,
-      },
+      state,
+      index,
+      turns: 0,
       rng,
       profile,
       tools: spec.tools,
@@ -122,7 +146,7 @@ export class SimFleet {
         removed.push(id);
         continue;
       }
-      agent.state = withStatus(agent.state, next, this.now);
+      agent.state = withInfo(withStatus(agent.state, next, this.now), agent, signal);
       upserts.push(agent.state);
     }
     return { upserts, removed };
@@ -181,6 +205,26 @@ export class SimFleet {
         };
       }
     }
+  }
+}
+
+/** Actividad y último pedido de Claude según la señal, como harían sus hooks. */
+function withInfo(s: AgentState, a: SimAgent, signal: Signal): AgentState {
+  if (s.provider !== "claude") return s;
+  switch (signal.type) {
+    case "PromptSubmitted": {
+      a.turns++;
+      const prompt = config.prompts[(a.index + a.turns) % config.prompts.length] as string;
+      return { ...s, lastPrompt: prompt };
+    }
+    case "ToolStarted":
+      return { ...s, activity: config.activities[signal.tool] ?? signal.tool };
+    case "Stopped": {
+      const { activity: _, ...rest } = s;
+      return rest;
+    }
+    default:
+      return s;
   }
 }
 

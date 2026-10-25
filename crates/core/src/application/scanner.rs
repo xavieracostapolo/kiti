@@ -9,25 +9,32 @@ use super::runtime::RuntimeHandle;
 use std::collections::HashMap;
 
 use crate::adapters::tail::Tail;
-use crate::domain::{DetectedAgent, SessionId, ToolName, dedupe_tree};
-use crate::ingestion::claude::{SessionFile, parse_session_file, transcript_tool};
+use crate::domain::{AgentInfo, DetectedAgent, SessionId, ToolName, dedupe_tree};
+use crate::ingestion::claude::{SessionFile, parse_session_file, transcript_info, transcript_tool};
 
 /// Al abrir un transcript solo se leen sus últimos bytes: los de sesiones largas pesan ~10 MB.
 const TRANSCRIPT_BACK: u64 = 64 * 1024;
 
-/// Sigue los transcripts de las sesiones vivas de Claude (respaldo de `last_tool` sin hooks).
+/// Lo nuevo de un transcript desde la última lectura.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TranscriptUpdate {
+    pub session: SessionId,
+    /// Última herramienta usada.
+    pub tool: Option<ToolName>,
+    /// Último título y último pedido (ADR 0009).
+    pub info: AgentInfo,
+}
+
+/// Sigue los transcripts de las sesiones vivas de Claude (respaldo de `last_tool` sin hooks,
+/// título y último pedido).
 #[derive(Default)]
 pub struct TranscriptTracker {
     tails: HashMap<SessionId, Tail>,
 }
 
 impl TranscriptTracker {
-    /// `projects`: `~/.claude/projects`. Devuelve la última herramienta nueva de cada sesión.
-    pub fn poll(
-        &mut self,
-        projects: &Path,
-        sessions: &[SessionFile],
-    ) -> Vec<(SessionId, ToolName)> {
+    /// `projects`: `~/.claude/projects`. Devuelve lo nuevo de cada sesión.
+    pub fn poll(&mut self, projects: &Path, sessions: &[SessionFile]) -> Vec<TranscriptUpdate> {
         self.tails
             .retain(|sid, _| sessions.iter().any(|s| &s.session == sid));
         let mut updates = Vec::new();
@@ -52,8 +59,19 @@ impl TranscriptTracker {
             };
             match tail.read_new() {
                 Ok(lines) => {
-                    if let Some(tool) = lines.iter().rev().find_map(|l| transcript_tool(l)) {
-                        updates.push((s.session.clone(), tool));
+                    let tool = lines.iter().rev().find_map(|l| transcript_tool(l));
+                    let mut info = AgentInfo::default();
+                    for line in &lines {
+                        let found = transcript_info(line);
+                        info.title = found.title.or(info.title);
+                        info.prompt = found.prompt.or(info.prompt);
+                    }
+                    if tool.is_some() || !info.is_empty() {
+                        updates.push(TranscriptUpdate {
+                            session: s.session.clone(),
+                            tool,
+                            info,
+                        });
                     }
                 }
                 Err(_) => {
@@ -134,5 +152,54 @@ pub async fn run_scanner<S: ProcessScanner, C: Clock>(
         if runtime.is_closed() {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::Pid;
+
+    #[test]
+    fn el_tracker_da_herramienta_titulo_y_pedido_y_solo_lo_nuevo() {
+        let root = std::env::temp_dir().join(format!("kiti-tracker-{}", std::process::id()));
+        let dir = root.join("-w-x");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("s1.jsonl");
+        std::fs::write(
+            &file,
+            concat!(
+                r#"{"type":"ai-title","aiTitle":"Viejo","sessionId":"s1"}"#,
+                "\n",
+                r#"{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read"}]}}"#,
+                "\n",
+                r#"{"type":"ai-title","aiTitle":"Migrar datos","sessionId":"s1"}"#,
+                "\n",
+                r#"{"type":"last-prompt","lastPrompt":"pasa la tabla","sessionId":"s1"}"#,
+                "\n",
+            ),
+        )
+        .unwrap();
+        let sessions = [SessionFile {
+            pid: Pid(1),
+            session: SessionId::new("s1"),
+            activity: None,
+        }];
+        let mut tracker = TranscriptTracker::default();
+        let first = tracker.poll(&root, &sessions);
+        assert_eq!(
+            first,
+            vec![TranscriptUpdate {
+                session: SessionId::new("s1"),
+                tool: Some(ToolName::new("Read")),
+                info: AgentInfo {
+                    title: Some("Migrar datos".into()),
+                    prompt: Some("pasa la tabla".into()),
+                    ..AgentInfo::default()
+                },
+            }]
+        );
+        assert!(tracker.poll(&root, &sessions).is_empty());
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

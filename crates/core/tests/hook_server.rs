@@ -225,9 +225,15 @@ async fn de_extremo_a_extremo_un_hook_http_pone_verde_su_oficina() {
         }
     }
     assert!(green, "el hook debía poner la oficina en verde");
-    // El prompt nunca sale del core.
-    let all = format!("{:?}", msgs.lock().unwrap());
-    assert!(!all.contains("secreto"));
+    // Desde el ADR 0009 el último pedido viaja a la UI (solo en local, nunca a los logs).
+    let prompt = msgs.lock().unwrap().iter().find_map(|m| match m {
+        ServerMsg::Diff { upserts, .. } => upserts
+            .iter()
+            .find(|a| a.pid == 77)
+            .and_then(|a| a.last_prompt.clone()),
+        _ => None,
+    });
+    assert_eq!(prompt.as_deref(), Some("secreto"));
 }
 
 #[tokio::test]

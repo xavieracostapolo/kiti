@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { openWorld } from "./helpers";
+import { officeAt, openWorld } from "./helpers";
 
 const Q = "sim=20&seed=42&steps=357&freeze=1&anim=0&terminals=1";
 const terminal = (page: Page) => page.getByRole("region", { name: "Terminal del agente" });
@@ -19,17 +19,20 @@ test("clic en una oficina con terminal la abre sin taparla y cerrar la deja sele
   page,
 }) => {
   await openWorld(page, Q);
-  // La oficina 4 queda a la derecha, donde se abrirá el panel.
-  const before = await page.evaluate(() => window.__kiti?.screenCenter("4"));
+  // La oficina más a la derecha queda donde se abrirá el panel.
+  const right = await officeAt(page, "right");
+  const before = await page.evaluate((id) => window.__kiti?.screenCenter(id), right);
   const c = await page.evaluate(() => window.__kiti?.screenCenter("0"));
   if (!c || !before) throw new Error("sin oficinas");
   await page.mouse.click(c.x, c.y);
   await expect(terminal(page)).toBeVisible();
-  // Todas las oficinas se reencuadran a la izquierda del panel: también la 4.
+  // Todas las oficinas se reencuadran a la izquierda del panel: también esa.
   const panel = await terminal(page).boundingBox();
   expect(before.x).toBeGreaterThan(panel?.x ?? 0);
   await expect
-    .poll(async () => (await page.evaluate(() => window.__kiti?.screenCenter("4")))?.x ?? 9999)
+    .poll(
+      async () => (await page.evaluate((id) => window.__kiti?.screenCenter(id), right))?.x ?? 9999,
+    )
     .toBeLessThan(panel?.x ?? 0);
   await terminal(page).getByRole("button", { name: "Cerrar" }).click();
   await expect(terminal(page)).toBeHidden();

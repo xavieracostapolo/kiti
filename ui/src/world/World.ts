@@ -5,6 +5,7 @@ import "pixi.js/unsafe-eval";
 import {
   Application,
   BitmapFont,
+  BitmapText,
   Container,
   Culler,
   Graphics,
@@ -28,18 +29,12 @@ import {
   type Viewport,
   zoomAt,
 } from "../domain/camera";
-import {
-  assignSlots,
-  DEFAULT_LAYOUT,
-  type LayoutOpts,
-  type Rect,
-  slotRect,
-  TERMINAL_FRACTION,
-  worldBounds,
-} from "../domain/layout";
+import { DEFAULT_LAYOUT, type LayoutOpts, type Rect, TERMINAL_FRACTION } from "../domain/layout";
 import { LOD_SCALE, type Lod, lodFor } from "../domain/lod";
-import type { AgentId, AgentState } from "../protocol";
+import { layoutZones, type Zone, type ZoneSlots } from "../domain/zones";
+import type { AgentId, AgentState, ConversationInfo } from "../protocol";
 import { planScene } from "../state/agents";
+import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
 import { attachCameraInput } from "./camera/CameraInput";
@@ -76,6 +71,8 @@ export type WorldHandle = {
   screenCenter(idOrIndex: string): { x: number; y: number } | undefined;
   /** Escala actual de la cámara. */
   scale(): number;
+  /** Zonas por proyecto con su número de oficinas (tests E2E). */
+  zones(): { name: string; count: number }[];
   dispose(): void;
 };
 
@@ -84,14 +81,20 @@ const FIT_PADDING = 32;
 const TOP_INSET = 56;
 const FOCUS_PADDING = 24;
 const EMPTY = new Map<AgentId, AgentState>();
+const NO_ROOMS = new Map<string, ConversationInfo>();
+/** Caracteres de la fuente bitmap: los títulos y pedidos llegan en español (ADR 0009). */
+const FONT_CHARS = " -_.:!/()[]#·…?¿¡,;'\"<>«»=+*&%$@áéíóúüñÁÉÍÓÚÜÑ";
 
 export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOptions): WorldHandle {
   const layout = opts.layout ?? DEFAULT_LAYOUT;
   const room = { w: layout.roomW * layout.tile, h: layout.roomH * layout.tile, tile: layout.tile };
   const views = new Map<AgentId, OfficeView>();
   const cleanup: (() => void)[] = [];
-  let slots = new Map<AgentId, number>();
-  let bounds: Rect = worldBounds(slots, layout);
+  /** Oficinas y zonas por proyecto (ADR 0009). */
+  let zoneSlots: ZoneSlots = new Map();
+  let rooms = new Map<string, Rect>();
+  let zones: Zone[] = [];
+  let bounds: Rect = layoutZones(zoneSlots, [], layout).bounds;
   let vp: Viewport = { w: el.clientWidth || 1, h: el.clientHeight || 1 };
   let cam: Camera = { x: bounds.w / 2, y: bounds.h / 2, k: 1 };
   let lod: Lod = "far";
@@ -102,6 +105,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   let benchSamples: { deltas: number[]; frameMs: number[] } | undefined;
 
   const worldRoot = new Container();
+  const zonesLayer = new Container();
   const officesLayer = new Container();
   let corridor: TilingSprite | undefined;
   let template: Texture | undefined;
@@ -141,7 +145,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
         fill: PAL.text,
         fontWeight: "bold",
       },
-      chars: [["a", "z"], ["A", "Z"], ["0", "9"], " -_.:!/()[]#·…?"],
+      chars: [["a", "z"], ["A", "Z"], ["0", "9"], FONT_CHARS],
       resolution: 1,
       textureStyle: { scaleMode: "linear" },
     });
@@ -158,7 +162,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       height: 1,
     });
 
-    worldRoot.addChild(corridor, officesLayer);
+    worldRoot.addChild(corridor, zonesLayer, officesLayer);
     app.stage.addChild(worldRoot);
 
     let firstFrame: (() => void) | undefined;
@@ -168,7 +172,9 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
 
     scheduler = new RenderScheduler({
       render: () => {
-        Culler.shared.cull(app.stage, app.renderer.screen);
+        // `false`: con las transformaciones de este frame. Con las del anterior (el valor por
+        // defecto), tras un salto de cámara sin animación las oficinas quedaban ocultas.
+        Culler.shared.cull(app.stage, app.renderer.screen, false);
         app.renderer.render(app.stage);
         if (pendingDiffAt !== undefined) {
           opts.metrics.diffToPaint(performance.now() - pendingDiffAt);
@@ -194,13 +200,13 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     });
     cleanup.push(() => scheduler?.dispose());
 
-    sync(EMPTY, store.getState().agents.agents);
+    sync(EMPTY, NO_ROOMS);
     applyInitialCamera();
 
     cleanup.push(
       store.subscribe((s, prev) => {
-        if (s.agents.agents !== prev.agents.agents) {
-          sync(prev.agents.agents, s.agents.agents);
+        if (s.agents.agents !== prev.agents.agents || s.dormant !== prev.dormant) {
+          sync(prev.agents.agents, prev.dormant);
           pendingDiffAt ??= performance.now();
           scheduler?.request();
         }
@@ -267,37 +273,90 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     await firstPaint;
   })();
 
-  function sync(prev: ReadonlyMap<AgentId, AgentState>, next: ReadonlyMap<AgentId, AgentState>) {
+  function newView(id: string): OfficeView {
+    const view = new OfficeView(template as Texture, room);
+    view.setLod(lod);
+    view.setSelected(store.getState().view.selectedId === id);
+    views.set(id, view);
+    officesLayer.addChild(view.root);
+    return view;
+  }
+
+  function dropView(id: string) {
+    views.get(id)?.root.destroy({ children: true });
+    views.delete(id);
+  }
+
+  /** Aplica a la escena lo que cambió en agentes y conversaciones cerradas, y recoloca todo. */
+  function sync(prev: ReadonlyMap<AgentId, AgentState>, prevDormant: ReadonlyMap<string, unknown>) {
     if (!template) return;
+    const { agents: state, dormant, terminals } = store.getState();
+    const next = state.agents;
     const ops = planScene(prev, next);
-    if (ops.length === 0) return;
-    slots = assignSlots(slots, [...next.keys()]);
+    if (ops.length === 0 && dormant === prevDormant) return;
     for (const op of ops) {
       if (op.op === "remove") {
-        views.get(op.id)?.root.destroy({ children: true });
-        views.delete(op.id);
+        dropView(op.id);
         continue;
       }
-      let view = views.get(op.agent.id);
-      if (!view) {
-        view = new OfficeView(template, room);
-        view.setLod(lod);
-        view.setSelected(store.getState().view.selectedId === op.agent.id);
-        views.set(op.agent.id, view);
-        officesLayer.addChild(view.root);
-      }
-      const r = slotRect(slots.get(op.agent.id) as number, layout);
-      view.root.position.set(r.x, r.y);
+      const view = views.get(op.agent.id) ?? newView(op.agent.id);
       view.update(op.agent);
       // Las terminales pueden haber llegado antes de que existiera la oficina.
-      view.setHasTerminal(store.getState().terminals.has(op.agent.pid));
+      view.setHasTerminal(terminals.has(op.agent.pid));
     }
-    bounds = worldBounds(slots, layout);
+    if (dormant !== prevDormant) {
+      for (const id of prevDormant.keys()) if (!dormant.has(id)) dropView(id);
+      for (const [id, c] of dormant) (views.get(id) ?? newView(id)).showConversation(c);
+    }
+    const l = layoutZones(zoneSlots, roomEntries(next, dormant), layout);
+    zoneSlots = l.slots;
+    rooms = l.rooms;
+    bounds = l.bounds;
+    for (const [id, r] of rooms) views.get(id)?.root.position.set(r.x, r.y);
+    drawZones(l.zones);
     if (corridor) {
       const margin = layout.tile * 40;
       corridor.position.set(-margin, -margin);
       corridor.width = bounds.w + margin * 2;
       corridor.height = bounds.h + margin * 2;
+    }
+  }
+
+  /** Un área por proyecto con su nombre: pocas, se redibujan enteras. */
+  function drawZones(next: Zone[]) {
+    const same =
+      next.length === zones.length &&
+      next.every((z, i) => {
+        const o = zones[i];
+        return (
+          o &&
+          o.project === z.project &&
+          o.count === z.count &&
+          o.x === z.x &&
+          o.y === z.y &&
+          o.w === z.w &&
+          o.h === z.h
+        );
+      });
+    zones = next;
+    if (same) return;
+    for (const child of zonesLayer.removeChildren()) child.destroy({ children: true });
+    const t = layout.tile;
+    for (const z of zones) {
+      const g = new Graphics()
+        .rect(z.x, z.y, z.w, z.h)
+        .fill(PAL.zoneFloor)
+        .rect(z.x, z.y, z.w, 2 * t)
+        .fill(PAL.zoneHeader)
+        .rect(z.x, z.y, z.w, z.h)
+        .stroke({ color: PAL.zoneBorder, width: 2 });
+      const name = new BitmapText({
+        text: `${z.name}  ·  ${z.count}`,
+        style: { fontFamily: FONT, fontSize: 18 },
+      });
+      name.tint = PAL.zoneText;
+      name.position.set(z.x + t * 0.75, z.y + 7);
+      zonesLayer.addChild(g, name);
     }
   }
 
@@ -343,10 +402,17 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     return fitInto(bounds, vp, insets(), FIT_PADDING, DEFAULT_LIMITS);
   }
 
-  /** Clic del usuario: selecciona y, si la oficina tiene terminal, la abre (ADR 0007). */
+  /**
+   * Clic del usuario: selecciona y, si la oficina tiene terminal, la abre (ADR 0007). Una oficina
+   * apagada solo se selecciona: su panel ofrece retomarla (ADR 0009).
+   */
   function clickOffice(id: AgentId | undefined) {
     const st = store.getState();
     st.select(id);
+    if (id !== undefined && isDormantId(id)) {
+      st.closeTerminal();
+      return;
+    }
     const agent = id ? st.agents.agents.get(id) : undefined;
     const terminal = agent ? st.terminals.get(agent.pid) : undefined;
     if (terminal) st.openTerminal(terminal.id);
@@ -355,24 +421,23 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
 
   function officeAt(sx: number, sy: number): AgentId | undefined {
     const p = toWorld(cam, vp, { x: sx, y: sy });
-    for (const [id, slot] of slots) {
-      const r = slotRect(slot, layout);
+    for (const [id, r] of rooms) {
       if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) return id;
     }
     return undefined;
   }
 
   function resolveId(idOrIndex: string): AgentId | undefined {
-    if (slots.has(idOrIndex)) return idOrIndex;
+    if (rooms.has(idOrIndex)) return idOrIndex;
     if (/^\d+$/.test(idOrIndex))
       return [...store.getState().agents.agents.keys()][Number(idOrIndex)];
     return undefined;
   }
 
   function focusId(id: AgentId) {
-    const slot = slots.get(id);
-    if (slot === undefined) return;
-    setCamera(fitInto(slotRect(slot, layout), vp, insets(), FOCUS_PADDING, DEFAULT_LIMITS), true);
+    const r = rooms.get(id);
+    if (r === undefined) return;
+    setCamera(fitInto(r, vp, insets(), FOCUS_PADDING, DEFAULT_LIMITS), true);
   }
 
   /** Oficina más cercana al centro del mundo, para los zooms mid y near. */
@@ -381,8 +446,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     const cy = bounds.h / 2;
     let best: Rect = { x: cx, y: cy, w: 0, h: 0 };
     let bestD = Number.POSITIVE_INFINITY;
-    for (const slot of slots.values()) {
-      const r = slotRect(slot, layout);
+    for (const r of rooms.values()) {
       const d = Math.hypot(r.x + r.w / 2 - cx, r.y + r.h / 2 - cy);
       if (d < bestD) {
         bestD = d;
@@ -400,11 +464,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
 
   function applyInitialCamera() {
     const id = opts.focus ? resolveId(opts.focus) : undefined;
-    const slot = id === undefined ? undefined : slots.get(id);
-    cam =
-      slot === undefined
-        ? zoomCamera(opts.zoom)
-        : fitRect(slotRect(slot, layout), vp, FOCUS_PADDING, DEFAULT_LIMITS);
+    const r = id === undefined ? undefined : rooms.get(id);
+    cam = r === undefined ? zoomCamera(opts.zoom) : fitRect(r, vp, FOCUS_PADDING, DEFAULT_LIMITS);
     if (id !== undefined) {
       store.getState().select(id);
       views.get(id)?.setSelected(true); // aún no hay suscripción al store
@@ -423,12 +484,12 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     frames: () => scheduler?.frames ?? 0,
     screenCenter(idOrIndex) {
       const id = resolveId(idOrIndex);
-      const slot = id === undefined ? undefined : slots.get(id);
-      if (slot === undefined) return undefined;
-      const r = slotRect(slot, layout);
+      const r = id === undefined ? undefined : rooms.get(id);
+      if (r === undefined) return undefined;
       return toScreen(cam, vp, { x: r.x + r.w / 2, y: r.y + r.h / 2 });
     },
     scale: () => cam.k,
+    zones: () => zones.map((z) => ({ name: z.name, count: z.count })),
     async bench(durationMs = 10_000) {
       await ready;
       const s = scheduler;

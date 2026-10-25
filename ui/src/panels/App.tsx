@@ -7,6 +7,7 @@ import type { Transport } from "../transport/Transport";
 import type { WorldHandle } from "../world/World";
 import { AgentPanel } from "./AgentPanel";
 import { CloseOfficeDialog } from "./CloseOfficeDialog";
+import { ConversationPanel } from "./ConversationPanel";
 import { DebugPanel } from "./DebugPanel";
 import { OfficeTooltip } from "./OfficeTooltip";
 import { TerminalPanel } from "./TerminalPanel";
@@ -33,6 +34,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
   );
   const killAgent = useCallback((id: string) => transport.killAgent(id), [transport]);
   const terminals = transport.terminals;
+  const conversations = transport.conversations;
 
   const launch = useCallback(
     async (provider: Provider) => {
@@ -50,6 +52,19 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
     [store, terminals],
   );
 
+  /** Retoma una conversación cerrada (ADR 0009): misma secuencia que lanzar, oficina primero. */
+  const resume = useCallback(
+    async (sessionId: string) => {
+      if (!conversations) return;
+      const info = await conversations.resume(sessionId);
+      const st = store.getState();
+      st.setConversations(st.conversations.filter((c) => c.sessionId !== sessionId));
+      if (terminals) st.setTerminals(await terminals.list());
+      st.setPendingLaunch(info.pid);
+    },
+    [store, conversations, terminals],
+  );
+
   return (
     <Profiler id="panels" onRender={() => metrics.reactCommit()}>
       <WorldHost store={store} metrics={metrics} params={params} onWorld={handleWorld} />
@@ -60,8 +75,14 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
         now={now}
         terminalsAvailable={terminals !== undefined}
       />
+      <ConversationPanel
+        store={store}
+        world={() => world.current}
+        now={now}
+        {...(conversations ? { onResume: resume } : {})}
+      />
       {terminals && <TerminalPanel store={store} api={terminals} />}
-      <OfficeTooltip store={store} />
+      <OfficeTooltip store={store} now={now} />
       {transport.killConfirmation === "in-app" && (
         <CloseOfficeDialog store={store} killAgent={killAgent} />
       )}

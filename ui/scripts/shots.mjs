@@ -1,5 +1,5 @@
 // Capturas del ciclo visual (ADR 0006, Hito 1). Requiere `mise run ui:dev` levantado.
-// Uso: pnpm -C ui shots [--base=http://127.0.0.1:5173] [--sim=20] [--seed=42]
+// Uso: pnpm -C ui shots [--base=http://127.0.0.1:5173] [--sim=20] [--seed=42] [--extra=conversations=1]
 import { mkdirSync } from "node:fs";
 import { webkit } from "@playwright/test";
 
@@ -10,7 +10,8 @@ const base = arg("base", "http://127.0.0.1:5173");
 const sim = arg("sim", "20");
 const seed = arg("seed", "42");
 // steps=357: con seed 42 conviven los cinco colores (el error dura poco).
-const common = `sim=${sim}&seed=${seed}&steps=357&freeze=1&anim=0`;
+const extra = process.argv.find((a) => a.startsWith("--extra="))?.slice("--extra=".length);
+const common = `sim=${sim}&seed=${seed}&steps=357&freeze=1&anim=0${extra ? `&${extra}` : ""}`;
 const shots = [
   ["far", `${common}&zoom=far`],
   ["mid", `${common}&zoom=mid`],

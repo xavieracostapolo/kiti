@@ -6,18 +6,22 @@
 use std::time::Duration;
 
 use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
+use kiti_core::adapters::conversations::ConversationIndex;
 use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pump, serve_hooks};
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
-use kiti_core::adapters::{SysinfoScanner, SystemClock, UnixKiller};
+use kiti_core::adapters::{GitProjects, SysinfoScanner, SystemClock, UnixKiller};
 use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, run_scanner};
 use kiti_core::domain::{AgentId, Timestamp};
-use kiti_core::ingestion::claude::has_conversations;
+use kiti_core::ingestion::claude::{has_conversations, is_session_id};
 use kiti_core::ports::{
-    AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
+    AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, ProjectResolver,
+    SelfMonitor,
 };
 use kiti_core::sim::{SimFleet, SimSpec, TICK_MS};
-use kiti_protocol::{Hello, IpcError, KillResult, ServerMsg, Source, TerminalInfo, UiMetrics};
+use kiti_protocol::{
+    ConversationInfo, Hello, IpcError, KillResult, ServerMsg, Source, TerminalInfo, UiMetrics,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -50,7 +54,20 @@ pub struct AppState {
     pub runtime: RuntimeHandle,
     /// Terminales de los agentes lanzados desde Kiti (ADR 0007). `None` en modo simulado.
     pub terminals: Option<Arc<Terminals>>,
+    /// Conversaciones cerradas de Claude (ADR 0009). `None` en modo simulado o sin `$HOME`.
+    pub conversations: Option<Arc<Conversations>>,
 }
+
+pub struct Conversations {
+    /// `~/.claude/projects`.
+    dir: std::path::PathBuf,
+    index: Mutex<ConversationIndex>,
+    projects: Mutex<GitProjects>,
+}
+
+/// Las conversaciones cerradas que se ofrecen para retomar (ADR 0009).
+const CONVERSATIONS_DAYS: u64 = 7;
+const CONVERSATIONS_MAX: usize = 60;
 
 pub struct Terminals {
     /// Clientes de tmux (o sesiones directas si no hay tmux) dentro de PTYs de Kiti.
@@ -253,6 +270,20 @@ async fn launch_agent(
         command = format!("exec {bin} --continue");
     }
 
+    spawn_cli(&terminals, provider, &cwd, &command)
+        .await
+        .map(Some)
+}
+
+/// Lanza `command` (`exec <cli> ...`, siempre armado aquí, nunca por la UI) en `cwd`: en tmux
+/// si está, si no en un PTY directo.
+async fn spawn_cli(
+    terminals: &Terminals,
+    provider: kiti_protocol::Provider,
+    cwd: &std::path::Path,
+    command: &str,
+) -> Result<TerminalInfo, IpcError> {
+    let bin = cli_binary(provider);
     let shell = user_shell();
     // Comprobación previa para dar un error claro en lugar de "command not found" en la terminal.
     let check_shell = shell.clone();
@@ -273,48 +304,127 @@ async fn launch_agent(
         });
     }
 
-    // 3. Con tmux, la sesión vive en tmux y sobrevive a Kiti; sin tmux, PTY directo.
-    let info = if let Some(tmux) = &terminals.tmux {
-        // Comillas simples: `command` solo contiene el binario de la lista y `--continue`.
+    // Con tmux, la sesión vive en tmux y sobrevive a Kiti; sin tmux, PTY directo.
+    if let Some(tmux) = &terminals.tmux {
+        // Comillas simples: `command` solo trae el binario de la lista, `--continue` o
+        // `--resume <id>` con un id ya validado (letras, dígitos y guiones).
         let line = format!("{shell} -lic '{command}'");
         let session = tmux
-            .new_session(&cwd, &line, bin, 100, 30)
+            .new_session(cwd, &line, bin, 100, 30)
             .map_err(io_error("TMUX"))?;
         info!(event = "agent.launch", provider = bin, cwd = %cwd.display(), pid = session.pid, session = %session.name, hint = %tmux.attach_hint(&session.name));
-        TerminalInfo {
+        return Ok(TerminalInfo {
             id: session.name,
             pid: session.pid,
             provider,
             cwd: session.cwd,
             running: true,
-        }
-    } else {
-        let t = terminals
-            .pty
-            .spawn(LaunchSpec {
-                program: shell.into(),
-                // `exec` sustituye la shell por el CLI: el PID de la terminal es el del agente.
-                args: vec!["-lic".into(), command],
-                cwd: cwd.clone(),
-                cols: 100,
-                rows: 30,
+        });
+    }
+    let t = terminals
+        .pty
+        .spawn(LaunchSpec {
+            program: shell.into(),
+            // `exec` sustituye la shell por el CLI: el PID de la terminal es el del agente.
+            args: vec!["-lic".into(), command.to_owned()],
+            cwd: cwd.to_owned(),
+            cols: 100,
+            rows: 30,
+        })
+        .map_err(pty_error)?;
+    terminals
+        .providers
+        .lock()
+        .expect("lock")
+        .insert(t.id.clone(), provider);
+    info!(event = "agent.launch", provider = bin, cwd = %cwd.display(), pid = t.pid);
+    Ok(TerminalInfo {
+        id: t.id,
+        pid: t.pid,
+        provider,
+        cwd: t.cwd,
+        running: t.running,
+    })
+}
+
+fn conversations(state: &AppState) -> Result<&Arc<Conversations>, IpcError> {
+    state.conversations.as_ref().ok_or_else(|| IpcError {
+        code: "NO_CONVERSATIONS".into(),
+        message: "las conversaciones solo existen en modo real".into(),
+    })
+}
+
+/// Conversaciones de Claude con actividad en los últimos 7 días, de la más reciente a la más
+/// vieja (ADR 0009). La UI descarta las que ya tienen una oficina encendida.
+#[tauri::command]
+async fn list_conversations(state: State<'_, AppState>) -> Result<Vec<ConversationInfo>, IpcError> {
+    let conv = conversations(&state)?.clone();
+    let started = std::time::Instant::now();
+    let list = tauri::async_runtime::spawn_blocking(move || {
+        let since =
+            std::time::SystemTime::now() - Duration::from_secs(CONVERSATIONS_DAYS * 24 * 3600);
+        let found = conv.index.lock().expect("lock").list(&conv.dir, since);
+        let mut projects = conv.projects.lock().expect("lock");
+        found
+            .into_iter()
+            .take(CONVERSATIONS_MAX)
+            .map(|c| ConversationInfo {
+                session_id: c.session.as_str().to_owned(),
+                provider: kiti_protocol::Provider::Claude,
+                project: projects.project_of(&c.cwd),
+                cwd: c.cwd,
+                title: c.title,
+                last_prompt: c.prompt,
+                updated_at: c.updated_at,
             })
-            .map_err(pty_error)?;
-        terminals
-            .providers
-            .lock()
-            .expect("lock")
-            .insert(t.id.clone(), provider);
-        info!(event = "agent.launch", provider = bin, cwd = %cwd.display(), pid = t.pid);
-        TerminalInfo {
-            id: t.id,
-            pid: t.pid,
-            provider,
-            cwd: t.cwd,
-            running: t.running,
-        }
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|e| IpcError {
+        code: "CONVERSATIONS".into(),
+        message: e.to_string(),
+    })?;
+    debug!(
+        event = "conversations.listed",
+        count = list.len(),
+        duration_ms = started.elapsed().as_millis() as u64
+    );
+    Ok(list)
+}
+
+/// Retoma una conversación cerrada con `claude --resume <id>` en su carpeta (ADR 0009). Solo
+/// acepta ids que Kiti ya listó: la UI nunca elige ni el comando ni la carpeta.
+#[tauri::command]
+async fn resume_conversation(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<TerminalInfo, IpcError> {
+    let terminals = terminals(&state)?.clone();
+    let conv = conversations(&state)?.clone();
+    let not_found = || IpcError {
+        code: "CONVERSATION_NOT_FOUND".into(),
+        message: "Esa conversación ya no está en la lista".into(),
     };
-    Ok(Some(info))
+    if !is_session_id(&session_id) {
+        return Err(not_found());
+    }
+    let cwd = conv
+        .index
+        .lock()
+        .expect("lock")
+        .find(&session_id)
+        .map(|c| std::path::PathBuf::from(&c.cwd))
+        .ok_or_else(not_found)?;
+    if !cwd.is_dir() {
+        return Err(IpcError {
+            code: "FOLDER".into(),
+            message: format!("La carpeta {} ya no existe", cwd.display()),
+        });
+    }
+    let command = format!("exec claude --resume {session_id}");
+    let info = spawn_cli(&terminals, kiti_protocol::Provider::Claude, &cwd, &command).await?;
+    info!(event = "conversation.resumed", pid = info.pid);
+    Ok(info)
 }
 
 #[tauri::command]
@@ -661,7 +771,10 @@ pub fn run() {
                         Source::Live,
                         env!("CARGO_PKG_VERSION"),
                     );
-                    tauri::async_runtime::spawn(runtime.with_monitor(monitor).run());
+                    let runtime = runtime
+                        .with_monitor(monitor)
+                        .with_projects(GitProjects::default());
+                    tauri::async_runtime::spawn(runtime.run());
                     let home = app.path().home_dir().ok();
                     tauri::async_runtime::spawn(run_scanner(
                         SysinfoScanner::new(),
@@ -687,9 +800,21 @@ pub fn run() {
                 info!(event = "terminals.ready", persistent = tmux.is_some());
                 Arc::new(Terminals::new(tmux))
             });
+            let conversations = std::env::var("KITI_SIM")
+                .is_err()
+                .then(|| app.path().home_dir().ok())
+                .flatten()
+                .map(|home| {
+                    Arc::new(Conversations {
+                        dir: home.join(".claude/projects"),
+                        index: Mutex::default(),
+                        projects: Mutex::default(),
+                    })
+                });
             app.manage(AppState {
                 runtime: handle,
                 terminals,
+                conversations,
             });
             Ok(())
         })
@@ -704,6 +829,8 @@ pub fn run() {
             attach_terminal,
             terminal_input,
             terminal_resize,
+            list_conversations,
+            resume_conversation,
         ])
         .build(tauri::generate_context!())
         .expect("error al construir la aplicación Tauri")

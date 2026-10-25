@@ -1,10 +1,9 @@
-// Layout de oficinas por slots estables (ADR 0003 §5). Puro: sin Pixi ni React.
+// Tamaños de las oficinas y slots estables (ADR 0003 §5). Las zonas por proyecto están en
+// zones.ts (ADR 0009). Puro: sin Pixi ni React.
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
 export type LayoutOpts = {
-  /** Oficinas por fila. */
-  cols: number;
   /** Tamaño de una oficina en tiles. */
   roomW: number;
   roomH: number;
@@ -17,7 +16,7 @@ export type LayoutOpts = {
 /** Ancho del panel de terminal como fracción del viewport (debe coincidir con `.terminalPanel`). */
 export const TERMINAL_FRACTION = 0.46;
 
-export const DEFAULT_LAYOUT: LayoutOpts = { cols: 5, roomW: 12, roomH: 9, gap: 2, tile: 16 };
+export const DEFAULT_LAYOUT: LayoutOpts = { roomW: 12, roomH: 9, gap: 2, tile: 16 };
 
 /**
  * Los supervivientes conservan su slot; cada id nuevo ocupa el hueco libre más bajo,
@@ -44,24 +43,4 @@ export function assignSlots(
     used.add(free);
   }
   return next;
-}
-
-export function slotRect(slot: number, opts: LayoutOpts): Rect {
-  const col = slot % opts.cols;
-  const row = Math.floor(slot / opts.cols);
-  const stepX = (opts.roomW + opts.gap) * opts.tile;
-  const stepY = (opts.roomH + opts.gap) * opts.tile;
-  return { x: col * stepX, y: row * stepY, w: opts.roomW * opts.tile, h: opts.roomH * opts.tile };
-}
-
-/** Rectángulo que contiene todas las oficinas ocupadas (al menos una sala). */
-export function worldBounds(slots: ReadonlyMap<string, number>, opts: LayoutOpts): Rect {
-  let right = opts.roomW * opts.tile;
-  let bottom = opts.roomH * opts.tile;
-  for (const slot of slots.values()) {
-    const r = slotRect(slot, opts);
-    right = Math.max(right, r.x + r.w);
-    bottom = Math.max(bottom, r.y + r.h);
-  }
-  return { x: 0, y: 0, w: right, h: bottom };
 }

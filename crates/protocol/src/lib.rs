@@ -71,6 +71,24 @@ pub struct AgentState {
     #[ts(optional)]
     pub last_tool: Option<String>,
     pub last_event_at: u64,
+    /// Raíz del repositorio git del `cwd`, o el propio `cwd` (ADR 0009).
+    pub project: String,
+    /// Conversación abierta (Claude), si ya se enlazó.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub session_id: Option<String>,
+    /// Título de la conversación.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub title: Option<String>,
+    /// Qué hace ahora, en palabras ("Editando main.rs").
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub activity: Option<String>,
+    /// Último pedido del usuario, recortado.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_prompt: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -168,6 +186,27 @@ pub struct TerminalInfo {
     pub running: bool,
 }
 
+/// Conversación de Claude cerrada en los últimos 7 días: una oficina apagada que se puede
+/// retomar con `claude --resume` (ADR 0009).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ConversationInfo {
+    pub session_id: String,
+    pub provider: Provider,
+    pub cwd: String,
+    /// Raíz del repositorio git del `cwd`, o el propio `cwd`.
+    pub project: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub title: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_prompt: Option<String>,
+    /// Última actividad, en ms desde epoch.
+    pub updated_at: u64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -195,6 +234,11 @@ mod tests {
             },
             last_tool: Some("Bash".into()),
             last_event_at: 1_700_000_005_000,
+            project: "/Users/dev/kiti".into(),
+            session_id: Some("s-1".into()),
+            title: Some("Hito 11".into()),
+            activity: None,
+            last_prompt: None,
         }
     }
 
@@ -221,7 +265,10 @@ mod tests {
                     "startedAt": 1_700_000_000_000u64,
                     "status": { "kind": "waiting", "reason": "hook", "since": 1_700_000_005_000u64 },
                     "lastTool": "Bash",
-                    "lastEventAt": 1_700_000_005_000u64
+                    "lastEventAt": 1_700_000_005_000u64,
+                    "project": "/Users/dev/kiti",
+                    "sessionId": "s-1",
+                    "title": "Hito 11"
                 }],
                 "removed": ["codex:1:2"]
             })

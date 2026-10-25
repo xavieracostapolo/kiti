@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 10, "Sesiones persistentes", en la rama `hito-10-sesiones-persistentes` ([ADR 0008](docs/decisiones/0008-sesiones-persistentes/README.md)). Hitos 1 a 9 fusionados en `main`.
+- **Fase:** Hito 11, "Proyectos y conversaciones", en la rama `hito-11-proyectos-conversaciones` ([ADR 0009](docs/decisiones/0009-proyectos-conversaciones/README.md)). Hitos 1 a 10 fusionados en `main`.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -38,6 +38,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0006](docs/decisiones/0006-arquitectura-consolidada/README.md) | Arquitectura consolidada: decisiones de los conflictos, dependencias aprobadas y plan del Hito 1 |
 | [0007](docs/decisiones/0007-terminal-embebida/README.md) | Terminal embebida: lanzar agentes desde Kiti en un PTY (`portable-pty`) y verlos con xterm.js; los externos solo muestran un aviso |
 | [0008](docs/decisiones/0008-sesiones-persistentes/README.md) | Sesiones persistentes: los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar sesión o continuar conversación |
+| [0009](docs/decisiones/0009-proyectos-conversaciones/README.md) | Zonas por proyecto (repo git), conversaciones cerradas para retomar, y título, actividad y último pedido en cada oficina |
 
 ## Decisiones tomadas (no repetir)
 
@@ -171,6 +172,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **8. Terminal embebida:** lanzar agentes desde Kiti en un PTY propio y verlos con xterm.js; tooltip con el nombre; aviso para los agentes abiertos fuera de Kiti (ADR 0007).
 - [x] **9. Oficina primero:** las sesiones lanzadas aparecen como oficina; la terminal se abre desde la oficina sin tapar el resto; insignia `>_`.
 - [x] **10. Sesiones persistentes:** los agentes lanzados viven en tmux (`-L kiti`) y sobreviven a Kiti; reutilizar la sesión de una carpeta o continuar la última conversación de Claude.
+- [x] **11. Proyectos y conversaciones:** zonas por proyecto (raíz git o carpeta), conversaciones cerradas de los últimos 7 días como oficinas apagadas que se retoman con `claude --resume`, y título, actividad y último pedido en cada oficina.
 - [ ] **Después:** soporte para Windows, enfocar las pestañas de Ghostty de los agentes externos (AppleScript) y mejora visual con Kenney.
 
 ## Pendientes de verificar
@@ -189,7 +191,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 3. **No ejecutes CLIs de agentes con costo** (`claude`, `codex`, `gemini`, también en `-p` o `exec`) ni nada que gaste dinero o cuota del usuario **sin su permiso explícito**. Eso incluye capturar fixtures y el experimento E1. Para desarrollar, usa los simuladores y los fixtures existentes.
 4. **No reinventes la rueda:** usa las dependencias aprobadas del ADR 0006. Cualquier dependencia nueva se justifica en el PR (mantenimiento en los últimos 12 meses, licencia y alternativa).
 5. **Itera lo visual con capturas:** levanta la UI en modo sim, captura con Playwright, enseña las capturas al usuario y fija las baselines solo con su visto bueno.
-6. Nunca registres ni guardes en fixtures prompts, código ni salidas de herramientas: pasa todo por el anonimizador.
+6. Nunca registres en logs ni guardes en fixtures prompts, código ni salidas de herramientas. El último pedido y la actividad (ADR 0009) solo viajan del core a la UI.
 
 ## Cómo trabajar en este repo
 
@@ -204,6 +206,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run gen-types     # regenera ui/src/protocol/generated desde crates/protocol
   mise run ui:dev        # UI en modo sim: http://127.0.0.1:5173/?sim=20&seed=42
   mise run ui:shots      # con ui:dev levantado: ui/.shots/sim20-{far,mid,near,focus3}.png
+                         # (pnpm -C ui shots --extra=conversations=1 añade oficinas apagadas)
   mise run ui:test       # Vitest
   mise run ui:e2e        # Playwright funcional (Chromium)
   mise run ui:visual     # regresión visual (solo macOS, WebKit)
@@ -222,5 +225,5 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
-- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames` y `bench`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones` y `dormant`. El panel de debug se abre con `Cmd+Shift+D`.
 - Los recursos gráficos del MVP son de Kenney.nl (CC0). Los packs de oficina de LimeZu en itch.io quedan pendientes de revisar su licencia.

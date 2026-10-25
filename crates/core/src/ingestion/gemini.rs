@@ -74,6 +74,7 @@ pub fn parse_hook(body: &[u8]) -> Result<HookEvent, AclError> {
         cwd: p.cwd.unwrap_or_default(),
         name,
         signal,
+        info: Default::default(),
     })
 }
 

@@ -1,16 +1,22 @@
-// Una oficina: textura compartida + lo dinámico (semáforo, nombre, avatar, herramienta).
+// Una oficina: textura compartida + lo dinámico (semáforo, nombre, avatar, herramienta, qué hace).
+// Encendida muestra un agente; apagada, una conversación cerrada que se puede retomar (ADR 0009).
 // Solo traduce el estado a Pixi; la lógica vive en domain/ y state/.
 
 import { BitmapText, Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
 import type { Lod } from "../domain/lod";
 import { displayName } from "../domain/names";
-import type { AgentState, StatusKind } from "../protocol";
+import type { AgentState, ConversationInfo, StatusKind } from "../protocol";
 import { anchors, type RoomSize } from "./officeTemplate";
 import { PAL, PROVIDER_COLOR, PROVIDER_LETTER, STATUS_COLOR } from "./palette";
 
 export const FONT = "kiti-pixel";
 /** Caracteres que caben entre el borde y la ventana con fontSize 9. */
-const LABEL_MAX = 15;
+const LABEL_MAX = 19;
+/** Caracteres de la nota inferior (actividad o último pedido) con fontSize 7. */
+const NOTE_MAX = 40;
+
+const clip = (text: string, max: number) =>
+  text.length > max ? `${text.slice(0, max - 1)}…` : text;
 
 const LAMP_FOR: Record<StatusKind, 0 | 1 | 2 | undefined> = {
   error: 0,
@@ -36,7 +42,12 @@ export class OfficeView {
   private readonly selection = new Graphics();
   /** Insignia `>_`: la oficina tiene una terminal de Kiti (ADR 0007). */
   private readonly terminalBadge = new Container();
+  /** Franja inferior: qué hace ahora o el último pedido (ADR 0009). */
+  private readonly note = new Container();
+  private readonly noteBg = new Graphics();
+  private readonly noteText: BitmapText;
   private agent: AgentState | undefined;
+  private conversation: ConversationInfo | undefined;
 
   constructor(
     template: Texture,
@@ -53,6 +64,9 @@ export class OfficeView {
     this.bubbleText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 7 } });
     this.bubbleText.tint = PAL.bubbleText; // las fuentes bitmap se colorean con tint, no con fill
     this.bubbleText.position.set(a.bubble.x + 4, a.bubble.y + 3);
+    this.noteText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 7 } });
+    this.noteText.position.set(6, size.h - 13);
+    this.note.addChild(this.noteBg, this.noteText);
 
     this.screen.position.set(a.desk.x + size.tile, a.desk.y - 7);
     this.light.position.set(a.light.x, a.light.y);
@@ -77,6 +91,7 @@ export class OfficeView {
       this.border,
       this.light,
       this.label,
+      this.note,
       this.terminalBadge,
       this.selection,
     );
@@ -87,13 +102,33 @@ export class OfficeView {
     this.agent = agent;
     const kind = agent.status.kind;
     if (prev?.status.kind !== kind) this.drawStatus(kind);
-    if (prev?.cwd !== agent.cwd) this.label.text = displayName(agent.cwd, LABEL_MAX);
+    if (prev?.cwd !== agent.cwd || prev?.title !== agent.title) {
+      this.label.text = agent.title
+        ? clip(agent.title, LABEL_MAX)
+        : displayName(agent.cwd, LABEL_MAX);
+    }
     if (prev?.provider !== agent.provider) this.drawProvider(agent);
     if (prev?.lastTool !== agent.lastTool || prev?.status.kind !== kind) this.drawBubble(agent);
+    if (prev?.activity !== agent.activity || prev?.lastPrompt !== agent.lastPrompt) {
+      // Trabajando: qué hace. Si no: lo último que se le pidió.
+      this.drawNote(agent.activity ?? (agent.lastPrompt ? `> ${agent.lastPrompt}` : ""));
+    }
+  }
+
+  /** Oficina apagada: una conversación cerrada. Sin semáforo ni avatar; clic para retomarla. */
+  showConversation(c: ConversationInfo): void {
+    const prev = this.conversation;
+    this.conversation = c;
+    if (prev === undefined) this.drawDormant(c);
+    if (prev?.title !== c.title || prev?.cwd !== c.cwd) {
+      this.label.text = c.title ? clip(c.title, LABEL_MAX) : displayName(c.cwd, LABEL_MAX);
+    }
+    if (prev?.lastPrompt !== c.lastPrompt) this.drawNote(c.lastPrompt ? `> ${c.lastPrompt}` : "");
   }
 
   setLod(lod: Lod): void {
     this.label.visible = lod !== "far";
+    this.note.visible = lod !== "far";
     this.near.visible = lod === "near";
   }
 
@@ -108,6 +143,37 @@ export class OfficeView {
         .rect(-6, -6, this.size.w + 12, this.size.h + 12)
         .stroke({ color: PAL.selection, width: 2, alpha: 0.9 });
     }
+  }
+
+  private drawNote(text: string): void {
+    this.noteText.text = clip(text, NOTE_MAX);
+    this.noteBg.clear();
+    if (text === "") return;
+    this.noteBg
+      .rect(3, this.size.h - 16, this.size.w - 6, 13)
+      .fill({ color: PAL.housing, alpha: 0.82 });
+  }
+
+  private drawDormant(c: ConversationInfo): void {
+    const { w, h } = this.size;
+    this.border
+      .clear()
+      .rect(-3, -3, w + 6, h + 6)
+      .stroke({ color: PAL.dormant, width: 2 });
+    this.light.clear().roundRect(-1, 0, 12, 26, 2).fill(PAL.housing);
+    for (let i = 0; i < 3; i++) this.light.circle(5, 5 + i * 8, 3).fill(PAL.lampOff);
+    this.screen.clear().rect(0, 0, this.size.tile, 7).fill(PAL.monitor);
+    // Luz apagada: la sala en penumbra, sin nadie en la silla.
+    this.deadShade.clear().rect(0, 0, w, h).fill({ color: 0x000000, alpha: 0.5 });
+    const a = anchors(this.size);
+    this.badge.clear().roundRect(a.badge.x, a.badge.y, 12, 11, 2).fill(PROVIDER_COLOR[c.provider]);
+    this.badgeText.text = PROVIDER_LETTER[c.provider];
+    this.avatar.clear();
+    this.bubbleText.text = "zZ";
+    this.bubble
+      .clear()
+      .roundRect(a.bubble.x, a.bubble.y, 20, 13, 3)
+      .fill({ color: PAL.bubble, alpha: 0.6 });
   }
 
   private drawStatus(kind: StatusKind): void {

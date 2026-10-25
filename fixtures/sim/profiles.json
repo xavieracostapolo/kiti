@@ -48,5 +48,24 @@
       "errorProbPerTurn": 0.35,
       "crashProbPerTurn": 0.2
     }
-  ]
+  ],
+  "titles": [
+    "Revisar vulnerabilidades", "Migración de datos", "Refactor del login", "Tests de integración",
+    "Optimizar consultas", "Documentar la API", "Arreglar el build", "Nueva pantalla de pagos",
+    "Actualizar dependencias", "Investigar fuga de memoria"
+  ],
+  "prompts": [
+    "revisa las dependencias con vulnerabilidades y propón parches",
+    "migra la tabla de usuarios al nuevo esquema",
+    "¿por qué falla el test de login en CI?",
+    "añade tests para el servicio de pagos",
+    "optimiza la consulta del dashboard, tarda 4 s",
+    "documenta los endpoints nuevos en el README",
+    "sigue con lo de ayer"
+  ],
+  "activities": {
+    "Bash": "Ejecutando los tests", "Edit": "Editando schema.ts", "Read": "Leyendo README.md",
+    "Grep": "Buscando en el código", "Write": "Editando migration.sql",
+    "WebFetch": "Buscando en la web", "Task": "Subagente Explore: mapear el repo"
+  }
 }

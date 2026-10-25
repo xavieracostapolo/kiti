@@ -209,7 +209,17 @@
   font-size: 12px;
   color: var(--text);
   pointer-events: none;
-  white-space: nowrap;
+  max-width: 340px;
+  line-height: 1.45;
+}
+
+.tipMeta {
+  color: var(--muted);
+}
+
+.tipPrompt {
+  font-style: italic;
+  overflow-wrap: anywhere;
 }
 
 /* Ancho = TERMINAL_FRACTION (domain/layout.ts): el mundo encuadra en el espacio que queda libre. */
