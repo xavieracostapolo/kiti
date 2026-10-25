@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-focus-agent-terminal"
+description = "Enables the focus_agent_terminal command without any pre-configured scope."
+commands.allow = ["focus_agent_terminal"]
+
+[[permission]]
+identifier = "deny-focus-agent-terminal"
+description = "Denies the focus_agent_terminal command without any pre-configured scope."
+commands.deny = ["focus_agent_terminal"]

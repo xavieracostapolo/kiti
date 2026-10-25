@@ -45,4 +45,12 @@ describe("FakeTerminals", () => {
     expect((await t.list()).map((x) => x.pid)).toEqual([1, 2]);
     expect(await t.launch()).toBeNull();
   });
+
+  it("fingir llevar a la terminal de un agente externo", async () => {
+    const sim = new SimTransport({ count: 3, seed: 1, terminals: true });
+    await expect(sim.terminals?.focusExternal("x")).resolves.toEqual({
+      kind: "focused",
+      app: "Ghostty",
+    });
+  });
 });

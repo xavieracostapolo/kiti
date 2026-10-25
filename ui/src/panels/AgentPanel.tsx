@@ -1,6 +1,8 @@
+import { useState } from "react";
 import { useStore } from "zustand";
 import { displayName } from "../domain/names";
 import { projectName } from "../domain/zones";
+import type { AgentId, FocusResult } from "../protocol";
 import type { KitiStore } from "../state/store";
 import { STATUS_COLOR } from "../world/palette";
 import type { WorldHandle } from "../world/World";
@@ -15,10 +17,32 @@ type Props = {
   now: () => number;
   /** Hay terminales (app nativa): se ofrece abrir la del agente o se explica por qué no. */
   terminalsAvailable?: boolean;
+  /** App nativa: lleva a la terminal de un agente abierto fuera de Kiti (ADR 0012). */
+  onFocusExternal?: (id: AgentId) => Promise<FocusResult>;
+};
+
+const FOCUS_TEXT = (r: FocusResult): string => {
+  switch (r.kind) {
+    case "focused":
+      return `Abierto en ${r.app}: ya tienes su pestaña al frente.`;
+    case "appOnly":
+      return `Abierto en ${r.app}: está al frente, pero no supe cuál es su pestaña.`;
+    case "unknown":
+      return "No sé en qué terminal está (¿tmux propio o ssh?).";
+    case "notFound":
+      return "Este agente ya no existe.";
+  }
 };
 
 /** Detalle del agente seleccionado. Solo se re-renderiza cuando cambia ese agente. */
-export function AgentPanel({ store, world, now, terminalsAvailable = false }: Props) {
+export function AgentPanel(props: Props) {
+  // El resultado de "Ir a su terminal" es de cada agente: al cambiar de oficina, empieza vacío.
+  const selected = useStore(props.store, (st) => st.view.selectedId);
+  return <Details key={selected ?? ""} {...props} />;
+}
+
+function Details({ store, world, now, terminalsAvailable = false, onFocusExternal }: Props) {
+  const [focus, setFocus] = useState<FocusResult | undefined>();
   const agent = useStore(store, (st) =>
     st.view.selectedId ? st.agents.agents.get(st.view.selectedId) : undefined,
   );
@@ -69,9 +93,10 @@ export function AgentPanel({ store, world, now, terminalsAvailable = false }: Pr
         <dd>{agent.cwd}</dd>
       </dl>
       {terminalsAvailable && !terminal && (
-        <p className={s.notice}>
-          Abierto fuera de Kiti: su terminal no se puede mostrar aquí. Lanza agentes con «Nuevo
-          agente» para tenerlos dentro.
+        <p className={s.notice} role="status">
+          {focus
+            ? FOCUS_TEXT(focus)
+            : "Abierto fuera de Kiti: su terminal está en otra app. «Ir a su terminal» te lleva a su pestaña."}
         </p>
       )}
       <div className={s.panelActions}>
@@ -82,6 +107,15 @@ export function AgentPanel({ store, world, now, terminalsAvailable = false }: Pr
             onClick={() => store.getState().openTerminal(terminal.id)}
           >
             Abrir terminal
+          </button>
+        )}
+        {onFocusExternal && !terminal && (
+          <button
+            type="button"
+            className={s.button}
+            onClick={() => void onFocusExternal(agent.id).then(setFocus)}
+          >
+            Ir a su terminal
           </button>
         )}
         <button type="button" className={s.button} onClick={() => world()?.focus(agent.id)}>

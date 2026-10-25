@@ -186,6 +186,21 @@ pub struct TerminalInfo {
     pub running: bool,
 }
 
+/// Resultado de "Ir a su terminal" para un agente abierto fuera de Kiti (ADR 0012).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum FocusResult {
+    /// Se mostró su pestaña en `app`.
+    Focused { app: String },
+    /// `app` está al frente, pero no se supo qué pestaña es la suya.
+    AppOnly { app: String },
+    /// No se sabe en qué terminal está.
+    Unknown,
+    /// El agente ya no existe.
+    NotFound,
+}
+
 /// Conversación de Claude cerrada en los últimos 7 días: una oficina apagada que se puede
 /// retomar con `claude --resume` (ADR 0009).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

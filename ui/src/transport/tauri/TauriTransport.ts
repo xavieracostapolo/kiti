@@ -5,6 +5,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   AgentId,
   ConversationInfo,
+  FocusResult,
   Hello,
   KillResult,
   Provider,
@@ -25,6 +26,7 @@ const terminals: TerminalApi = {
   },
   input: (id, data) => invoke("terminal_input", { id, data }),
   resize: (id, cols, rows) => invoke("terminal_resize", { id, cols, rows }),
+  focusExternal: (id) => invoke<FocusResult>("focus_agent_terminal", { id }),
 };
 
 const conversations: ConversationApi = {

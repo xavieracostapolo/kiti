@@ -1,6 +1,6 @@
 // Terminales falsas para el modo sim (`?terminals=1`): permiten probar en el navegador y en E2E
 // el panel de terminal y "Nuevo agente" sin Tauri ni PTY. Repiten lo que se escribe, como `cat`.
-import type { Provider, TerminalInfo } from "../../protocol";
+import type { FocusResult, Provider, TerminalInfo } from "../../protocol";
 import type { TerminalApi } from "../Transport";
 
 const encoder = new TextEncoder();
@@ -47,4 +47,9 @@ export class FakeTerminals implements TerminalApi {
   }
 
   async resize(): Promise<void> {}
+
+  /** En el simulador no hay otras apps: se finge que estaba en Ghostty. */
+  async focusExternal(): Promise<FocusResult> {
+    return { kind: "focused", app: "Ghostty" };
+  }
 }

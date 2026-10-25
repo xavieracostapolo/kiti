@@ -5,6 +5,8 @@ pub mod claude_settings;
 pub mod cli_hooks;
 mod clock;
 pub mod conversations;
+#[cfg(target_os = "macos")]
+pub mod focus;
 mod hook_config;
 #[cfg(feature = "hooks")]
 pub mod hooks;

@@ -397,6 +397,39 @@ async fn list_conversations(state: State<'_, AppState>) -> Result<Vec<Conversati
     Ok(list)
 }
 
+/// Lleva al usuario a la terminal de un agente abierto fuera de Kiti (ADR 0012): Ghostty o
+/// Terminal.app muestran su pestaña; otras apps, al menos, se traen al frente. La UI solo manda
+/// el id del agente; la carpeta y el título los pone el core.
+#[tauri::command]
+async fn focus_agent_terminal(
+    id: kiti_protocol::AgentId,
+    state: State<'_, AppState>,
+) -> Result<kiti_protocol::FocusResult, IpcError> {
+    use kiti_core::adapters::focus::{FocusOutcome, focus_agent};
+    use kiti_protocol::FocusResult;
+    let Ok(core_id) = id.0.parse::<AgentId>() else {
+        return Ok(FocusResult::NotFound);
+    };
+    let Some(brief) = state.runtime.describe(core_id).await else {
+        return Ok(FocusResult::NotFound);
+    };
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        focus_agent(core_id.pid, &brief.cwd, brief.title.as_deref())
+    })
+    .await
+    .map_err(|e| IpcError {
+        code: "FOCUS".into(),
+        message: e.to_string(),
+    })?;
+    let result = match outcome {
+        FocusOutcome::Focused(app) => FocusResult::Focused { app },
+        FocusOutcome::AppOnly(app) => FocusResult::AppOnly { app },
+        FocusOutcome::Unknown => FocusResult::Unknown,
+    };
+    info!(event = "focus.external", agent_id = %core_id, result = ?result);
+    Ok(result)
+}
+
 /// Archiva una conversación cerrada: deja de salir como oficina apagada (ADR 0009). No borra
 /// nada de Claude; solo guarda su id en `hidden-conversations.json` de Kiti.
 #[tauri::command]
@@ -591,7 +624,7 @@ async fn kill_agent(
     info!(event = "kill.audit", agent_id = %core_id, step = "requested");
 
     // `show` con callback: no bloquea un hilo del runtime mientras el diálogo está abierto.
-    let Some(cwd) = state.runtime.describe(core_id).await else {
+    let Some(cwd) = state.runtime.describe(core_id).await.map(|b| b.cwd) else {
         return Ok(KillResult::NotFound);
     };
     let (tx, rx) = oneshot::channel();
@@ -860,6 +893,7 @@ pub fn run() {
             list_conversations,
             resume_conversation,
             hide_conversation,
+            focus_agent_terminal,
         ])
         .build(tauri::generate_context!())
         .expect("error al construir la aplicación Tauri")

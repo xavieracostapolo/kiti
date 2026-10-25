@@ -14,6 +14,7 @@ fn main() {
             "list_conversations",
             "resume_conversation",
             "hide_conversation",
+            "focus_agent_terminal",
         ]),
     ))
     .expect("tauri build");

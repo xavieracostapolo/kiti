@@ -59,10 +59,10 @@ pub enum RuntimeCommand {
         now: Timestamp,
         received: Instant,
     },
-    /// `cwd` del agente, para el diálogo de confirmación.
+    /// `cwd` y título del agente: diálogo de confirmación e "Ir a su terminal".
     Describe {
         id: AgentId,
-        reply: oneshot::Sender<Option<String>>,
+        reply: oneshot::Sender<Option<AgentBrief>>,
     },
     Subscribe {
         publisher: Box<dyn DiffPublisher>,
@@ -146,7 +146,7 @@ impl RuntimeHandle {
             .await;
     }
 
-    pub async fn describe(&self, id: AgentId) -> Option<String> {
+    pub async fn describe(&self, id: AgentId) -> Option<AgentBrief> {
         let (reply, rx) = oneshot::channel();
         self.tx
             .send(RuntimeCommand::Describe { id, reply })
@@ -199,6 +199,13 @@ impl RuntimeHandle {
     pub fn telemetry(&self) -> &Arc<Telemetry> {
         &self.telemetry
     }
+}
+
+/// Lo justo de un agente para el shell: dónde trabaja y cómo se llama su conversación.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentBrief {
+    pub cwd: String,
+    pub title: Option<String>,
 }
 
 fn log_status_changes(events: &[DomainEvent]) {
@@ -423,7 +430,10 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 self.oldest_unpublished_hook.get_or_insert(received);
             }
             RuntimeCommand::Describe { id, reply } => {
-                let _ = reply.send(self.registry.get(&id).map(|a| a.cwd().as_str().to_owned()));
+                let _ = reply.send(self.registry.get(&id).map(|a| AgentBrief {
+                    cwd: a.cwd().as_str().to_owned(),
+                    title: a.title().map(str::to_owned),
+                }));
             }
             RuntimeCommand::Subscribe {
                 mut publisher,
