@@ -360,6 +360,36 @@ Lectura:
 - **Panel lateral:** estado en español, **motivo** (hook del agente, archivo de sesión, sin actividad reciente, error del agente, el proceso terminó, detectado sin eventos) y **último evento**, con tests de Testing Library.
 - **Coste en modo real:** CPU 0,74 % y RAM 227 MB, con esta misma sesión de Claude trabajando (la GPU pintaba sus cambios de estado); está dentro del presupuesto de la app activa (320 MB).
 
+## Plan del Hito 7: "Barra de menú y ventana desechable"
+
+**Alcance:** icono en la barra de menú con el resumen del semáforo; cerrar la ventana la **destruye** (libera el proceso WebContent) sin cerrar Kiti; "Mostrar Kiti" la recrea; el core deja de publicar a un Channel muerto.
+
+**Decisión:** destruir la ventana en lugar de ocultarla y pausar el render. El render ya está parado en reposo (0 frames); lo que pesa es el WebView (~150 MB de WebContent más GPU). Al recrearla, la UI se suscribe de nuevo y recibe un `Snapshot`.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿Cuánto ocupa Kiti con la ventana cerrada? | `mise run app:measure` sin ventana | < 60 MB y CPU < 1 % |
+| ¿El resumen de la barra de menú está al día? | `tray.updated` con el título | ≤ 1 s tras el cambio |
+| ¿Se publica a una ventana que ya no existe? | `ipc.subscriber_dropped` | Una vez por cierre, sin avisos repetidos |
+
+## Resultados del Hito 7
+
+- **Ciclo de vida medido** (release, modo real, con un diagnóstico temporal que cierra, reabre y sale):
+
+  | Momento | RAM (`footprint`) |
+  |---|---|
+  | Ventana abierta | 259 MB |
+  | **Ventana cerrada, Kiti en la barra de menú** | **63 MB** |
+  | Reabierta | 284 MB |
+
+  Con la ventana cerrada, Kiti sigue escaneando procesos, recibiendo hooks y actualizando el icono. Al reabrir, la UI se suscribe de nuevo (`ipc.subscribe`) y recibe un `Snapshot`.
+- **Barra de menú:** título con el resumen (`🟡1 🟢3 ⚪2`, primero lo que pide atención, sin ceros), tooltip en palabras y menú "Mostrar Kiti" / "Salir de Kiti". Se actualiza cada segundo solo si cambia. `Summary` tiene tests.
+- **Salir:** cerrar la última ventana no termina Kiti (`RunEvent::ExitRequested` sin código se previene); "Salir de Kiti" y `Cmd+Q` sí. Verificado en el código de `tauri-runtime-wry` 2.12.3: el `ExitRequested` sin código solo se emite al destruirse la última ventana.
+- **Publicador muerto:** `DiffPublisher::publish` devuelve `bool`; al cerrarse la ventana, el runtime la descarta una vez (`ipc.subscriber_dropped`) en lugar de intentar enviar cada 100 ms.
+- **Pendiente manual:** probar con el ratón el menú de la barra y el clic en el Dock con la ventana cerrada.
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.

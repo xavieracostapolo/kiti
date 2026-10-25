@@ -173,8 +173,9 @@ async fn de_extremo_a_extremo_un_hook_http_pone_verde_su_oficina() {
 
     struct Collect(Arc<Mutex<Vec<ServerMsg>>>);
     impl DiffPublisher for Collect {
-        fn publish(&mut self, msg: ServerMsg) {
+        fn publish(&mut self, msg: ServerMsg) -> bool {
             self.0.lock().unwrap().push(msg);
+            true
         }
     }
 

@@ -6,8 +6,10 @@
 pub mod projection;
 pub mod runtime;
 pub mod scanner;
+pub mod summary;
 pub mod telemetry;
 
 pub use runtime::{Runtime, RuntimeHandle};
 pub use scanner::run_scanner;
+pub use summary::Summary;
 pub use telemetry::Telemetry;

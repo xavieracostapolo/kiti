@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 6, "Transcripts y panel lateral", implementado en la rama `hito-6-transcripts-panel`. Hitos 1 a 5 fusionados en `main`. Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-6).
+- **Fase:** Hito 7, "Barra de menú y ventana desechable", implementado en la rama `hito-7-barra-de-menu`; con él se completa el roadmap del MVP. Hitos 1 a 6 fusionados en `main`. Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-7).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -152,7 +152,7 @@ Objetivo: con 20 agentes activos, la app debe ir "como si nada".
   - Tilesheets en rejilla y la plantilla de oficina rasterizada una sola vez.
   - Culling de las oficinas que quedan fuera de cámara.
   - Nivel de detalle: alejado, solo salas y semáforos; cerca, todo el detalle.
-  - Con la ventana oculta o minimizada se pausa el render; el core sigue y el estado se ve en la barra de menú.
+  - Cerrar la ventana la destruye (63 MB en total frente a ~260 MB abierta); el core sigue y el estado se ve en la barra de menú.
 - **Simulación:** el simulador TS (Hito 1) y `SimFleet` en Rust (Hito 2) generan al menos 20 agentes, escalables a 50, y comparten `fixtures/sim/`.
 
 ## Roadmap
@@ -165,7 +165,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **4. Hooks de Claude Code:** HookServer, token, instalador de hooks, `sessions/<pid>.json` y experimento E1.
 - [x] **5. Forwarder:** hooks para Codex y Gemini.
 - [x] **6. Tailer de transcripts** y panel lateral con la última herramienta, el cwd y el último evento.
-- [ ] **7. Barra de menú y bandeja**, y pausa del render con la ventana oculta.
+- [x] **7. Barra de menú y bandeja**, y pausa del render con la ventana oculta.
 - [ ] **Después:** terminal embebida (`@xterm/xterm`), soporte para Windows y lanzar agentes desde Kiti.
 
 ## Pendientes de verificar

@@ -42,8 +42,9 @@ impl TestPublisher {
 }
 
 impl DiffPublisher for TestPublisher {
-    fn publish(&mut self, msg: ServerMsg) {
+    fn publish(&mut self, msg: ServerMsg) -> bool {
         self.messages.lock().unwrap().push(msg);
+        true
     }
 }
 
@@ -514,4 +515,61 @@ async fn el_transcript_da_la_ultima_herramienta_sin_hooks() {
         "del transcript solo sale el nombre de la herramienta"
     );
     std::fs::remove_dir_all(claude_dir).unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn summary_cuenta_los_agentes_por_color() {
+    let clock = ManualClock::new(1_000);
+    let handle = spawn(TestKiller, clock.clone());
+    let (a, b) = (sample_agent(1), sample_agent(2));
+    let a_id = id_of(&a);
+    handle.register_agent(a, Timestamp(1_000)).await;
+    handle.register_agent(b, Timestamp(1_000)).await;
+    handle
+        .apply_input(
+            a_id,
+            AgentInput::Signal(Signal::PromptSubmit),
+            Timestamp(1_001),
+        )
+        .await;
+    let s = handle.summary().await;
+    assert_eq!((s.working, s.idle, s.waiting), (1, 1, 0));
+}
+
+/// Publicador cuya ventana se cerró: falla siempre y cuenta los intentos.
+struct DeadPublisher(Arc<Mutex<u32>>);
+
+impl DiffPublisher for DeadPublisher {
+    fn publish(&mut self, _msg: ServerMsg) -> bool {
+        *self.0.lock().unwrap() += 1;
+        false
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_publicador_muerto_se_descarta_tras_el_primer_fallo() {
+    let clock = ManualClock::new(1_000);
+    let handle = spawn(TestKiller, clock.clone());
+    let agent = sample_agent(1);
+    let id = id_of(&agent);
+    handle.register_agent(agent, Timestamp(1_000)).await;
+    let attempts = Arc::new(Mutex::new(0));
+    handle
+        .subscribe(DeadPublisher(attempts.clone()))
+        .await
+        .unwrap();
+    for i in 0..5 {
+        let sig = if i % 2 == 0 {
+            Signal::PromptSubmit
+        } else {
+            Signal::Stop
+        };
+        handle
+            .apply_input(id, AgentInput::Signal(sig), Timestamp(1_001 + i))
+            .await;
+        tokio::time::advance(Duration::from_millis(150)).await;
+        tokio::task::yield_now().await;
+    }
+    // El Snapshot falla y ya no se intenta nada más hasta una nueva suscripción.
+    assert_eq!(*attempts.lock().unwrap(), 1);
 }
