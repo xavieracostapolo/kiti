@@ -34,16 +34,11 @@ jobs:
           mise run gen-types
           git diff --exit-code ui/src/protocol/generated
 
+  # macOS: src-tauri usa API solo de macOS (RunEvent::Reopen) y Linux no está previsto (ADR 0001).
   rust:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # src-tauri enlaza WebKitGTK, GTK y el tray en Linux; sin ellas falla el build de glib-sys.
-      - name: Dependencias de sistema de Tauri
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
       - uses: jdx/mise-action@82a612c5ab8bcda7cc5db6b7e81a8e7584c3dc6e # v5.2.3
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo clippy --workspace --all-targets -- -D warnings
