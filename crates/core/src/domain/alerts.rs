@@ -1,7 +1,7 @@
 //! Qué cambios de estado merecen un aviso al usuario (ADR 0010). Puro: recibe los eventos del
 //! registro y el tiempo; devuelve los avisos. Dónde y cómo se muestran es cosa del adapter.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::events::DomainEvent;
 use super::ids::{AgentId, Timestamp};
@@ -27,6 +27,9 @@ pub struct Alert {
 
 /// Un turno más corto que esto no avisa al terminar: el usuario seguramente sigue mirando.
 pub const MIN_TURN_MS: u64 = 15_000;
+/// Un proceso que muere antes de esto sin haber trabajado no avisa: son procesos auxiliares
+/// de vida corta (por ejemplo, un `claude` lanzado por otra herramienta), no agentes caídos.
+pub const MIN_LIFE_MS: u64 = 60_000;
 /// Mismo aviso para el mismo agente: como mucho uno cada tanto (permisos en ráfaga).
 pub const COOLDOWN_MS: u64 = 30_000;
 
@@ -34,6 +37,8 @@ pub const COOLDOWN_MS: u64 = 30_000;
 pub struct AlertPolicy {
     /// Desde cuándo trabaja (sin pasar por inactivo) cada agente.
     turn_started: HashMap<AgentId, Timestamp>,
+    /// Agentes que llegaron a trabajar, esperar o fallar.
+    active: HashSet<AgentId>,
     last: HashMap<(AgentId, AlertKind), Timestamp>,
 }
 
@@ -43,8 +48,20 @@ impl AlertPolicy {
         for ev in events {
             match ev {
                 DomainEvent::StatusChanged {
-                    id, to, reason, at, ..
+                    id,
+                    from,
+                    to,
+                    reason,
+                    at,
                 } => {
+                    if [*from, *to].iter().any(|k| {
+                        matches!(
+                            k,
+                            StatusKind::Working | StatusKind::Waiting | StatusKind::Error
+                        )
+                    }) {
+                        self.active.insert(*id);
+                    }
                     if let Some(kind) = self.on_status(*id, *to, *reason, *at) {
                         alerts.push(Alert { id: *id, kind });
                     }
@@ -54,13 +71,18 @@ impl AlertPolicy {
                     expected: false,
                 } => {
                     self.turn_started.remove(id);
-                    alerts.push(Alert {
-                        id: *id,
-                        kind: AlertKind::Crashed,
-                    });
+                    let worked = self.active.remove(id);
+                    let lived = now.0.saturating_sub(id.start_time.0) >= MIN_LIFE_MS;
+                    if worked || lived {
+                        alerts.push(Alert {
+                            id: *id,
+                            kind: AlertKind::Crashed,
+                        });
+                    }
                 }
                 DomainEvent::AgentRemoved { id } => {
                     self.turn_started.remove(id);
+                    self.active.remove(id);
                     self.last.retain(|(a, _), _| a != id);
                 }
                 _ => {}
@@ -216,6 +238,27 @@ mod tests {
             expected: true,
         }];
         assert!(p.observe(&closed, Timestamp(0)).is_empty());
+    }
+
+    #[test]
+    fn un_proceso_fugaz_que_nunca_trabajo_no_avisa_al_morir() {
+        let mut p = AlertPolicy::default();
+        let gone = |pid| DomainEvent::AgentExited {
+            id: id(pid),
+            expected: false,
+        };
+        // id(n) nació en t = 1 ms: a los 10 s es fugaz; a los 2 min ya no.
+        assert!(p.observe(&[gone(1)], Timestamp(10_000)).is_empty());
+        assert_eq!(
+            kinds(p.observe(&[gone(2)], Timestamp(120_000))),
+            [AlertKind::Crashed]
+        );
+        // Si llegó a trabajar, avisa aunque viviera poco.
+        p.observe(&[change(3, Idle, Working, Hook, 2_000)], Timestamp(2_000));
+        assert_eq!(
+            kinds(p.observe(&[gone(3)], Timestamp(10_000))),
+            [AlertKind::Crashed]
+        );
     }
 
     #[test]
