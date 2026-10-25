@@ -85,6 +85,23 @@ pub fn parse_session_file(body: &[u8]) -> Option<SessionFile> {
     })
 }
 
+/// Nombre de la última herramienta (`tool_use`) de una línea del transcript, si la hay. Solo
+/// sale el nombre: el texto, los argumentos y las salidas se descartan aquí mismo.
+pub fn transcript_tool(line: &[u8]) -> Option<ToolName> {
+    // Filtro barato: la mayoría de líneas no traen herramientas y no merece la pena parsearlas.
+    if !line.windows(10).any(|w| w == b"\"tool_use\"") {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_slice(line).ok()?;
+    value["message"]["content"]
+        .as_array()?
+        .iter()
+        .filter(|item| item["type"] == "tool_use")
+        .filter_map(|item| item["name"].as_str())
+        .next_back()
+        .map(ToolName::new)
+}
+
 pub fn parse_hook(body: &[u8]) -> Result<HookEvent, AclError> {
     let p: Payload = serde_json::from_slice(body).map_err(|e| AclError::Json(e.to_string()))?;
     let session = p
@@ -269,6 +286,26 @@ mod tests {
         assert_eq!(e.activity, None);
         assert_eq!(parse_session_file(br#"{"pid": 1}"#), None);
         assert_eq!(parse_session_file(b"basura"), None);
+    }
+
+    #[test]
+    fn linea_de_transcript_con_tool_use() {
+        // Forma observada en local: claves caller, id, input, name y type.
+        let line = br#"{"type":"assistant","sessionId":"s1","timestamp":"t","message":{"role":"assistant","content":[{"type":"text","text":"secreto"},{"type":"tool_use","id":"toolu_1","name":"Bash","caller":"x","input":{"command":"rm -rf secreto"}},{"type":"tool_use","id":"toolu_2","name":"Edit","input":{}}]}}"#;
+        assert_eq!(transcript_tool(line), Some(ToolName::new("Edit")));
+    }
+
+    #[test]
+    fn lineas_de_transcript_sin_herramienta() {
+        for line in [
+            &br#"{"type":"user","message":{"content":"hola"}}"#[..],
+            br#"{"type":"assistant","message":{"content":[{"type":"text","text":"x"}]}}"#,
+            br#"{"type":"attachment","attachment":{}}"#,
+            b"no es json",
+            br#"{"type":"assistant","message":{"content":"texto suelto"}}"#,
+        ] {
+            assert_eq!(transcript_tool(line), None);
+        }
     }
 
     #[test]

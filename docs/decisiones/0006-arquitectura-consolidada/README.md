@@ -334,6 +334,32 @@ Lectura:
 - **Sin instalación automática:** Codex CLI y Gemini CLI no están instalados en la máquina. Cuando el usuario los use: `mise run hooks:install-codex` / `hooks:install-gemini`. En Codex hay que confiar en el hook con `/hooks`.
 - **Pendiente de verificar con los CLIs reales:** el `argv` de Gemini (npm, Homebrew y npx), si Gemini pide confirmación para los hooks de usuario, y los payloads reales (hoy son los documentados).
 
+## Plan del Hito 6: "Transcripts y panel lateral"
+
+**Alcance:** tailer incremental de los transcripts de Claude (respaldo de `last_tool` cuando no hay hooks), solo de las sesiones vivas, y panel lateral con la herramienta, el cwd, el último evento y el motivo del estado.
+
+**Decisiones:**
+
+- El transcript se localiza buscando `~/.claude/projects/*/<sessionId>.jsonl` (una vez por sesión), en lugar de reproducir la codificación del `cwd`, que no está documentada.
+- Al abrirlo solo se leen los últimos 64 KiB: el de una sesión larga pesa ~10 MB.
+- Se lee en cada escaneo (3 s), igual que `sessions/<pid>.json`.
+- De cada línea solo se extrae el `name` de los `tool_use`; el resto se descarta al parsear.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿Cuánto cuesta leer transcripts? | span `scan` con `transcript_bytes` | < 64 KiB por sesión al abrir; solo lo nuevo después |
+| ¿Se pierden líneas? | Tests de línea parcial y de truncado | 0 |
+| ¿Sale contenido del transcript? | Test de que solo viaja el nombre de la herramienta | Nada más |
+
+## Resultados del Hito 6
+
+- **Tailer de transcripts:** `Tail` (lectura incremental con línea parcial, truncado y tope de 1 MiB por lectura) y `TranscriptTracker` (solo sesiones vivas, transcript localizado por `sessionId`, últimos 64 KiB al abrir). Un test de extremo a extremo con un `~/.claude` falso comprueba que la última herramienta llega a la UI y que el texto, los argumentos y el prompt no salen del core.
+- **Dominio:** `TranscriptTool` solo actualiza `last_tool`: no cambia el color ni cuenta como actividad para la caducidad.
+- **Panel lateral:** estado en español, **motivo** (hook del agente, archivo de sesión, sin actividad reciente, error del agente, el proceso terminó, detectado sin eventos) y **último evento**, con tests de Testing Library.
+- **Coste en modo real:** CPU 0,74 % y RAM 227 MB, con esta misma sesión de Claude trabajando (la GPU pintaba sus cambios de estado); está dentro del presupuesto de la app activa (320 MB).
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.

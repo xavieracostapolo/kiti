@@ -3,16 +3,10 @@ import { displayName } from "../domain/names";
 import type { KitiStore } from "../state/store";
 import { STATUS_COLOR } from "../world/palette";
 import type { WorldHandle } from "../world/World";
+import { ago, REASON_LABEL, STATUS_LABEL } from "./labels";
 import s from "./panels.module.css";
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
-
-function ago(ms: number): string {
-  const sec = Math.max(0, Math.round(ms / 1000));
-  if (sec < 60) return `${sec} s`;
-  const min = Math.round(sec / 60);
-  return min < 60 ? `${min} min` : `${Math.round(min / 60)} h`;
-}
 
 type Props = { store: KitiStore; world: () => WorldHandle | undefined; now: () => number };
 
@@ -33,10 +27,14 @@ export function AgentPanel({ store, world, now }: Props) {
         <dd>{agent.provider}</dd>
         <dt>estado</dt>
         <dd>
-          {agent.status.kind} · hace {ago(now() - agent.status.since)}
+          {STATUS_LABEL[agent.status.kind]} · {ago(now() - agent.status.since)}
         </dd>
+        <dt>motivo</dt>
+        <dd>{REASON_LABEL[agent.status.reason]}</dd>
         <dt>herramienta</dt>
         <dd>{agent.lastTool ?? "—"}</dd>
+        <dt>último evento</dt>
+        <dd>{ago(now() - agent.lastEventAt)}</dd>
         <dt>pid</dt>
         <dd>{agent.pid}</dd>
         <dt>cwd</dt>

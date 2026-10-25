@@ -448,3 +448,70 @@ async fn un_hook_de_claude_pone_verde_la_oficina_enlazada_por_el_archivo_de_sesi
     eventually(|| pids_with(kiti_protocol::StatusKind::Working) == vec![78]).await;
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[tokio::test(start_paused = true)]
+async fn el_transcript_da_la_ultima_herramienta_sin_hooks() {
+    let clock = ManualClock::new(10_000);
+    let handle = spawn(TestKiller, clock.clone());
+    let publisher = TestPublisher::new();
+    let msgs = publisher.messages.clone();
+    handle.subscribe(publisher).await.unwrap();
+
+    let claude_dir = std::env::temp_dir().join(format!("kiti-claude-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&claude_dir);
+    std::fs::create_dir_all(claude_dir.join("sessions")).unwrap();
+    std::fs::create_dir_all(claude_dir.join("projects/-Users-dev-kiti")).unwrap();
+    std::fs::write(
+        claude_dir.join("sessions/78.json"),
+        r#"{"pid": 78, "sessionId": "s-78", "status": "busy", "updatedAt": 9000}"#,
+    )
+    .unwrap();
+    let transcript = claude_dir.join("projects/-Users-dev-kiti/s-78.jsonl");
+    std::fs::write(
+        &transcript,
+        concat!(
+            r#"{"type":"user","message":{"content":"secreto"}}"#,
+            "\n",
+            r#"{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t","name":"Grep","input":{"pattern":"secreto"}}]}}"#,
+            "\n"
+        ),
+    )
+    .unwrap();
+
+    tokio::spawn(run_scanner(
+        ScriptedScanner(vec![vec![claude_process(78)]]),
+        Some(claude_dir.join("sessions")),
+        handle.clone(),
+        clock.clone(),
+        Duration::from_secs(2),
+    ));
+    let last_tool = || {
+        msgs.lock().unwrap().iter().rev().find_map(|m| match m {
+            ServerMsg::Diff { upserts, .. } => upserts
+                .iter()
+                .find(|a| a.pid == 78)
+                .and_then(|a| a.last_tool.clone()),
+            _ => None,
+        })
+    };
+    eventually(|| last_tool().as_deref() == Some("Grep")).await;
+
+    // Lo que se añade después se lee en el siguiente escaneo.
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&transcript)
+        .unwrap();
+    writeln!(
+        f,
+        r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","id":"u","name":"Edit","input":{{}}}}]}}}}"#
+    )
+    .unwrap();
+    eventually(|| last_tool().as_deref() == Some("Edit")).await;
+    let all = format!("{:?}", msgs.lock().unwrap());
+    assert!(
+        !all.contains("secreto"),
+        "del transcript solo sale el nombre de la herramienta"
+    );
+    std::fs::remove_dir_all(claude_dir).unwrap();
+}
