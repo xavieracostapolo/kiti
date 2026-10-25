@@ -16,7 +16,12 @@ struct Fixture(Tmux);
 
 impl Drop for Fixture {
     fn drop(&mut self) {
+        let socket = self.0.socket_path();
         self.0.kill_server();
+        // tmux deja el archivo del socket en /tmp/tmux-<uid>/: los de test se borran.
+        if let Some(path) = socket {
+            let _ = std::fs::remove_file(path);
+        }
     }
 }
 

@@ -186,6 +186,14 @@ impl Tmux {
         format!("tmux -L {} attach -t {name}", self.socket)
     }
 
+    /// Ruta del socket del servidor, si está en marcha (se pregunta a tmux).
+    pub fn socket_path(&self) -> Option<PathBuf> {
+        self.checked(&["display-message", "-p", "#{socket_path}"])
+            .ok()
+            .map(|p| PathBuf::from(p.trim()))
+            .filter(|p| !p.as_os_str().is_empty())
+    }
+
     pub fn kill_server(&self) {
         let _ = self.run(&["kill-server"]);
     }
