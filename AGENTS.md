@@ -16,8 +16,15 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** 0. La arquitectura está cerrada (ADRs 0001 a 0006) y todavía no hay código.
-- **Siguiente paso:** el Hito 1, "Oficina visual simulada" (ver [Roadmap](#roadmap) y el [plan del ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#plan-del-hito-1-oficina-visual-simulada)).
+- **Fase:** Hito 1, "Oficina visual simulada", implementado en la rama `hito-1-oficina-visual` y pendiente de revisión visual del usuario (ver [Roadmap](#roadmap) y el [plan del ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#plan-del-hito-1-oficina-visual-simulada)).
+- **Hecho:** `kiti-protocol` con tipos TS generados, simulador TS con conformidad compartida, dominio (layout, cámara, LOD), store, mundo Pixi con render bajo demanda, paneles React, telemetría, E2E y benchmark.
+- **Desviaciones del plan del Hito 1** (a resolver en la siguiente iteración):
+  - La oficina se dibuja de forma procedural (`world/officeTemplate.ts`); los tilesheets de Kenney, el `.tmj` de Tiled y `domain/tiles` quedan pendientes.
+  - Las capturas usan `steps=357` en lugar de `steps=120`: con `seed=42` es el primer paso en el que conviven los cinco colores.
+  - `ui.react_commits_total` sube cuando cambian los contadores de la barra superior, no con cada diff.
+  - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales: 601 frames en 10 s) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
+  - Faltan `lefthook`, commitlint, Renovate, `deny.toml` y el workflow de CI.
+- **Siguiente paso:** que el usuario revise las capturas; con su visto bueno, fijar las baselines con `mise run ui:visual -- --update-snapshots` y cerrar el hito.
 
 ## Índice de ADRs
 
@@ -184,5 +191,21 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 
 - Las nuevas decisiones de arquitectura van en `docs/decisiones/NNNN-titulo/README.md`, con el formato del ADR 0001.
 - Al cerrar un hito: márcalo en el roadmap, actualiza "Estado actual" y los comandos.
-- **Comandos:** a definir en el Hito 1. El contrato previsto (`mise run gen-types`, `ui:dev`, `ui:shots`, `ui:test`, `ui:e2e`, `ui:visual`, `ui:perf` y `check`) está en el ADR 0006; el scaffold los crea y aquí se copian los definitivos.
+- **Requisitos:** `mise` y `rustup` (Homebrew: `brew install mise rustup`; `rustup` es *keg-only*, así que añade `/opt/homebrew/opt/rustup/bin` al `PATH`). `rust-toolchain.toml` y `mise.toml` fijan las versiones.
+- **Comandos** (definidos en `mise.toml`):
+
+  ```bash
+  mise install && mise exec -- pnpm install       # toolchain y dependencias
+  mise exec -- pnpm -C ui exec playwright install webkit chromium
+  mise run gen-types     # regenera ui/src/protocol/generated desde crates/protocol
+  mise run ui:dev        # UI en modo sim: http://127.0.0.1:5173/?sim=20&seed=42
+  mise run ui:shots      # con ui:dev levantado: ui/.shots/sim20-{far,mid,near,focus3}.png
+  mise run ui:test       # Vitest
+  mise run ui:e2e        # Playwright funcional (Chromium)
+  mise run ui:visual     # regresión visual (solo macOS, WebKit)
+  mise run ui:perf       # 50 agentes, WebKit headed, solo local
+  mise run check         # fmt, clippy, tests Rust, Biome, tsc, Vitest con cobertura y E2E
+  ```
+
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`. En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames` y `bench`. El panel de debug se abre con `Cmd+Shift+D`.
 - Los recursos gráficos del MVP son de Kenney.nl (CC0). Los packs de oficina de LimeZu en itch.io quedan pendientes de revisar su licencia.
