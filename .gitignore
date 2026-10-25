@@ -1,0 +1,14 @@
+# Dependencias y builds
+node_modules/
+target/
+dist/
+coverage/
+
+# Salidas locales de la UI
+ui/.shots/
+ui/test-results/
+ui/playwright-report/
+
+# Sistema
+.DS_Store
+*.log
