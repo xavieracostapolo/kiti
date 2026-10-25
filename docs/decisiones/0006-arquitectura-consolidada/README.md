@@ -325,6 +325,15 @@ Lectura:
 | ¿Cada hook encuentra su oficina? | `session.linked` con fuente `ppid` | Enlaza por ancestros sin heurística de `cwd` |
 | ¿Se respeta la config ajena? | Tests de los instaladores con hooks de terceros | Igual salvo lo de Kiti |
 
+## Resultados del Hito 5
+
+- **`kiti-hook`:** binario de 1,1 MB. Con Kiti cerrada, termina en ~18 ms (conexión rechazada); si el puerto no responde, el plazo de 150 ms lo corta. Siempre `exit 0`, nada por stderr y `{}` por stdout para Gemini. Tiene 4 tests contra un servidor TCP mínimo.
+- **ACLs:** Codex (`Interrupt` → gris) y Gemini (empareja herramientas por nombre, porque no envía `tool_use_id`). Ninguna lee prompts, respuestas ni salidas de herramientas.
+- **Correlación por ancestros:** el HookServer lee `X-Kiti-Ppid`, el bombeo sube por los procesos padre y el registro enlaza con el primer agente vivo del mismo CLI, aunque haya varios en el mismo `cwd`.
+- **Instaladores:** `~/.codex/hooks.json` y `~/.gemini/settings.json` con la misma lógica genérica que Claude (`hook_config`), probados con configuraciones de terceros.
+- **Sin instalación automática:** Codex CLI y Gemini CLI no están instalados en la máquina. Cuando el usuario los use: `mise run hooks:install-codex` / `hooks:install-gemini`. En Codex hay que confiar en el hook con `/hooks`.
+- **Pendiente de verificar con los CLIs reales:** el `argv` de Gemini (npm, Homebrew y npx), si Gemini pide confirmación para los hooks de usuario, y los payloads reales (hoy son los documentados).
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.

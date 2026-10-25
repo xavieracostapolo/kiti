@@ -41,8 +41,16 @@ env = { KITI_SIM = "20:42" }
 run = "pnpm exec tauri dev"
 
 [tasks."hooks:status"]
-description = "Cuántos eventos de Claude tienen los hooks de Kiti en ~/.claude/settings.json"
+description = "Estado de los hooks de Kiti en Claude, Codex y Gemini"
 run = "cargo run -q -p kiti-core --example hooks -- status"
+
+[tasks."hooks:install-codex"]
+description = "Instala los hooks de Kiti en ~/.codex/hooks.json (solo si usas Codex CLI)"
+run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core --example hooks -- install-codex target/release/kiti-hook"
+
+[tasks."hooks:install-gemini"]
+description = "Instala los hooks de Kiti en ~/.gemini/settings.json (solo si usas Gemini CLI)"
+run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core --example hooks -- install-gemini target/release/kiti-hook"
 
 [tasks."hooks:uninstall"]
 description = "Quita los hooks de Kiti de ~/.claude/settings.json (deja los tuyos intactos)"

@@ -2,7 +2,9 @@
 //! axum y notify) van detrás de *features*.
 
 pub mod claude_settings;
+pub mod cli_hooks;
 mod clock;
+mod hook_config;
 #[cfg(feature = "hooks")]
 pub mod hooks;
 #[cfg(feature = "killer")]

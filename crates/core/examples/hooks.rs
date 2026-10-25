@@ -1,25 +1,68 @@
-//! Estado, instalación y desinstalación de los hooks de Kiti en `~/.claude/settings.json`.
+//! Estado e instalación manual de los hooks de Kiti.
 //!
-//! `cargo run -p kiti-core --example hooks -- status|uninstall`
-//! (instalar lo hace la app al arrancar, con su token).
+//! `cargo run -p kiti-core --example hooks -- <orden>`:
+//! - `status`: Claude (`~/.claude/settings.json`), Codex (`~/.codex/hooks.json`) y Gemini
+//!   (`~/.gemini/settings.json`).
+//! - `uninstall`: quita los de Claude (la app los vuelve a poner al arrancar en modo real).
+//! - `install-codex` / `install-gemini <ruta de kiti-hook>`: copia el forwarder a
+//!   `~/.kiti/bin/kiti-hook` (ruta estable: Codex confía en el hook por su hash) y añade los hooks.
+//! - `uninstall-codex` / `uninstall-gemini`.
+//!
+//! Codex y Gemini no se instalan solos: solo con esta orden explícita del usuario.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use kiti_core::adapters::claude_settings::{EVENTS, is_kiti_group, uninstall_file};
+use kiti_core::adapters::claude_settings::{self, EVENTS, is_kiti_group};
+use kiti_core::adapters::cli_hooks::{self, Cli};
+use serde_json::Value;
+
+fn read(path: &Path) -> Value {
+    std::fs::read(path)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+fn stable_forwarder(home: &Path, source: Option<String>) -> PathBuf {
+    let target = home.join(".kiti/bin/kiti-hook");
+    let source = source.expect("falta la ruta de kiti-hook (target/release/kiti-hook)");
+    std::fs::create_dir_all(target.parent().unwrap()).expect("crear ~/.kiti/bin");
+    std::fs::copy(&source, &target).expect("copiar kiti-hook");
+    target
+}
 
 fn main() {
-    let settings =
-        PathBuf::from(std::env::var("HOME").expect("HOME")).join(".claude/settings.json");
-    match std::env::args().nth(1).as_deref() {
+    let home = PathBuf::from(std::env::var("HOME").expect("HOME"));
+    let claude = home.join(".claude/settings.json");
+    let codex = home.join(".codex/hooks.json");
+    let gemini = home.join(".gemini/settings.json");
+    let forwarder = home.join(".kiti/bin/kiti-hook");
+    let fwd = forwarder.to_string_lossy().into_owned();
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
         Some("uninstall") => {
-            uninstall_file(&settings).expect("desinstalar");
-            println!("Hooks de Kiti quitados de {}", settings.display());
+            claude_settings::uninstall_file(&claude).expect("desinstalar Claude");
+            println!("Hooks de Kiti quitados de {}", claude.display());
+        }
+        Some("install-codex") => {
+            let fwd = stable_forwarder(&home, args.next());
+            cli_hooks::install_file(Cli::Codex, &codex, &fwd.to_string_lossy()).expect("Codex");
+            println!(
+                "Hooks de Kiti en {}. Ábrelos en Codex con /hooks y confía en ellos.",
+                codex.display()
+            );
+        }
+        Some("install-gemini") => {
+            let fwd = stable_forwarder(&home, args.next());
+            cli_hooks::install_file(Cli::Gemini, &gemini, &fwd.to_string_lossy()).expect("Gemini");
+            println!("Hooks de Kiti en {}", gemini.display());
+        }
+        Some("uninstall-codex") => cli_hooks::uninstall_file(Cli::Codex, &codex).expect("Codex"),
+        Some("uninstall-gemini") => {
+            cli_hooks::uninstall_file(Cli::Gemini, &gemini).expect("Gemini")
         }
         _ => {
-            let value: serde_json::Value = std::fs::read(&settings)
-                .ok()
-                .and_then(|b| serde_json::from_slice(&b).ok())
-                .unwrap_or_default();
+            let value = read(&claude);
             let installed = EVENTS
                 .iter()
                 .filter(|e| {
@@ -29,10 +72,20 @@ fn main() {
                 })
                 .count();
             println!(
-                "{}: hooks de Kiti en {installed} de {} eventos",
-                settings.display(),
+                "Claude: hooks de Kiti en {installed} de {} eventos",
                 EVENTS.len()
             );
+            for (name, cli, path) in [
+                ("Codex", Cli::Codex, &codex),
+                ("Gemini", Cli::Gemini, &gemini),
+            ] {
+                let state = if cli_hooks::is_installed(cli, &read(path), &fwd) {
+                    "instalados"
+                } else {
+                    "no instalados"
+                };
+                println!("{name}: {state} ({})", path.display());
+            }
         }
     }
 }
