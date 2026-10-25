@@ -61,7 +61,19 @@ async function bootstrap() {
       .then((hello) => {
         store.getState().setSource(hello.source);
         // Terminales de agentes lanzados antes de abrir esta ventana (ADR 0007).
-        void transport.terminals?.list().then((list) => store.getState().setTerminals(list));
+        void transport.terminals?.list().then((list) => {
+          store.getState().setTerminals(list);
+          const agents = [...store.getState().agents.agents.values()];
+          const matched = list.filter((t) => agents.some((a) => a.pid === t.pid)).length;
+          console.info(
+            JSON.stringify({
+              event: "terminals.listed",
+              count: list.length,
+              matched,
+              agents: agents.length,
+            }),
+          );
+        });
         refreshConversations();
         console.info(JSON.stringify({ event: "transport.connected", ...hello }));
       });
