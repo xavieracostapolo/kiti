@@ -19,6 +19,9 @@ export type KitiDev = {
   frames(): number;
   bench(durationMs?: number): Promise<BenchResult>;
   kill(idOrIndex: string): void;
+  screenCenter(idOrIndex: string): { x: number; y: number } | undefined;
+  scale(): number;
+  lod(): string;
 };
 
 declare global {
@@ -49,6 +52,9 @@ export function installDevHooks(
       if (!w) throw new Error("world not ready");
       return w.bench(ms);
     },
+    screenCenter: (id) => getWorld()?.screenCenter(id),
+    scale: () => getWorld()?.scale() ?? 0,
+    lod: () => store.getState().view.lod,
     kill: (idOrIndex) => {
       const id = /^\d+$/.test(idOrIndex) ? ids()[Number(idOrIndex)] : idOrIndex;
       if (id) store.getState().requestKill(id);

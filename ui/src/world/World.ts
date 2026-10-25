@@ -20,6 +20,7 @@ import {
   FOCUS_MS,
   fitRect,
   panBy,
+  toScreen,
   toWorld,
   tween,
   type Viewport,
@@ -68,6 +69,10 @@ export type WorldHandle = {
   setZoom(zoom: Zoom): void;
   bench(durationMs?: number): Promise<BenchResult>;
   frames(): number;
+  /** Centro de la oficina en px de pantalla (tests E2E). */
+  screenCenter(idOrIndex: string): { x: number; y: number } | undefined;
+  /** Escala actual de la cámara. */
+  scale(): number;
   dispose(): void;
 };
 
@@ -365,6 +370,14 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     fitAll: () => setCamera(fitAllCamera(), true),
     setZoom: (zoom) => setCamera(zoomCamera(zoom), true),
     frames: () => scheduler?.frames ?? 0,
+    screenCenter(idOrIndex) {
+      const id = resolveId(idOrIndex);
+      const slot = id === undefined ? undefined : slots.get(id);
+      if (slot === undefined) return undefined;
+      const r = slotRect(slot, layout);
+      return toScreen(cam, vp, { x: r.x + r.w / 2, y: r.y + r.h / 2 });
+    },
+    scale: () => cam.k,
     async bench(durationMs = 10_000) {
       await ready;
       const s = scheduler;
