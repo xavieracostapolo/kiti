@@ -174,6 +174,57 @@ mise run ui:visual                       # solo macOS: --project=webkit-visual
 mise run ui:perf                         # 50 agentes, headed
 ```
 
+## Plan del Hito 2: "Shell Tauri y core con simulador"
+
+**Alcance:** `crates/core` (dominio, reducer, registro, coalescedor, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands, capabilities, CSP, `tracing` y diálogo nativo) y `TauriTransport`. Sin procesos reales, HookServer ni forwarder.
+
+**Decisiones del arranque (2026-10-24):**
+
+1. **`SessionEnded` deja de eliminar.** El fixture `salidas.json` y el simulador TS decían `SessionEnded → removed`, en contra del ADR 0002 §3. Con `/clear`, Claude emite `SessionEnd` sin que muera el proceso. Ahora `SessionEnded → idle` (salida esperada) y el `ProcessGone` posterior elimina el agente.
+2. **Plugins:** solo `tauri-plugin-dialog` (confirmación nativa). `tauri-plugin-log` y `tauri-plugin-single-instance` pasan al Hito 4, cuando haya HookServer.
+3. **Icono:** pixel art propio, pasado por `tauri icon`.
+
+**Orden TDD** (rojo → verde → refactor):
+
+1. Fixture `salidas.json` y simulador TS alineados con el ADR 0002.
+2. Esqueleto de `kiti-core` con *features* (`sim`, `testing`); compila con `--no-default-features`.
+3. Dominio: value objects, `Signal`, `Observation` y `Agent::apply`, con las filas del ADR 0002 §3, el runner de conformidad y proptest.
+4. `StalePolicy` vía `Tick`: 30 s, 10 min con herramientas abiertas y TTL de `Dead` de 60 s.
+5. `AgentRegistry` y `RegistryDiff`; `application::projection` hacia `kiti_protocol`.
+6. `Coalescer` y `Runtime` (actor) con `tokio::test(start_paused)`: `Snapshot` primero, `seq` monótono, ≤ 1 `Diff` cada 100 ms.
+7. `application::telemetry` y `CoreMetrics` a 1 Hz solo con el stream de debug.
+8. `sim::SimFleet`: ChaCha8 por agente, `profiles.json`, determinismo y `KITI_SIM=N:SEED[:freeze]`.
+9. Cerrar oficina: port `AgentKiller` con `SimKiller`.
+10. `src-tauri`: `AppManifest`, capability sin `core:default`, CSP, commands finos, diálogo nativo y `tracing`.
+11. `TauriTransport` con `@tauri-apps/api/mocks`; `main.tsx` lo carga con `import()`.
+12. Medición de RAM y CPU con 20 y 50 agentes.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿Cuánta RAM usa la app con 20 agentes? | `core.rss_bytes` + `footprint` de la app y su WebContent | 100–150 MB en total |
+| ¿CPU en reposo? | `core.cpu_percent` con `KITI_SIM=20:42:freeze` | < 1 % |
+| ¿Cuánto tarda una observación en salir por el Channel? | `core.ingest_to_send_ms` | p95 < 120 ms |
+| ¿Y en pintarse? | `ui.ingest_to_paint_ms` | p95 < 200 ms |
+| ¿Se respeta la coalescencia? | `core.ipc_flush_total`, `core.ipc_batch_bytes`, span `ipc.flush` | ≤ 10 Diff/s y 0 Diff sin cambios |
+| ¿Core y simulador TS dicen lo mismo? | Suite de conformidad | 100 % en Rust y TS |
+| ¿Se pierden diffs? | `ui.resync_total` | 0 en 10 min |
+| ¿El panel cuesta algo cerrado? | `core.metrics_msgs_total` | 0 sin `set_debug_stream(true)` |
+| ¿El reducer escala? | criterion `registry/*` | < 1 µs por observación y < 50 µs por flush con 50 agentes |
+
+Logs y spans: `app.start`, `ipc.subscribe`, `ipc.flush`, `sim.tick`, `kill.audit` y un resumen de métricas cada 60 s, en JSON con rotación diaria. Se verifica con `tracing-test`, `tokio::time` pausado, Vitest y el panel de debug de la app.
+
+**Criterios de aceptación**
+
+1. `mise run app:dev` abre Kiti con 20 oficinas de `SimFleet` (`KITI_SIM=20:42`), semáforos que cambian, 0 errores de consola y 0 violaciones de CSP.
+2. Conformidad al 100 % en Rust y en TS.
+3. `kiti-core` compila con `--no-default-features` y `cargo tree -p kiti-core` no contiene `tauri`.
+4. Cerrar una oficina pide **un** diálogo nativo: confirmar la quita y cancelar no hace nada.
+5. El panel de debug muestra RSS, CPU, eventos/s y el p95 de `ingest_to_send_ms` de la app real.
+6. RAM y CPU medidas y registradas. Si se supera el presupuesto, se investiga antes del Hito 3.
+7. `mise run check` en verde, con clippy y los tests de `kiti-core` y `src-tauri`.
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.
