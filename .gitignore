@@ -12,3 +12,6 @@ ui/playwright-report/
 # Sistema
 .DS_Store
 *.log
+
+# Web de GitHub Pages generada en CI
+_site/

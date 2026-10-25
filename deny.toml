@@ -17,7 +17,7 @@ ignore = [
 confidence-threshold = 0.9
 # Lista permitida para dependencias futuras (Tauri, axum…); no avisar si alguna aún no aparece.
 unused-allowed-license = "allow"
-# Los crates propios no se publican (publish = false) y el proyecto aún no tiene licencia elegida.
+# Los crates propios no se publican (publish = false); el proyecto es MIT (LICENSE).
 private = { ignore = true }
 allow = [
   "MIT",

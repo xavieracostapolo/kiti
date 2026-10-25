@@ -70,6 +70,7 @@ kiti/
   src-tauri/          # capa fina: commands, Channel hacia la UI, capabilities y tracing
   ui/                 # Vite + TS + PixiJS (+ React para paneles); funciona sin Tauri en modo sim
   docs/decisiones/    # ADRs numerados
+  site/               # web de GitHub Pages; el workflow pages.yml añade la UI en modo sim en /demo/
 ```
 
 El árbol completo está en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#estructura-del-monorepo).
