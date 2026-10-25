@@ -11,6 +11,8 @@ fn main() {
             "attach_terminal",
             "terminal_input",
             "terminal_resize",
+            "list_conversations",
+            "resume_conversation",
         ]),
     ))
     .expect("tauri build");

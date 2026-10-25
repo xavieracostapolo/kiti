@@ -13,6 +13,8 @@
     "allow-list-terminals",
     "allow-attach-terminal",
     "allow-terminal-input",
-    "allow-terminal-resize"
+    "allow-terminal-resize",
+    "allow-list-conversations",
+    "allow-resume-conversation"
   ]
 }

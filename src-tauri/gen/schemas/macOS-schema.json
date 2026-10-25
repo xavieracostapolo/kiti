@@ -195,6 +195,12 @@
           "markdownDescription": "Enables the launch_agent command without any pre-configured scope."
         },
         {
+          "description": "Enables the list_conversations command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-list-conversations",
+          "markdownDescription": "Enables the list_conversations command without any pre-configured scope."
+        },
+        {
           "description": "Enables the list_terminals command without any pre-configured scope.",
           "type": "string",
           "const": "allow-list-terminals",
@@ -205,6 +211,12 @@
           "type": "string",
           "const": "allow-report-ui-metrics",
           "markdownDescription": "Enables the report_ui_metrics command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the resume_conversation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-resume-conversation",
+          "markdownDescription": "Enables the resume_conversation command without any pre-configured scope."
         },
         {
           "description": "Enables the set_debug_stream command without any pre-configured scope.",
@@ -255,6 +267,12 @@
           "markdownDescription": "Denies the launch_agent command without any pre-configured scope."
         },
         {
+          "description": "Denies the list_conversations command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-list-conversations",
+          "markdownDescription": "Denies the list_conversations command without any pre-configured scope."
+        },
+        {
           "description": "Denies the list_terminals command without any pre-configured scope.",
           "type": "string",
           "const": "deny-list-terminals",
@@ -265,6 +283,12 @@
           "type": "string",
           "const": "deny-report-ui-metrics",
           "markdownDescription": "Denies the report_ui_metrics command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the resume_conversation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-resume-conversation",
+          "markdownDescription": "Denies the resume_conversation command without any pre-configured scope."
         },
         {
           "description": "Denies the set_debug_stream command without any pre-configured scope.",
