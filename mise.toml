@@ -64,6 +64,14 @@ run = "cargo run -q -p kiti-core --example scan"
 description = "Compila la app nativa en release sin empaquetar: target/release/kiti-app"
 run = "pnpm exec tauri build --no-bundle"
 
+[tasks."app:bundle"]
+description = "Genera Kiti.app y la copia al Escritorio (sustituye la anterior)"
+run = [
+  "pnpm exec tauri build --bundles app",
+  "rm -rf ~/Desktop/Kiti.app",
+  "cp -R target/release/bundle/macos/Kiti.app ~/Desktop/",
+]
+
 [tasks."app:measure"]
 description = "RAM y CPU de la app release con 20 (reposo y activa) y 50 agentes simulados"
 depends = ["app:build"]
