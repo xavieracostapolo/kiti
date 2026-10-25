@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
+import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
+import type { Transport } from "../transport/Transport";
 import s from "./panels.module.css";
 
-/** Cmd+Shift+D. Solo muestrea a 1 Hz mientras está abierto, para no pagar nada en reposo. */
-export function DebugPanel({ metrics }: { metrics: Metrics }) {
+type Props = { metrics: Metrics; store: KitiStore; transport: Transport };
+
+const mb = (bytes: number) => `${(bytes / 1_048_576).toFixed(1)} MB`;
+
+/** Cmd+Shift+D. Solo muestrea a 1 Hz y pide el stream del core mientras está abierto. */
+export function DebugPanel({ metrics, store, transport }: Props) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
 
@@ -20,11 +26,26 @@ export function DebugPanel({ metrics }: { metrics: Metrics }) {
 
   useEffect(() => {
     if (!open) return;
-    const show = () => setText(JSON.stringify(metrics.snapshot(), null, 1));
+    void transport.setDebugStream(true);
+    const show = () => {
+      const core = store.getState().coreMetrics;
+      const coreText = core
+        ? {
+            "core.rss": mb(core.rssBytes),
+            "core.cpu_percent": core.cpuPercent.toFixed(2),
+            "core.events_per_sec": core.eventsPerSec.toFixed(1),
+            "core.agents": core.agents,
+          }
+        : { core: "sin datos (modo sim del navegador)" };
+      setText(JSON.stringify({ ...coreText, ...metrics.snapshot() }, null, 1));
+    };
     show();
     const h = setInterval(show, 1000);
-    return () => clearInterval(h);
-  }, [open, metrics]);
+    return () => {
+      clearInterval(h);
+      void transport.setDebugStream(false);
+    };
+  }, [open, metrics, store, transport]);
 
   return open ? <pre className={s.debug}>{text}</pre> : null;
 }

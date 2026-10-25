@@ -54,4 +54,20 @@ describe("store", () => {
     store.getState().setSource("sim");
     expect(store.getState().source).toBe("sim");
   });
+
+  it("guarda las CoreMetrics del stream de debug sin tocar los agentes", () => {
+    const store = createKitiStore();
+    store.getState().receive({ type: "Snapshot", seq: 0, agents: [a] });
+    const agents = store.getState().agents;
+    store.getState().receive({
+      type: "Metrics",
+      agents: 1,
+      eventsPerSec: 3,
+      hookToPublishMsP95: 1,
+      rssBytes: 32_000_000,
+      cpuPercent: 0.1,
+    });
+    expect(store.getState().agents).toBe(agents);
+    expect(store.getState().coreMetrics?.rssBytes).toBe(32_000_000);
+  });
 });

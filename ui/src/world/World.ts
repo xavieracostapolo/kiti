@@ -10,6 +10,7 @@ import {
   Graphics,
   type Texture,
   TextureStyle,
+  Ticker,
   TilingSprite,
 } from "pixi.js";
 import type { Zoom } from "../dev/params";
@@ -122,6 +123,10 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       return;
     }
     cleanup.push(() => app.destroy(true, { children: true, texture: true }));
+    // El EventSystem de Pixi cuelga un listener de Ticker.system que pide un rAF a 60 Hz para
+    // siempre (hover de sus eventos). No usamos eventos de Pixi (la cámara escucha el DOM), y
+    // ese bucle gastaba CPU en reposo en el WebView y en el proceso de la app.
+    Ticker.system.stop();
     el.appendChild(app.canvas);
 
     BitmapFont.install({
