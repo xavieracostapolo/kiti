@@ -301,6 +301,15 @@ Lectura:
 | ¿El instalador respeta lo ajeno? | Tests con settings reales: hooks de otros, orden de claves y backup | Byte a byte igual salvo lo de Kiti |
 | ¿Molesta con Kiti cerrada? | E1 | Sin avisos en el TUI de Claude |
 
+## Resultados del Hito 4
+
+- **Semáforo real con hooks:** la app instala sus hooks (`hooks:status` muestra 11 de 11), escucha solo en `127.0.0.1:47821` y, en cuanto la sesión de Claude de este proyecto usó una herramienta, su oficina pasó de gris a verde (`status.changed … from=Idle to=Working reason=Hook`).
+- **Instalador:** con el `settings.json` real del usuario (11 claves y un hook `PreToolUse` propio) añadió un grupo por evento sin tocar lo demás. Hizo backup único en `settings.json.kiti.bak` y conservó los permisos `0600`. `mise run hooks:uninstall` lo revierte.
+- **Correlación:** `sessions/<pid>.json` se aplica solo cuando cambia y si es más reciente que el último hook, porque se lee cada 3 s y puede ir atrasado.
+- **Seguridad del HookServer:** un test por control (Host, Origin/Sec-Fetch, token, JSON, 4 MiB, canal lleno) y un extremo a extremo que comprueba que el prompt nunca sale del core.
+- **E1:** en las pruebas, Kiti se cerró y se reinició varias veces mientras esta sesión de Claude disparaba hooks hacia el puerto cerrado. Resultado pendiente de lo que el usuario vio en su terminal.
+- **Pendiente:** indicador en la UI del estado de los hooks, acción "Regenerar token" y `hook_to_publish_ms` en el panel de debug con tráfico real.
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.

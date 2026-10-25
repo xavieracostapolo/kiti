@@ -40,6 +40,14 @@ description = "Abre la app nativa con 20 agentes simulados; KITI_SIM=N:SEED[:fre
 env = { KITI_SIM = "20:42" }
 run = "pnpm exec tauri dev"
 
+[tasks."hooks:status"]
+description = "Cuántos eventos de Claude tienen los hooks de Kiti en ~/.claude/settings.json"
+run = "cargo run -q -p kiti-core --example hooks -- status"
+
+[tasks."hooks:uninstall"]
+description = "Quita los hooks de Kiti de ~/.claude/settings.json (deja los tuyos intactos)"
+run = "cargo run -q -p kiti-core --example hooks -- uninstall"
+
 [tasks.scan]
 description = "Muestra qué procesos detecta Kiti como agentes y por qué (solo lectura)"
 run = "cargo run -q -p kiti-core --example scan"

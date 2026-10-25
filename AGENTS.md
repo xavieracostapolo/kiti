@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 3, "Procesos reales", implementado en la rama `hito-3-procesos-reales`: la app muestra los agentes reales (modo por defecto; `KITI_SIM` para el simulador). Pendiente de que el usuario lo pruebe con `mise run app:dev`. Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-3). Hitos 1 y 2 cerrados y fusionados en `main` (2026-10-24); el usuario aceptó el presupuesto de RAM revisado.
+- **Fase:** Hito 4, "Hooks de Claude Code", implementado en la rama `hito-4-hooks-claude`: la app instala sus hooks en `~/.claude/settings.json` (con permiso del usuario, 2026-10-24) y el semáforo de Claude es real. Hito 3 fusionado en `main`. Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-4). Hitos 1 y 2 cerrados y fusionados en `main` (2026-10-24); el usuario aceptó el presupuesto de RAM revisado.
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -162,7 +162,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **1. Oficina visual simulada:** `crates/protocol` + `ui/` en el navegador con `SimTransport`. Grilla de 20 oficinas, cámara (zoom, pan, doble clic para enfocar), LOD, culling, semáforos, diálogo de cierre, telemetría y panel de debug. Capturas con Playwright en 3 niveles de zoom.
 - [x] **2. Shell Tauri y core con simulador:** `src-tauri` (Channel, capabilities, CSP, `tracing`), dominio y reducer de `kiti-core`, `SimFleet` y `TauriTransport`. Medir RAM y CPU.
 - [x] **3. Procesos reales:** `sysinfo`, `classify` con roles y cerrar oficina de verdad, con verificación.
-- [ ] **4. Hooks de Claude Code:** HookServer, token, instalador de hooks, `sessions/<pid>.json` y experimento E1.
+- [x] **4. Hooks de Claude Code:** HookServer, token, instalador de hooks, `sessions/<pid>.json` y experimento E1.
 - [ ] **5. Forwarder:** hooks para Codex y Gemini.
 - [ ] **6. Tailer de transcripts** y panel lateral con la última herramienta, el cwd y el último evento.
 - [ ] **7. Barra de menú y bandeja**, y pausa del render con la ventana oculta.
@@ -171,7 +171,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 ## Pendientes de verificar
 
 - Probar a mano el diálogo nativo de "Cerrar oficina" en la app (confirmar y cancelar).
-- E1: si Claude muestra avisos en el TUI cuando el hook `http` no conecta (Hito 4, requiere permiso).
+- E1: si Claude muestra avisos en el TUI cuando el hook `http` no conecta (pendiente de lo que vio el usuario).
 - El `argv` real de Gemini con npx y Homebrew, y su ruta de chats en la 0.65.0.
 - La ruta del cask de Claude y los subcomandos de Codex que no son agentes.
 - El evento de Claude al denegar un permiso, y los errores de agente en Codex y Gemini.
@@ -207,6 +207,8 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run app:dev       # app nativa con los agentes reales (KITI_SCAN_MS cambia el intervalo, 3 s)
   mise run app:sim       # app nativa con 20 agentes simulados (KITI_SIM=N:SEED[:freeze])
   mise run scan          # qué procesos detecta Kiti como agentes y por qué (solo lectura)
+  mise run hooks:status  # cuántos eventos de Claude tienen los hooks de Kiti
+  mise run hooks:uninstall # quita los hooks de Kiti de ~/.claude/settings.json (los tuyos quedan)
   mise run app:build     # release sin empaquetar: target/release/kiti-app
   mise run app:measure   # RAM y CPU con 20 y 50 agentes simulados y en modo real
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E

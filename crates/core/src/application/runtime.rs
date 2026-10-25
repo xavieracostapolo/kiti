@@ -171,6 +171,21 @@ impl RuntimeHandle {
     }
 }
 
+fn log_status_changes(events: &[DomainEvent]) {
+    for ev in events {
+        if let DomainEvent::StatusChanged {
+            id,
+            from,
+            to,
+            reason,
+            ..
+        } = ev
+        {
+            info!(event = "status.changed", agent_id = %id, ?from, ?to, ?reason);
+        }
+    }
+}
+
 pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     registry: AgentRegistry,
     rx: mpsc::Receiver<RuntimeCommand>,
@@ -289,6 +304,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                         now,
                     ));
                 }
+                log_status_changes(&events);
                 for ev in events {
                     match ev {
                         DomainEvent::AgentAppeared { id } => {
@@ -308,8 +324,10 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 received,
             } => {
                 debug!(event = "hook.received", provider = %provider, name = %event.name);
-                self.registry
-                    .hook(provider, &event.session, &event.cwd, &event.signal, now);
+                let events =
+                    self.registry
+                        .hook(provider, &event.session, &event.cwd, &event.signal, now);
+                log_status_changes(&events);
                 self.telemetry.record_event();
                 self.oldest_unpublished_hook.get_or_insert(received);
             }
