@@ -80,6 +80,28 @@ impl AgentRegistry {
         events
     }
 
+    /// Sincroniza con un escaneo de procesos: registra los agentes nuevos y aplica `ProcessGone`
+    /// a los vivos que ya no aparecen. Los `Dead` se quedan hasta su TTL.
+    pub fn reconcile(&mut self, detected: &[DetectedAgent], now: Timestamp) -> Events {
+        let mut events = Events::new();
+        let mut alive = std::collections::HashSet::with_capacity(detected.len());
+        for d in detected {
+            let (id, ev) = self.register(d.clone(), now);
+            alive.insert(id);
+            events.extend(ev);
+        }
+        let gone: Vec<AgentId> = self
+            .agents
+            .values()
+            .filter(|a| !a.is_dead() && !alive.contains(&a.id()))
+            .map(Agent::id)
+            .collect();
+        for id in gone {
+            events.extend(self.apply(&id, &AgentInput::ProcessGone, now));
+        }
+        events
+    }
+
     /// Pasa el Tick por todos los agentes registrados.
     pub fn tick(&mut self, policy: &StalePolicy, now: Timestamp) -> Events {
         let mut all_events = Events::new();
@@ -223,5 +245,61 @@ mod tests {
 
         let diff2 = reg.flush_diff();
         assert_eq!(diff2.removed, vec![id]);
+    }
+
+    fn id_of(d: &DetectedAgent) -> AgentId {
+        AgentId {
+            provider: d.provider,
+            pid: d.identity.pid,
+            start_time: d.identity.start_time,
+        }
+    }
+
+    #[test]
+    fn reconcile_da_de_alta_lo_nuevo_y_marca_dead_lo_que_desaparece() {
+        let mut reg = AgentRegistry::new();
+        let (a, b, c) = (sample_detected(1), sample_detected(2), sample_detected(3));
+        reg.reconcile(&[a.clone(), b.clone()], Timestamp(10));
+        assert_eq!(reg.len(), 2);
+
+        // b muere sin SessionEnd y aparece c.
+        let ev = reg.reconcile(&[a.clone(), c.clone()], Timestamp(20));
+        assert!(ev.contains(&DomainEvent::AgentAppeared { id: id_of(&c) }));
+        assert!(ev.contains(&DomainEvent::AgentExited {
+            id: id_of(&b),
+            expected: false
+        }));
+        assert_eq!(
+            reg.get(&id_of(&b)).map(|x| x.status().kind),
+            Some(StatusKind::Dead)
+        );
+        assert!(reg.get(&id_of(&c)).is_some());
+    }
+
+    #[test]
+    fn reconcile_es_idempotente_y_no_repite_process_gone() {
+        let mut reg = AgentRegistry::new();
+        let a = sample_detected(1);
+        reg.reconcile(std::slice::from_ref(&a), Timestamp(10));
+        reg.reconcile(&[], Timestamp(20));
+        let rev = reg.get(&id_of(&a)).map(Agent::revision);
+        let ev = reg.reconcile(&[], Timestamp(30));
+        assert!(ev.is_empty());
+        assert_eq!(reg.get(&id_of(&a)).map(Agent::revision), rev);
+    }
+
+    #[test]
+    fn reconcile_quita_al_momento_una_salida_esperada() {
+        let mut reg = AgentRegistry::new();
+        let a = sample_detected(1);
+        reg.reconcile(std::slice::from_ref(&a), Timestamp(10));
+        reg.apply(
+            &id_of(&a),
+            &AgentInput::Signal(Signal::SessionEnd),
+            Timestamp(11),
+        );
+        reg.reconcile(&[], Timestamp(20));
+        assert!(reg.get(&id_of(&a)).is_none());
+        assert_eq!(reg.flush_diff().removed, vec![id_of(&a)]);
     }
 }

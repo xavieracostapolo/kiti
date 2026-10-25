@@ -11,11 +11,14 @@ use tokio::time::{Instant, interval};
 
 use crate::application::projection::{project_diff, project_snapshot};
 use crate::application::telemetry::Telemetry;
-use crate::domain::{AgentId, AgentInput, AgentRegistry, DetectedAgent, StalePolicy, Timestamp};
+use crate::domain::{
+    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, StalePolicy, Timestamp,
+};
 use crate::ports::{
     AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
 };
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
+use tracing::info;
 
 pub const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 pub const METRICS_INTERVAL: Duration = Duration::from_secs(1);
@@ -32,6 +35,16 @@ pub enum RuntimeCommand {
         id: AgentId,
         input: AgentInput,
         now: Timestamp,
+    },
+    /// Resultado de un escaneo de procesos ya clasificado.
+    Reconcile {
+        detected: Vec<DetectedAgent>,
+        now: Timestamp,
+    },
+    /// `cwd` del agente, para el diálogo de confirmación.
+    Describe {
+        id: AgentId,
+        reply: oneshot::Sender<Option<String>>,
     },
     Subscribe {
         publisher: Box<dyn DiffPublisher>,
@@ -72,6 +85,22 @@ impl RuntimeHandle {
             .await;
     }
 
+    pub async fn reconcile(&self, detected: Vec<DetectedAgent>, now: Timestamp) {
+        let _ = self
+            .tx
+            .send(RuntimeCommand::Reconcile { detected, now })
+            .await;
+    }
+
+    pub async fn describe(&self, id: AgentId) -> Option<String> {
+        let (reply, rx) = oneshot::channel();
+        self.tx
+            .send(RuntimeCommand::Describe { id, reply })
+            .await
+            .ok()?;
+        rx.await.ok().flatten()
+    }
+
     pub async fn subscribe<P: DiffPublisher>(&self, publisher: P) -> Result<Hello, String> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.tx
@@ -98,6 +127,11 @@ impl RuntimeHandle {
             .await
             .map_err(|e| e.to_string())?;
         reply_rx.await.map_err(|e| e.to_string())
+    }
+
+    /// El actor terminó (se soltaron todos los handles o el runtime se apagó).
+    pub fn is_closed(&self) -> bool {
+        self.tx.is_closed()
     }
 
     pub fn telemetry(&self) -> &Arc<Telemetry> {
@@ -204,6 +238,22 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             RuntimeCommand::ApplyInput { id, input, now } => {
                 self.registry.apply(&id, &input, now);
                 self.telemetry.record_event();
+            }
+            RuntimeCommand::Reconcile { detected, now } => {
+                for ev in self.registry.reconcile(&detected, now) {
+                    match ev {
+                        DomainEvent::AgentAppeared { id } => {
+                            info!(event = "agent.appeared", agent_id = %id);
+                        }
+                        DomainEvent::AgentExited { id, expected } => {
+                            info!(event = "agent.exited", agent_id = %id, expected);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            RuntimeCommand::Describe { id, reply } => {
+                let _ = reply.send(self.registry.get(&id).map(|a| a.cwd().as_str().to_owned()));
             }
             RuntimeCommand::Subscribe {
                 mut publisher,

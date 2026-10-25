@@ -2,12 +2,24 @@
 //!
 //! Despacho estático con genéricos y `async fn` nativo. Sin `async-trait`.
 
-use crate::domain::{AgentId, ProcessIdentity, Timestamp};
+use crate::domain::{AgentId, ProcessIdentity, ProcessSnapshot, Timestamp};
 use kiti_protocol::ServerMsg;
 use std::time::Duration;
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ScanError {
+    #[error("fallo al escanear procesos: {0}")]
+    Failed(String),
+}
+
+/// Síncrono: sysinfo es bloqueante. El escáner corre en `spawn_blocking` cada 2 s.
+pub trait ProcessScanner: Send + 'static {
+    /// Procesos del usuario actual.
+    fn scan(&mut self) -> Result<Vec<ProcessSnapshot>, ScanError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

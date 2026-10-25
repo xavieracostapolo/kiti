@@ -8,8 +8,11 @@ publish.workspace = true
 
 [features]
 # Con --no-default-features solo quedan domain y application (CI lo comprueba, ADR 0002 §6).
-default = ["sim", "testing"]
+default = ["sim", "testing", "scanner", "killer"]
 sim = ["dep:rand", "dep:rand_chacha"]
+# Adapters de procesos reales con sysinfo (ADR 0002 §5).
+scanner = ["dep:sysinfo"]
+killer = ["dep:sysinfo"]
 testing = []
 
 [dependencies]
@@ -23,6 +26,7 @@ tracing.workspace = true
 hdrhistogram.workspace = true
 rand = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
+sysinfo = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

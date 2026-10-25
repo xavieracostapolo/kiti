@@ -1,12 +1,16 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use kiti_core::application::run_scanner;
 use kiti_core::application::{Runtime, RuntimeHandle, Telemetry};
+use kiti_core::domain::ProcessSnapshot;
 use kiti_core::domain::{
     AgentId, AgentInput, DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Signal,
     Timestamp, WorkingDir,
 };
-use kiti_core::ports::{AgentKiller, DiffPublisher, KillOutcome, KillTarget};
+use kiti_core::ports::{
+    AgentKiller, DiffPublisher, KillOutcome, KillTarget, ProcessScanner, ScanError,
+};
 use kiti_core::testing::ManualClock;
 use kiti_protocol::{KillResult, PROTOCOL_VERSION, ServerMsg, Source};
 
@@ -314,4 +318,81 @@ async fn la_caducidad_usa_el_reloj_del_port_clock() {
     tokio::time::advance(Duration::from_secs(3)).await;
     tokio::task::yield_now().await;
     assert_eq!(kind_now(&msgs), Some(kiti_protocol::StatusKind::Idle));
+}
+
+/// Escáner falso: cada `scan()` devuelve el siguiente lote preparado (el último se repite).
+struct ScriptedScanner(Vec<Vec<ProcessSnapshot>>);
+
+impl ProcessScanner for ScriptedScanner {
+    fn scan(&mut self) -> Result<Vec<ProcessSnapshot>, ScanError> {
+        Ok(if self.0.len() > 1 {
+            self.0.remove(0)
+        } else {
+            self.0[0].clone()
+        })
+    }
+}
+
+fn claude_process(pid: u32) -> ProcessSnapshot {
+    ProcessSnapshot {
+        pid: Pid(pid),
+        ppid: Some(Pid(1)),
+        start_time: ProcessStartTime(5_000),
+        uid: 501,
+        exe: Some("/Users/dev/.local/share/claude/versions/2.1.310".into()),
+        argv: vec!["claude".into()],
+        cwd: Some("/Users/dev/kiti".into()),
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn el_escaner_alimenta_el_registro_y_detecta_salidas() {
+    let clock = ManualClock::new(10_000);
+    let handle = spawn(TestKiller, clock.clone());
+    let publisher = TestPublisher::new();
+    let msgs = publisher.messages.clone();
+    handle.subscribe(publisher).await.unwrap();
+
+    let zsh = ProcessSnapshot {
+        exe: Some("/bin/zsh".into()),
+        argv: vec!["-zsh".into()],
+        ..claude_process(50)
+    };
+    let scanner = ScriptedScanner(vec![vec![claude_process(77), zsh.clone()], vec![zsh]]);
+    tokio::spawn(run_scanner(
+        scanner,
+        handle.clone(),
+        clock.clone(),
+        Duration::from_secs(2),
+    ));
+
+    let ids_in = |m: &ServerMsg| match m {
+        ServerMsg::Diff { upserts, .. } => upserts.iter().map(|a| (a.pid, a.status.kind)).collect(),
+        _ => vec![],
+    };
+    let seen = || -> Vec<(u32, kiti_protocol::StatusKind)> {
+        msgs.lock().unwrap().iter().flat_map(ids_in).collect()
+    };
+
+    // Primer escaneo: aparece solo el agente, no el shell.
+    eventually(|| !seen().is_empty()).await;
+    assert_eq!(seen(), vec![(77, kiti_protocol::StatusKind::Idle)]);
+
+    // Segundo escaneo, 2 s después: el proceso ya no está y no hubo SessionEnd → dead.
+    eventually(|| seen().len() > 1).await;
+    assert_eq!(seen().last(), Some(&(77, kiti_protocol::StatusKind::Dead)));
+}
+
+/// Con el reloj pausado, el escaneo corre en un hilo real (`spawn_blocking`): se avanza el
+/// tiempo virtual de 100 en 100 ms dejando que ese hilo termine, hasta que se cumpla `cond`.
+async fn eventually(cond: impl Fn() -> bool) {
+    for _ in 0..100 {
+        if cond() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+        tokio::time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+    }
+    panic!("la condición no se cumplió");
 }
