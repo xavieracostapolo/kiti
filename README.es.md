@@ -13,7 +13,7 @@ Claude Code, Codex CLI y Gemini CLI en un solo mapa, con un semáforo por agente
 
 [**Prueba la demo**](https://xavieracostapolo.github.io/kiti/demo/) · [Web](https://xavieracostapolo.github.io/kiti/) · [Read in English](README.md)
 
-![Kiti con 20 agentes simulados agrupados por proyecto](site/img/sim20-far.png)
+![Kiti con 20 agentes simulados agrupados por proyecto, cada oficina con su título y su semáforo](site/img/map.png)
 
 </div>
 
@@ -26,16 +26,23 @@ Cuando tienes varios agentes de código abiertos, les pierdes la pista. Uno espe
 - **Detección automática.** Kiti encuentra los procesos de Claude Code, Codex CLI y Gemini CLI. Los clasifica por ejecutable y `argv`, nunca por el nombre del proceso, e ignora los lanzadores y las apps de escritorio.
 - **Semáforo por agente.** Verde es trabajando, amarillo es esperándote, gris es inactivo y rojo es error o caída. El estado sale de los hooks de los CLIs, no de adivinar. Un fallo de herramienta no es rojo.
 - **Zonas por proyecto.** Las oficinas se agrupan por raíz git (o carpeta): cada repositorio es un barrio.
-- **Cámara.** Pan, zoom, doble clic para enfocar una oficina y `0` para verlo todo. De lejos ves salas y semáforos; de cerca, el título, la herramienta actual y el último pedido.
+- **Cámara.** Pan, zoom, doble clic para enfocar una oficina y `0` para verlo todo. De lejos, cada oficina muestra su título en un cartel grande; de cerca ves el título, la herramienta actual y el último pedido.
+- **Filtro y buscador.** Los contadores de la barra superior filtran por estado, también las conversaciones apagadas. Pulsa `/` para buscar por título, proyecto, carpeta o proveedor, y `Esc` para limpiar. Las oficinas que no coinciden se atenúan, no se esconden: el mapa conserva su orden y la cámara encuadra las que coinciden.
 - **Terminal embebida.** Lanza un agente nuevo desde Kiti. Corre en `tmux` (`-L kiti`), así que sobrevive cuando cierras Kiti.
+- **Ir a su terminal.** Para un agente abierto fuera de Kiti, «Ir a su terminal» muestra su pestaña exacta en Ghostty o Terminal.app. Otras apps, como VS Code, pasan al frente.
 - **Retomar conversaciones.** Las conversaciones cerradas de Claude de los últimos 7 días quedan como oficinas apagadas. Un clic ejecuta `claude --resume` en una terminal de Kiti.
-- **Barra de menú y avisos.** La barra de menú muestra los contadores. macOS te avisa cuando un agente pide permiso, termina un turno largo, falla o se cae, solo si Kiti no está al frente.
+- **Barra de menú y avisos.** La barra de menú muestra los contadores. macOS te avisa cuando un agente pide permiso, termina un turno largo, falla o se cae, solo si Kiti no está al frente. Un clic en el aviso abre Kiti en esa oficina.
+- **Pixel art.** Salas, muebles y personas salen de los tilesheets CC0 de [Kenney](https://kenney.nl). Cada agente tiene siempre la misma persona, y la alfombra lleva el color de su proveedor.
 - **Cerrar una oficina.** Termina el proceso del agente tras una confirmación. Kiti verifica `(pid, start_time, uid, cmd)` antes de cada señal, así que nunca mata un PID reutilizado.
 
 <table>
 <tr>
-<td><img src="site/img/focus-claude.png" alt="Oficina de Claude trabajando, con un globo de Grep"></td>
-<td><img src="site/img/live-tooltip.png" alt="Tooltip y panel lateral con proyecto, último pedido y botón de retomar"></td>
+<td><img src="site/img/focus.png" alt="Oficina de Claude trabajando: una persona en el escritorio, un globo de Grep y el semáforo en verde"></td>
+<td><img src="site/img/filter.png" alt="Filtro «esperando» activo: las dos oficinas amarillas destacan y el resto se atenúa"></td>
+</tr>
+<tr>
+<td><img src="site/img/external.png" alt="Panel de un agente abierto fuera de Kiti, con el botón para ir a su terminal"></td>
+<td><img src="site/img/dormant.png" alt="Conversación cerrada como oficina apagada con la silla vacía, y el panel para retomarla"></td>
 </tr>
 </table>
 
@@ -127,16 +134,16 @@ mise run app:bundle    # genera Kiti.app y la copia al Escritorio
 
 Stack: Tauri v2, Rust (`tokio`, `axum`, `sysinfo`), TypeScript 7, PixiJS v8, React, zustand y xterm.js. Tests: Vitest, fast-check y Playwright en la UI; nextest, proptest e insta en Rust.
 
-El diseño está en diez ADRs, desde la [elección del stack](docs/decisiones/0001-stack/README.md) hasta los [avisos](docs/decisiones/0010-avisos/README.md). [AGENTS.md](AGENTS.md) es la guía completa del código.
+El diseño está en ADRs, desde la [elección del stack](docs/decisiones/0001-stack/README.md) hasta el [pixel art](docs/decisiones/0013-pixel-art-kenney/README.md). [AGENTS.md](AGENTS.md) es la guía completa del código.
 
 ## Roadmap
 
 - [x] Oficina simulada, shell nativo, procesos reales y hooks de los tres CLIs
 - [x] Tailer de transcripts, barra de menú, terminal embebida y sesiones persistentes en `tmux`
 - [x] Zonas por proyecto, conversaciones para retomar y avisos
+- [x] Vista lejana legible, filtro de oficinas e ir a la pestaña de terminal de un agente externo
+- [x] Pixel art con los tilesheets de [Kenney](https://kenney.nl)
 - [ ] Soporte para Windows
-- [ ] Enfocar la pestaña de Ghostty de un agente externo
-- [ ] Pixel art con los tilesheets de [Kenney](https://kenney.nl)
 - [ ] Versiones firmadas y notarizadas
 
 ## Contribuir
@@ -146,3 +153,5 @@ Las contribuciones son bienvenidas. Lee antes [CONTRIBUTING.md](CONTRIBUTING.md)
 ## Licencia
 
 [MIT](LICENSE) © 2026 Xavier Acosta Polo
+
+El arte de las oficinas es de [Kenney](https://www.kenney.nl) (Roguelike RPG Pack, Roguelike Indoors y RPG Urban Pack), con licencia [CC0](https://creativecommons.org/publicdomain/zero/1.0/deed.es). Cada pack conserva su archivo de licencia en [`ui/public/assets/kenney/`](ui/public/assets/kenney/).

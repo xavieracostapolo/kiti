@@ -13,7 +13,7 @@ Claude Code, Codex CLI and Gemini CLI in one map, with a traffic light per agent
 
 [**Try the live demo**](https://xavieracostapolo.github.io/kiti/demo/) · [Website](https://xavieracostapolo.github.io/kiti/) · [Leer en español](README.es.md)
 
-![Kiti showing 20 simulated agents grouped by project](site/img/sim20-far.png)
+![Kiti showing 20 simulated agents grouped by project, each office with its title and a traffic light](site/img/map.png)
 
 </div>
 
@@ -26,16 +26,23 @@ When you run several coding agents at once, you lose track of them. One waits fo
 - **Automatic detection.** Kiti finds running Claude Code, Codex CLI and Gemini CLI processes. It classifies them by executable and `argv`, never by process name, and ignores launchers and the desktop apps.
 - **Traffic light per agent.** Green is working, yellow is waiting for you, grey is idle, red is an error or a crash. The status comes from the CLI hooks, not from guessing. A failed tool call is not red.
 - **Zones per project.** Offices are grouped by git root (or folder), so each repository is a neighbourhood.
-- **Camera.** Pan, zoom, double-click to focus an office, `0` to see everything. Far away you see rooms and lights; close up you see the title, the current tool and the last request.
+- **Camera.** Pan, zoom, double-click to focus an office, `0` to see everything. Far away, each office shows its title on a large sign; close up you see the title, the current tool and the last request.
+- **Filter and search.** The counters in the top bar filter by status, closed conversations included. Press `/` to search by title, project, folder or provider, and `Esc` to clear. Offices that do not match are dimmed, not hidden, so the map keeps its layout and the camera frames the matches.
 - **Embedded terminal.** Launch a new agent from Kiti. It runs in `tmux` (`-L kiti`), so it survives when you close Kiti.
+- **Jump to its terminal.** For an agent started outside Kiti, «Ir a su terminal» shows its exact tab in Ghostty or Terminal.app. Other apps, such as VS Code, are brought to the front.
 - **Resume conversations.** Closed Claude conversations from the last 7 days stay as dark offices. One click runs `claude --resume` in a Kiti terminal.
-- **Menu bar and notifications.** The menu bar shows the counters. macOS notifies you when an agent asks for permission, finishes a long turn, fails or crashes, but only when Kiti is not in front.
+- **Menu bar and notifications.** The menu bar shows the counters. macOS notifies you when an agent asks for permission, finishes a long turn, fails or crashes, but only when Kiti is not in front. Click the notification to open Kiti on that office.
+- **Pixel art.** Rooms, furniture and people come from [Kenney](https://kenney.nl)'s CC0 tilesheets. Each agent always gets the same person, and the rug takes the colour of its provider.
 - **Close an office.** Ends the agent process after a confirmation. Kiti checks `(pid, start_time, uid, cmd)` before each signal, so it never kills a reused PID.
 
 <table>
 <tr>
-<td><img src="site/img/focus-claude.png" alt="Close-up of a working Claude office with a Grep speech bubble"></td>
-<td><img src="site/img/live-tooltip.png" alt="Tooltip and side panel with project, last request and resume button"></td>
+<td><img src="site/img/focus.png" alt="Close-up of a working Claude office: a person at the desk, a Grep speech bubble and a green light"></td>
+<td><img src="site/img/filter.png" alt="The waiting filter is on: the two yellow offices stand out and the others are dimmed"></td>
+</tr>
+<tr>
+<td><img src="site/img/external.png" alt="Side panel of an agent opened outside Kiti, with the button to go to its terminal"></td>
+<td><img src="site/img/dormant.png" alt="A closed conversation as a dark office with an empty chair, and a panel to resume it"></td>
 </tr>
 </table>
 
