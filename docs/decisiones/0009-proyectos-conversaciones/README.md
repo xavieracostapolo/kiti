@@ -65,12 +65,20 @@ Todo queda **en la máquina**: viaja solo del core a la UI por IPC, **nunca se e
 - **Bug corregido de paso:** `Culler.shared.cull` usaba por defecto las transformaciones del frame anterior. Tras un salto de cámara sin animación, las oficinas quedaban ocultas. Ahora se llama con `skipUpdateTransform = false`.
 - **Tests:** dominio de proyecto, enrutado de info retenida, meta de conversaciones e índice en disco (Rust); layout de zonas, salas apagadas, store, tooltip y panel (Vitest); E2E de zonas, tooltip y retomar con el simulador (`?conversations=1`). Las líneas base visuales se regeneraron con las zonas.
 
+## Ajustes tras probar la app real
+
+- **Permisos de los commands:** `list_conversations` y `resume_conversation` estaban registrados, pero faltaban en `build.rs` y en la capability. Tauri los rechazaba ("not allowed by ACL"). Ahora `src-tauri/tests/acl.rs` falla si un command registrado no está permitido.
+- **"Cerrar oficina" no hacía nada en la app nativa** (desde el Hito 2): el botón marcaba la oficina como pendiente, pero solo el diálogo del simulador consumía esa marca. `NativeCloseOffice` pasa cada petición a `kill_agent`, que enseña el diálogo nativo.
+- **Archivar** (pedido del usuario): una oficina apagada se puede archivar desde su panel, con confirmación. Su id se guarda en `hidden-conversations.json`, en la carpeta de datos de Kiti, y `list_conversations` la descarta. No se borra nada de Claude: la conversación se puede seguir retomando con `claude --resume`. No hay "desarchivar" en la UI; se hace quitando el id de ese archivo.
+- El puente de logs de la UI escribe los errores de los commands como JSON en lugar de `[object Object]`.
+
 ## Ficha de observabilidad
 
 | Evento | Nivel | Campos |
 |---|---|---|
 | `conversations.listed` | debug | `count`, `duration_ms` |
 | `conversation.resumed` | info | `pid` |
+| `conversation.hidden` | info | (sin campos) |
 | `agent.launch` | info | `provider`, `cwd`, `pid`, `session`, `hint` (también al retomar) |
 
 Ningún evento lleva títulos, pedidos ni actividad. El id de la conversación tampoco se registra.

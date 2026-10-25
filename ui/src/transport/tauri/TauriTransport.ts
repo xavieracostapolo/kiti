@@ -30,6 +30,7 @@ const terminals: TerminalApi = {
 const conversations: ConversationApi = {
   list: () => invoke<ConversationInfo[]>("list_conversations"),
   resume: (sessionId) => invoke<TerminalInfo>("resume_conversation", { sessionId }),
+  hide: (sessionId) => invoke<void>("hide_conversation", { sessionId }),
 };
 
 export class TauriTransport implements Transport {

@@ -13,30 +13,39 @@ type Props = {
   now: () => number;
   /** Solo en la app nativa: `claude --resume` en una terminal de Kiti. */
   onResume?: (sessionId: string) => Promise<void>;
+  /** Solo en la app nativa: no vuelve a salir en Kiti (no borra la conversación de Claude). */
+  onArchive?: (sessionId: string) => Promise<void>;
 };
 
 /** Detalle de una oficina apagada: una conversación cerrada que se puede retomar (ADR 0009). */
-export function ConversationPanel({ store, world, now, onResume }: Props) {
+export function ConversationPanel(props: Props) {
+  // Con otra oficina seleccionada el panel empieza de cero (sin confirmación ni error colgados).
+  const selected = useStore(props.store, (st) => st.view.selectedId);
+  return <Details key={selected ?? ""} {...props} />;
+}
+
+function Details({ store, world, now, onResume, onArchive }: Props) {
   const selected = useStore(store, (st) => st.view.selectedId);
   const conv = useStore(store, (st) => (selected ? st.dormant.get(selected) : undefined));
   const terminalOpen = useStore(store, (st) => st.openTerminalId !== undefined);
   const [busy, setBusy] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
   const [error, setError] = useState<string | undefined>();
   if (!selected || !conv || terminalOpen) return null;
 
-  const resume = async () => {
-    if (!onResume) return;
+  const run = async (action: (id: string) => Promise<void>, failure: string) => {
     setBusy(true);
     setError(undefined);
     try {
-      await onResume(conv.sessionId);
+      await action(conv.sessionId);
     } catch (e) {
-      const message = (e as { message?: string }).message;
-      setError(message ?? "No se pudo retomar la conversación");
+      setError((e as { message?: string }).message ?? failure);
     } finally {
       setBusy(false);
     }
   };
+  const resume = () => onResume && run(onResume, "No se pudo retomar la conversación");
+  const archive = () => onArchive && run(onArchive, "No se pudo archivar la conversación");
 
   return (
     <aside className={s.agentPanel} aria-label="Conversación cerrada">
@@ -58,6 +67,12 @@ export function ConversationPanel({ store, world, now, onResume }: Props) {
         Conversación cerrada. Al retomarla, Claude la abre con todo su contexto en una terminal de
         Kiti.
       </p>
+      {confirmArchive && (
+        <p className={s.notice} role="alert">
+          Dejará de salir en Kiti. La conversación sigue en Claude: puedes retomarla con{" "}
+          <code>claude --resume</code>.
+        </p>
+      )}
       {error && (
         <p className={s.notice} role="alert">
           {error}
@@ -72,6 +87,21 @@ export function ConversationPanel({ store, world, now, onResume }: Props) {
         <button type="button" className={s.button} onClick={() => world()?.focus(selected)}>
           Enfocar
         </button>
+        {onArchive &&
+          (confirmArchive ? (
+            <button
+              type="button"
+              className={`${s.button} ${s.danger}`}
+              disabled={busy}
+              onClick={archive}
+            >
+              Sí, archivar
+            </button>
+          ) : (
+            <button type="button" className={s.button} onClick={() => setConfirmArchive(true)}>
+              Archivar
+            </button>
+          ))}
       </div>
     </aside>
   );

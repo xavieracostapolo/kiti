@@ -93,6 +93,66 @@ impl ConversationIndex {
     }
 }
 
+/// Conversaciones que el usuario archivó: no vuelven a salir como oficinas apagadas (ADR 0009).
+/// Solo se guarda su id en un JSON propio de Kiti; el transcript de Claude no se toca.
+pub struct HiddenConversations {
+    path: PathBuf,
+    /// En orden de llegada: al pasar de `HIDDEN_MAX` se olvidan las más viejas.
+    ids: Vec<String>,
+}
+
+const HIDDEN_MAX: usize = 2000;
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct HiddenFile {
+    hidden: Vec<String>,
+}
+
+impl HiddenConversations {
+    /// Un archivo ausente o ilegible es una lista vacía: archivar nunca impide arrancar.
+    pub fn load(path: PathBuf) -> Self {
+        let ids = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice::<HiddenFile>(&b).ok())
+            .map(|f| {
+                f.hidden
+                    .into_iter()
+                    .filter(|id| is_session_id(id))
+                    .collect()
+            })
+            .unwrap_or_default();
+        Self { path, ids }
+    }
+
+    pub fn contains(&self, session: &str) -> bool {
+        self.ids.iter().any(|id| id == session)
+    }
+
+    /// Archiva y guarda en disco (escritura atómica: temporal y `rename`).
+    pub fn hide(&mut self, session: &str) -> std::io::Result<()> {
+        if !is_session_id(session) {
+            return Err(std::io::Error::other("id de conversación inválido"));
+        }
+        if self.contains(session) {
+            return Ok(());
+        }
+        self.ids.push(session.to_owned());
+        if self.ids.len() > HIDDEN_MAX {
+            self.ids.drain(..self.ids.len() - HIDDEN_MAX);
+        }
+        let body = serde_json::to_vec_pretty(&HiddenFile {
+            hidden: self.ids.clone(),
+        })
+        .map_err(std::io::Error::other)?;
+        if let Some(dir) = self.path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        let tmp = self.path.with_extension("json.tmp");
+        std::fs::write(&tmp, body)?;
+        std::fs::rename(tmp, &self.path)
+    }
+}
+
 fn read_conversation(path: &Path, id: &str, updated_at: u64) -> Option<Conversation> {
     let lines = Tail::open_at_end(path, BACK).ok()?.read_new().ok()?;
     let meta = conversation_meta(&lines);
@@ -147,5 +207,23 @@ mod tests {
         assert!(index.list(&root, later).is_empty());
         assert!(index.find("aaaaaaaa-1111").is_none());
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn las_archivadas_se_recuerdan_entre_arranques() {
+        let dir = std::env::temp_dir().join(format!("kiti-hidden-{}", std::process::id()));
+        let path = dir.join("hidden-conversations.json");
+        let mut hidden = HiddenConversations::load(path.clone());
+        assert!(!hidden.contains("aaaaaaaa-1111"));
+        hidden.hide("aaaaaaaa-1111").unwrap();
+        hidden.hide("aaaaaaaa-1111").unwrap();
+        assert!(hidden.hide("x'; rm -rf ~").is_err());
+        let again = HiddenConversations::load(path.clone());
+        assert!(again.contains("aaaaaaaa-1111"));
+        assert_eq!(again.ids.len(), 1);
+        // Un archivo roto no impide arrancar.
+        std::fs::write(&path, "no es json").unwrap();
+        assert!(!HiddenConversations::load(path).contains("aaaaaaaa-1111"));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

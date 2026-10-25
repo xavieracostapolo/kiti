@@ -23,4 +23,13 @@ describe("installLogBridge", () => {
     window.dispatchEvent(event);
     expect(send).toHaveBeenCalledWith("error", expect.stringContaining("sin catch"));
   });
+
+  it("los errores de los commands (objetos) llegan legibles", () => {
+    const send = vi.fn();
+    installLogBridge(send);
+    const event = new Event("unhandledrejection") as Event & { reason: unknown };
+    event.reason = { code: "TMUX", message: "no server" };
+    window.dispatchEvent(event);
+    expect(send).toHaveBeenCalledWith("error", 'unhandled: {"code":"TMUX","message":"no server"}');
+  });
 });

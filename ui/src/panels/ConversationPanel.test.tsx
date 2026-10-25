@@ -16,7 +16,10 @@ const conv: ConversationInfo = {
   updatedAt: 0,
 };
 
-function setup(onResume?: (id: string) => Promise<void>) {
+function setup(
+  onResume?: (id: string) => Promise<void>,
+  onArchive?: (id: string) => Promise<void>,
+) {
   const store = createKitiStore();
   store.getState().setConversations([conv]);
   store.getState().select(dormantId("s1"));
@@ -26,6 +29,7 @@ function setup(onResume?: (id: string) => Promise<void>) {
       world={() => undefined}
       now={() => 120_000}
       {...(onResume ? { onResume } : {})}
+      {...(onArchive ? { onArchive } : {})}
     />,
   );
   return store;
@@ -58,5 +62,16 @@ describe("ConversationPanel", () => {
     expect(screen.queryByRole("button", { name: "Retomar" })).toBeNull();
     act(() => store.getState().openTerminal("kiti-1"));
     expect(screen.queryByLabelText("Conversación cerrada")).toBeNull();
+  });
+
+  it("archivar pide confirmación y no borra nada de Claude", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const onArchive = vi.fn(async () => {});
+    setup(undefined, onArchive);
+    await userEvent.click(screen.getByRole("button", { name: "Archivar" }));
+    expect(onArchive).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain("sigue en Claude");
+    await userEvent.click(screen.getByRole("button", { name: "Sí, archivar" }));
+    expect(onArchive).toHaveBeenCalledWith("s1");
   });
 });

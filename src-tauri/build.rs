@@ -13,6 +13,7 @@ fn main() {
             "terminal_resize",
             "list_conversations",
             "resume_conversation",
+            "hide_conversation",
         ]),
     ))
     .expect("tauri build");

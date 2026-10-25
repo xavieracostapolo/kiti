@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
-use kiti_core::adapters::conversations::ConversationIndex;
+use kiti_core::adapters::conversations::{ConversationIndex, HiddenConversations};
 use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pump, serve_hooks};
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
@@ -63,6 +63,8 @@ pub struct Conversations {
     dir: std::path::PathBuf,
     index: Mutex<ConversationIndex>,
     projects: Mutex<GitProjects>,
+    /// Las que el usuario archivó: no vuelven a salir.
+    hidden: Mutex<HiddenConversations>,
 }
 
 /// Las conversaciones cerradas que se ofrecen para retomar (ADR 0009).
@@ -364,9 +366,11 @@ async fn list_conversations(state: State<'_, AppState>) -> Result<Vec<Conversati
         let since =
             std::time::SystemTime::now() - Duration::from_secs(CONVERSATIONS_DAYS * 24 * 3600);
         let found = conv.index.lock().expect("lock").list(&conv.dir, since);
+        let hidden = conv.hidden.lock().expect("lock");
         let mut projects = conv.projects.lock().expect("lock");
         found
             .into_iter()
+            .filter(|c| !hidden.contains(c.session.as_str()))
             .take(CONVERSATIONS_MAX)
             .map(|c| ConversationInfo {
                 session_id: c.session.as_str().to_owned(),
@@ -390,6 +394,20 @@ async fn list_conversations(state: State<'_, AppState>) -> Result<Vec<Conversati
         duration_ms = started.elapsed().as_millis() as u64
     );
     Ok(list)
+}
+
+/// Archiva una conversación cerrada: deja de salir como oficina apagada (ADR 0009). No borra
+/// nada de Claude; solo guarda su id en `hidden-conversations.json` de Kiti.
+#[tauri::command]
+fn hide_conversation(session_id: String, state: State<'_, AppState>) -> Result<(), IpcError> {
+    let conv = conversations(&state)?;
+    conv.hidden
+        .lock()
+        .expect("lock")
+        .hide(&session_id)
+        .map_err(io_error("HIDE"))?;
+    info!(event = "conversation.hidden");
+    Ok(())
 }
 
 /// Retoma una conversación cerrada con `claude --resume <id>` en su carpeta (ADR 0009). Solo
@@ -805,10 +823,15 @@ pub fn run() {
                 .then(|| app.path().home_dir().ok())
                 .flatten()
                 .map(|home| {
+                    let hidden = app.path().app_data_dir().map_or_else(
+                        |_| home.join(".kiti/hidden-conversations.json"),
+                        |dir| dir.join("hidden-conversations.json"),
+                    );
                     Arc::new(Conversations {
                         dir: home.join(".claude/projects"),
                         index: Mutex::default(),
                         projects: Mutex::default(),
+                        hidden: Mutex::new(HiddenConversations::load(hidden)),
                     })
                 });
             app.manage(AppState {
@@ -831,6 +854,7 @@ pub fn run() {
             terminal_resize,
             list_conversations,
             resume_conversation,
+            hide_conversation,
         ])
         .build(tauri::generate_context!())
         .expect("error al construir la aplicación Tauri")

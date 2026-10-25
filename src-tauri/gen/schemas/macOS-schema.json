@@ -183,6 +183,12 @@
           "markdownDescription": "Enables the attach_terminal command without any pre-configured scope."
         },
         {
+          "description": "Enables the hide_conversation command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-hide-conversation",
+          "markdownDescription": "Enables the hide_conversation command without any pre-configured scope."
+        },
+        {
           "description": "Enables the kill_agent command without any pre-configured scope.",
           "type": "string",
           "const": "allow-kill-agent",
@@ -253,6 +259,12 @@
           "type": "string",
           "const": "deny-attach-terminal",
           "markdownDescription": "Denies the attach_terminal command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the hide_conversation command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-hide-conversation",
+          "markdownDescription": "Denies the hide_conversation command without any pre-configured scope."
         },
         {
           "description": "Denies the kill_agent command without any pre-configured scope.",

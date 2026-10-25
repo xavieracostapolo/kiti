@@ -23,7 +23,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
   - La oficina se dibuja de forma procedural (`world/officeTemplate.ts`); los tilesheets de Kenney, el `.tmj` de Tiled y `domain/tiles` quedan pendientes.
   - Las capturas usan `steps=357` en lugar de `steps=120`: con `seed=42` es el primer paso en el que conviven los cinco colores.
   - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
-  - Falta verificar a mano el diálogo nativo de cierre (Playwright no lo controla).
+  - Falta verificar a mano el diálogo nativo de cierre (Playwright no lo controla). Hasta el Hito 11 el botón no lo abría (ver ADR 0009).
 - **Siguiente paso:** Hito 3, procesos reales (ver [Roadmap](#roadmap)).
 
 ## Índice de ADRs

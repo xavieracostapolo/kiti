@@ -46,6 +46,10 @@ export class FakeConversations implements ConversationApi {
     return [...this.list_];
   }
 
+  async hide(sessionId: string): Promise<void> {
+    this.list_ = this.list_.filter((c) => c.sessionId !== sessionId);
+  }
+
   async resume(sessionId: string): Promise<TerminalInfo> {
     if (!this.list_.some((c) => c.sessionId === sessionId)) {
       throw { code: "CONVERSATION_NOT_FOUND", message: "Esa conversación ya no está en la lista" };
