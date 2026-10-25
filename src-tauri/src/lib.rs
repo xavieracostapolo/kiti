@@ -7,16 +7,20 @@ use std::time::Duration;
 
 use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
 use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pump, serve_hooks};
-use kiti_core::adapters::pty::{LaunchSpec, PtyManager, TerminalInfo as PtyInfo};
+use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
+use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
 use kiti_core::adapters::{SysinfoScanner, SystemClock, UnixKiller};
 use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, run_scanner};
 use kiti_core::domain::{AgentId, Timestamp};
+use kiti_core::ingestion::claude::has_conversations;
 use kiti_core::ports::{
     AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
 };
 use kiti_core::sim::{SimFleet, SimSpec, TICK_MS};
 use kiti_protocol::{Hello, IpcError, KillResult, ServerMsg, Source, TerminalInfo, UiMetrics};
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
 use tauri::ipc::Channel;
 use tauri::ipc::InvokeResponseBody;
@@ -49,26 +53,78 @@ pub struct AppState {
 }
 
 pub struct Terminals {
+    /// Clientes de tmux (o sesiones directas si no hay tmux) dentro de PTYs de Kiti.
     pty: PtyManager,
-    providers: std::sync::Mutex<std::collections::HashMap<String, kiti_protocol::Provider>>,
+    /// Sesiones persistentes (ADR 0008). `None` si tmux no está instalado.
+    tmux: Option<Tmux>,
+    /// Sesión tmux → PTY del cliente conectado ahora.
+    clients: Mutex<HashMap<String, String>>,
+    /// Solo sin tmux: id del PTY → proveedor.
+    providers: Mutex<HashMap<String, kiti_protocol::Provider>>,
 }
 
 impl Terminals {
-    fn info(&self, t: PtyInfo) -> TerminalInfo {
-        let provider = self
-            .providers
+    fn new(tmux: Option<Tmux>) -> Self {
+        Self {
+            pty: PtyManager::default(),
+            tmux,
+            clients: Mutex::default(),
+            providers: Mutex::default(),
+        }
+    }
+
+    fn list(&self) -> Vec<TerminalInfo> {
+        if let Some(tmux) = &self.tmux {
+            return tmux
+                .list()
+                .into_iter()
+                .map(|s| TerminalInfo {
+                    provider: s
+                        .provider
+                        .as_deref()
+                        .and_then(provider_from_str)
+                        .unwrap_or(kiti_protocol::Provider::Claude),
+                    id: s.name,
+                    pid: s.pid,
+                    cwd: s.cwd,
+                    running: true,
+                })
+                .collect();
+        }
+        let providers = self.providers.lock().expect("lock");
+        self.pty
+            .list()
+            .into_iter()
+            .map(|t| TerminalInfo {
+                provider: providers
+                    .get(&t.id)
+                    .copied()
+                    .unwrap_or(kiti_protocol::Provider::Claude),
+                id: t.id,
+                pid: t.pid,
+                cwd: t.cwd,
+                running: t.running,
+            })
+            .collect()
+    }
+
+    /// PTY al que escribir para la terminal `id`: el cliente tmux conectado o el PTY directo.
+    fn pty_id(&self, id: &str) -> String {
+        self.clients
             .lock()
             .expect("lock")
-            .get(&t.id)
-            .copied()
-            .unwrap_or(kiti_protocol::Provider::Claude);
-        TerminalInfo {
-            id: t.id,
-            pid: t.pid,
-            provider,
-            cwd: t.cwd,
-            running: t.running,
-        }
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| id.to_owned())
+    }
+}
+
+fn provider_from_str(s: &str) -> Option<kiti_protocol::Provider> {
+    match s {
+        "claude" => Some(kiti_protocol::Provider::Claude),
+        "codex" => Some(kiti_protocol::Provider::Codex),
+        "gemini" => Some(kiti_protocol::Provider::Gemini),
+        _ => None,
     }
 }
 
@@ -82,6 +138,13 @@ fn terminals(state: &AppState) -> Result<&Arc<Terminals>, IpcError> {
 fn pty_error(e: kiti_core::adapters::pty::PtyError) -> IpcError {
     IpcError {
         code: "TERMINAL".into(),
+        message: e.to_string(),
+    }
+}
+
+fn io_error(code: &str) -> impl FnOnce(std::io::Error) -> IpcError + '_ {
+    move |e| IpcError {
+        code: code.into(),
         message: e.to_string(),
     }
 }
@@ -101,8 +164,28 @@ fn user_shell() -> String {
     std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".into())
 }
 
-/// Lanza un CLI de agente en una terminal propia, en la carpeta que el usuario elige con el
-/// selector nativo (ADR 0007). Devuelve `None` si cancela el selector.
+/// Diálogo nativo de dos botones. `true` si el usuario elige `yes`.
+async fn ask(app: &AppHandle, title: &str, message: String, yes: &str, no: &str) -> bool {
+    let (tx, rx) = oneshot::channel();
+    app.dialog()
+        .message(message)
+        .title(title)
+        .kind(MessageDialogKind::Info)
+        .buttons(MessageDialogButtons::OkCancelCustom(yes.into(), no.into()))
+        .show(move |answer| {
+            let _ = tx.send(answer);
+        });
+    rx.await.unwrap_or(false)
+}
+
+fn same_dir(a: &str, b: &std::path::Path) -> bool {
+    let canon = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned());
+    canon(std::path::Path::new(a)) == canon(b)
+}
+
+/// Lanza un CLI de agente en la carpeta que el usuario elige con el selector nativo (ADR 0007).
+/// Con tmux la sesión sobrevive a Kiti, y antes de crear otra se ofrece reutilizar la existente
+/// o continuar la última conversación (ADR 0008). Devuelve `None` si el usuario cancela.
 #[tauri::command]
 async fn launch_agent(
     provider: kiti_protocol::Provider,
@@ -125,6 +208,51 @@ async fn launch_agent(
         code: "FOLDER".into(),
         message: e.to_string(),
     })?;
+    let folder_name = cwd.file_name().map_or_else(
+        || cwd.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+
+    // 1. ¿Ya hay una sesión de Kiti en esa carpeta? Mejor retomarla que crear otra.
+    if let Some(existing) = terminals
+        .list()
+        .into_iter()
+        .find(|t| same_dir(&t.cwd, &cwd))
+    {
+        let reuse = ask(
+            &app,
+            "Ya hay una sesión aquí",
+            format!(
+                "Kiti ya tiene una sesión de {} en «{folder_name}».\n¿Abrir esa en lugar de crear otra?",
+                cli_binary(existing.provider)
+            ),
+            "Abrir la existente",
+            "Crear otra",
+        )
+        .await;
+        if reuse {
+            info!(event = "agent.reuse", id = %existing.id, pid = existing.pid);
+            return Ok(Some(existing));
+        }
+    }
+
+    // 2. Claude: si la carpeta tiene conversaciones, se puede continuar la última.
+    let mut command = format!("exec {bin}");
+    if provider == kiti_protocol::Provider::Claude
+        && let Some(home) = app.path().home_dir().ok()
+        && has_conversations(&home.join(".claude/projects"), &cwd.to_string_lossy())
+        && ask(
+            &app,
+            "Conversaciones anteriores",
+            format!("«{folder_name}» tiene conversaciones de Claude.\n¿Continuar la última o empezar una nueva?"),
+            "Continuar la última",
+            "Nueva",
+        )
+        .await
+    {
+        command = format!("exec {bin} --continue");
+    }
+
     let shell = user_shell();
     // Comprobación previa para dar un error claro en lugar de "command not found" en la terminal.
     let check_shell = shell.clone();
@@ -144,48 +272,86 @@ async fn launch_agent(
             message: format!("No se encontró `{bin}` en tu PATH"),
         });
     }
-    let info = terminals
-        .pty
-        .spawn(LaunchSpec {
-            program: shell.into(),
-            // `exec` sustituye la shell por el CLI: el PID de la terminal es el del agente.
-            args: vec!["-lic".into(), format!("exec {bin}")],
-            cwd: cwd.clone(),
-            cols: 100,
-            rows: 30,
-        })
-        .map_err(pty_error)?;
-    terminals
-        .providers
-        .lock()
-        .expect("lock")
-        .insert(info.id.clone(), provider);
-    info!(event = "agent.launch", provider = bin, cwd = %cwd.display(), pid = info.pid);
-    Ok(Some(terminals.info(info)))
+
+    // 3. Con tmux, la sesión vive en tmux y sobrevive a Kiti; sin tmux, PTY directo.
+    let info = if let Some(tmux) = &terminals.tmux {
+        // Comillas simples: `command` solo contiene el binario de la lista y `--continue`.
+        let line = format!("{shell} -lic '{command}'");
+        let session = tmux
+            .new_session(&cwd, &line, bin, 100, 30)
+            .map_err(io_error("TMUX"))?;
+        info!(event = "agent.launch", provider = bin, cwd = %cwd.display(), pid = session.pid, session = %session.name, hint = %tmux.attach_hint(&session.name));
+        TerminalInfo {
+            id: session.name,
+            pid: session.pid,
+            provider,
+            cwd: session.cwd,
+            running: true,
+        }
+    } else {
+        let t = terminals
+            .pty
+            .spawn(LaunchSpec {
+                program: shell.into(),
+                // `exec` sustituye la shell por el CLI: el PID de la terminal es el del agente.
+                args: vec!["-lic".into(), command],
+                cwd: cwd.clone(),
+                cols: 100,
+                rows: 30,
+            })
+            .map_err(pty_error)?;
+        terminals
+            .providers
+            .lock()
+            .expect("lock")
+            .insert(t.id.clone(), provider);
+        info!(event = "agent.launch", provider = bin, cwd = %cwd.display(), pid = t.pid);
+        TerminalInfo {
+            id: t.id,
+            pid: t.pid,
+            provider,
+            cwd: t.cwd,
+            running: t.running,
+        }
+    };
+    Ok(Some(info))
 }
 
 #[tauri::command]
 fn list_terminals(state: State<'_, AppState>) -> Result<Vec<TerminalInfo>, IpcError> {
-    let terminals = terminals(&state)?;
-    Ok(terminals
-        .pty
-        .list()
-        .into_iter()
-        .map(|t| terminals.info(t))
-        .collect())
+    Ok(terminals(&state)?.list())
 }
 
-/// Conecta la ventana a una terminal: primero el scrollback y después la salida en vivo, en
-/// binario por el Channel.
+/// Conecta la ventana a una terminal y envía su salida en binario por el Channel. Con tmux se
+/// lanza un cliente nuevo cada vez (tmux redibuja la pantalla entera al conectarse).
 #[tauri::command]
 fn attach_terminal(
     id: String,
     on_data: Channel<InvokeResponseBody>,
     state: State<'_, AppState>,
 ) -> Result<(), IpcError> {
-    terminals(&state)?
+    let terminals = terminals(&state)?;
+    let pty_id = match &terminals.tmux {
+        Some(tmux) => {
+            let client = terminals
+                .pty
+                .spawn(tmux.attach_spec(&id, 100, 30))
+                .map_err(pty_error)?;
+            let previous = terminals
+                .clients
+                .lock()
+                .expect("lock")
+                .insert(id.clone(), client.id.clone());
+            if let Some(old) = previous {
+                let _ = terminals.pty.kill(&old);
+            }
+            client.id
+        }
+        None => id,
+    };
+    terminals
         .pty
-        .attach(&id, move |bytes| {
+        .attach(&pty_id, move |bytes| {
             let _ = on_data.send(InvokeResponseBody::Raw(bytes));
         })
         .map_err(pty_error)
@@ -193,9 +359,10 @@ fn attach_terminal(
 
 #[tauri::command]
 fn terminal_input(id: String, data: String, state: State<'_, AppState>) -> Result<(), IpcError> {
-    terminals(&state)?
+    let terminals = terminals(&state)?;
+    terminals
         .pty
-        .write(&id, data.as_bytes())
+        .write(&terminals.pty_id(&id), data.as_bytes())
         .map_err(pty_error)
 }
 
@@ -206,9 +373,10 @@ fn terminal_resize(
     rows: u16,
     state: State<'_, AppState>,
 ) -> Result<(), IpcError> {
-    terminals(&state)?
+    let terminals = terminals(&state)?;
+    terminals
         .pty
-        .resize(&id, cols.max(2), rows.max(1))
+        .resize(&terminals.pty_id(&id), cols.max(2), rows.max(1))
         .map_err(pty_error)
 }
 
@@ -508,10 +676,16 @@ pub fn run() {
             };
             start_tray(app.handle(), handle.clone())?;
             let terminals = std::env::var("KITI_SIM").is_err().then(|| {
-                Arc::new(Terminals {
-                    pty: PtyManager::default(),
-                    providers: Default::default(),
-                })
+                // Configuración propia de tmux para las sesiones persistentes (ADR 0008).
+                let conf = app.path().app_data_dir().ok().and_then(|dir| {
+                    let path = dir.join("tmux.conf");
+                    std::fs::create_dir_all(&dir).ok()?;
+                    std::fs::write(&path, KITI_TMUX_CONF).ok()?;
+                    Some(path)
+                });
+                let tmux = Tmux::detect("kiti", conf);
+                info!(event = "terminals.ready", persistent = tmux.is_some());
+                Arc::new(Terminals::new(tmux))
             });
             app.manage(AppState {
                 runtime: handle,

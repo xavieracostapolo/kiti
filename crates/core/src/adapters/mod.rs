@@ -16,6 +16,8 @@ pub mod pty;
 #[cfg(feature = "scanner")]
 mod scanner;
 pub mod tail;
+#[cfg(feature = "pty")]
+pub mod tmux;
 
 pub use clock::SystemClock;
 #[cfg(feature = "killer")]

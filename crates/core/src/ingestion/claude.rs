@@ -102,6 +102,23 @@ pub fn transcript_tool(line: &[u8]) -> Option<ToolName> {
         .map(ToolName::new)
 }
 
+/// Nombre de la carpeta de `~/.claude/projects` para un `cwd`: todo carácter no alfanumérico
+/// pasa a `-` (observado en local; no está documentado).
+pub fn project_dir_name(cwd: &str) -> String {
+    cwd.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
+/// ¿Hay conversaciones de Claude en esa carpeta? Para ofrecer `claude --continue` (ADR 0008).
+pub fn has_conversations(projects: &std::path::Path, cwd: &str) -> bool {
+    std::fs::read_dir(projects.join(project_dir_name(cwd))).is_ok_and(|entries| {
+        entries
+            .filter_map(Result::ok)
+            .any(|e| e.path().extension().is_some_and(|x| x == "jsonl"))
+    })
+}
+
 pub fn parse_hook(body: &[u8]) -> Result<HookEvent, AclError> {
     let p: Payload = serde_json::from_slice(body).map_err(|e| AclError::Json(e.to_string()))?;
     let session = p
@@ -306,6 +323,32 @@ mod tests {
         ] {
             assert_eq!(transcript_tool(line), None);
         }
+    }
+
+    #[test]
+    fn carpeta_de_proyecto_como_la_codifica_claude() {
+        // Nombres reales vistos en ~/.claude/projects.
+        assert_eq!(
+            project_dir_name("/Users/xavieracosta/Documents/source/kiti"),
+            "-Users-xavieracosta-Documents-source-kiti"
+        );
+        assert_eq!(
+            project_dir_name("/private/tmp/claude-501/-Users-x/scratchpad/hooktest-repo"),
+            "-private-tmp-claude-501--Users-x-scratchpad-hooktest-repo"
+        );
+    }
+
+    #[test]
+    fn sabe_si_una_carpeta_tiene_conversaciones() {
+        let projects = std::env::temp_dir().join(format!("kiti-projects-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&projects);
+        std::fs::create_dir_all(projects.join("-w-con")).unwrap();
+        std::fs::create_dir_all(projects.join("-w-vacia")).unwrap();
+        std::fs::write(projects.join("-w-con/abc.jsonl"), "{}").unwrap();
+        assert!(has_conversations(&projects, "/w/con"));
+        assert!(!has_conversations(&projects, "/w/vacia"));
+        assert!(!has_conversations(&projects, "/w/nunca"));
+        std::fs::remove_dir_all(projects).unwrap();
     }
 
     #[test]
