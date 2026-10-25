@@ -1,6 +1,7 @@
 [tools]
 node = "24.22.1"
 pnpm = "12.15.0"
+cargo-deny = "0.20.2"
 
 [tasks.gen-types]
 description = "Genera los tipos TS del protocolo desde crates/protocol (ts-rs)"
@@ -30,10 +31,15 @@ run = "pnpm -C ui shots"
 description = "Benchmark de 50 agentes (local, WebKit headed)"
 run = "pnpm -C ui exec playwright test --project=webkit-perf"
 
+[tasks.deny]
+description = "Advisories, licencias y orígenes de las dependencias Rust (cargo-deny)"
+run = "cargo deny check"
+
 [tasks.check]
 description = "Todo lo que debe estar en verde antes de un commit"
 run = [
   "cargo fmt --all --check",
+  "cargo deny check",
   "cargo clippy --workspace --all-targets -- -D warnings",
   "cargo test --workspace",
   "pnpm -C ui exec biome ci .",

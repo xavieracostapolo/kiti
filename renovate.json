@@ -1,0 +1,17 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "helpers:pinGitHubActionDigests"],
+  "minimumReleaseAge": "3 days",
+  "packageRules": [
+    {
+      "description": "Tauri se sube a la vez en Rust y npm (ADR 0004)",
+      "groupName": "tauri",
+      "matchPackageNames": ["tauri", "tauri-build", "/^tauri-plugin-/", "@tauri-apps/{/,}**"]
+    },
+    {
+      "description": "pixi.js va fijado exacto y pasa por el E2E de humo (ADR 0003)",
+      "matchPackageNames": ["pixi.js"],
+      "rangeStrategy": "pin"
+    }
+  ]
+}
