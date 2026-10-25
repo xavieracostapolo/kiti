@@ -69,6 +69,8 @@ pub enum RuntimeCommand {
         reply: oneshot::Sender<Hello>,
     },
     SetDebugStream(bool),
+    /// Enfocar una oficina en la UI; si no hay ventana, al conectarse la siguiente.
+    Focus(AgentId),
     /// Cuenta de agentes por color, para la barra de menú.
     Summary(oneshot::Sender<Summary>),
     KillAgent {
@@ -175,6 +177,11 @@ impl RuntimeHandle {
         rx.await.unwrap_or_default()
     }
 
+    /// Pide a la UI que enfoque y seleccione la oficina `id` (clic en una notificación).
+    pub async fn focus(&self, id: AgentId) {
+        let _ = self.tx.send(RuntimeCommand::Focus(id)).await;
+    }
+
     pub async fn set_debug_stream(&self, on: bool) {
         let _ = self.tx.send(RuntimeCommand::SetDebugStream(on)).await;
     }
@@ -244,6 +251,8 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     /// Qué cambios avisan al usuario (ADR 0010) y quién los muestra. Sin sink, no hay avisos.
     alert_policy: AlertPolicy,
     alerts: Option<Box<dyn AlertSink>>,
+    /// Foco pedido sin ventana conectada: se manda tras el siguiente Snapshot.
+    pending_focus: Option<AgentId>,
 }
 
 impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
@@ -275,6 +284,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             projects: Box::new(CwdProjects),
             alert_policy: AlertPolicy::default(),
             alerts: None,
+            pending_focus: None,
         };
         (runtime, RuntimeHandle { tx, telemetry })
     }
@@ -446,6 +456,11 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     &snapshot_agents,
                     self.projects.as_mut(),
                 )) {
+                    if let Some(id) = self.pending_focus.take() {
+                        publisher.publish(ServerMsg::Focus {
+                            id: kiti_protocol::AgentId(id.to_string()),
+                        });
+                    }
                     self.publisher = Some(publisher);
                 } else {
                     self.drop_publisher();
@@ -457,6 +472,19 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 });
             }
             RuntimeCommand::SetDebugStream(on) => self.debug_stream = on,
+            RuntimeCommand::Focus(id) => {
+                let msg = ServerMsg::Focus {
+                    id: kiti_protocol::AgentId(id.to_string()),
+                };
+                match self.publisher.as_mut() {
+                    Some(p) => {
+                        if !p.publish(msg) {
+                            self.drop_publisher();
+                        }
+                    }
+                    None => self.pending_focus = Some(id),
+                }
+            }
             RuntimeCommand::Summary(reply) => {
                 let mut summary = Summary::default();
                 for agent in self.registry.agents() {

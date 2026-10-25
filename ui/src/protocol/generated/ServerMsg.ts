@@ -6,4 +6,4 @@ import type { CoreMetrics } from "./CoreMetrics";
 /**
  * Stream core -> UI. El primer mensaje es siempre `Snapshot`; `seq` es monotónico.
  */
-export type ServerMsg = { "type": "Snapshot", seq: number, agents: Array<AgentState>, } | { "type": "Diff", seq: number, ingestMs: number, upserts: Array<AgentState>, removed: Array<AgentId>, } | { "type": "Metrics" } & CoreMetrics;
+export type ServerMsg = { "type": "Snapshot", seq: number, agents: Array<AgentState>, } | { "type": "Diff", seq: number, ingestMs: number, upserts: Array<AgentState>, removed: Array<AgentId>, } | { "type": "Metrics" } & CoreMetrics | { "type": "Focus", id: AgentId, };

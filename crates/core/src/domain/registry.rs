@@ -276,10 +276,12 @@ impl AgentRegistry {
         };
         if let Some((activity, updated_at)) = activity {
             let changed = self.file_status.insert(id, activity) != Some(activity);
-            let newer = self
-                .agents
-                .get(&id)
-                .is_some_and(|a| updated_at > a.last_event_at());
+            // Sin eventos aún (recién detectado, p. ej. al arrancar Kiti) cualquier status vale:
+            // es lo único que se sabe, aunque se escribiera antes de que Kiti lo viera.
+            let newer = self.agents.get(&id).is_some_and(|a| {
+                a.status().reason == super::status::StatusReason::Startup
+                    || updated_at > a.last_event_at()
+            });
             if changed && newer {
                 events.extend(self.apply(&id, &AgentInput::SessionFile(activity), now));
             }
@@ -639,6 +641,17 @@ mod tests {
         let idle = Some((SessionActivity::Idle, Timestamp(12)));
         reg.session_file(Provider::Claude, Pid(1), &sid("s"), idle, Timestamp(12));
         assert_eq!(kind_of(&reg, &a), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn un_agente_que_ya_trabajaba_al_arrancar_kiti_sale_en_verde() {
+        let mut reg = AgentRegistry::new();
+        let a = claude_at(1, "/w/x");
+        // Kiti arranca a los 100; el turno empezó a los 50 (updatedAt más viejo que el registro).
+        reg.reconcile(std::slice::from_ref(&a), Timestamp(100));
+        let busy = Some((SessionActivity::Busy, Timestamp(50)));
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), busy, Timestamp(100));
+        assert_eq!(kind_of(&reg, &a), Some(StatusKind::Working));
     }
 
     #[test]

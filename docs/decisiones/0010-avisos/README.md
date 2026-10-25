@@ -54,7 +54,13 @@ Ningún evento lleva títulos ni pedidos.
 - Prueba real: al terminar un turno largo de esta misma sesión llegó «Claude terminó» (`alert.sent`, kind `Finished`).
 - La misma prueba sacó ruido: tres «se cerró de forma inesperada» de procesos `claude` que vivieron segundos sin trabajar (auxiliares lanzados por otra herramienta). De ahí la regla de los 60 s.
 
+## Clic en el aviso (Hito 15)
+
+- La notificación lleva el id del agente en `extra` (`agentId`). `on_action` del plugin informa del clic en escritorio, siempre que el manejador se registre antes del primer aviso: se registra al arrancar.
+- Al hacer clic, Kiti abre la ventana (aunque estuviera cerrada) y el runtime manda a la UI `ServerMsg::Focus { id }`. Si aún no hay ventana conectada, lo guarda y lo manda justo después del siguiente Snapshot.
+- La UI lo trata como un agente recién lanzado («oficina primero»): enfoca la oficina y la selecciona, y cierra la terminal abierta.
+- Señal nueva: `alert.clicked` (info, con `action` y si se reconoció el agente).
+
 ## Límites conocidos
 
-- Hacer clic en la notificación activa Kiti, pero si la ventana estaba cerrada no la abre ni enfoca la oficina. El plugin no expone el clic en escritorio.
 - Codex y Gemini avisan igual, pero sin título (no lo tienen).
