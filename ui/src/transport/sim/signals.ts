@@ -12,7 +12,7 @@ export type Signal =
   | { type: "Stopped" }
   | { type: "Error" }
   | { type: "SessionEnded" }
-  /** Observación del escaneo de procesos: el proceso desapareció sin SessionEnded. */
+  /** Observación del escaneo de procesos: el proceso desapareció. */
   | { type: "ProcessGone" };
 
 export type AgentStatus = {
@@ -20,6 +20,8 @@ export type AgentStatus = {
   reason: StatusReason;
   since: number;
   lastTool?: string;
+  /** Hubo `SessionEnded` sin un `SessionStarted` posterior: si el proceso muere, no es un error. */
+  exitExpected?: true;
 };
 
 function to(
@@ -28,9 +30,13 @@ function to(
   reason: StatusReason,
   now: number,
   lastTool = prev?.lastTool,
+  exitExpected: boolean | undefined = prev?.exitExpected,
 ): AgentStatus {
   const since = prev?.kind === kind ? prev.since : now;
-  return lastTool === undefined ? { kind, reason, since } : { kind, reason, since, lastTool };
+  const next: AgentStatus = { kind, reason, since };
+  if (lastTool !== undefined) next.lastTool = lastTool;
+  if (exitExpected) next.exitExpected = true;
+  return next;
 }
 
 export function applySignal(
@@ -38,12 +44,14 @@ export function applySignal(
   signal: Signal,
   now: number,
 ): AgentStatus | "removed" {
-  if (signal.type === "SessionEnded") return "removed";
   if (prev?.kind === "dead") return prev;
   switch (signal.type) {
     case "ProcessGone":
-      return to(prev, "dead", "processGone", now);
+      return prev?.exitExpected ? "removed" : to(prev, "dead", "processGone", now);
+    case "SessionEnded":
+      return to(prev, "idle", "hook", now, prev?.lastTool, true);
     case "SessionStarted":
+      return to(prev, "idle", "hook", now, prev?.lastTool, false);
     case "Stopped":
       return to(prev, "idle", "hook", now);
     case "PromptSubmitted":

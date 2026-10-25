@@ -1,0 +1,9 @@
+{
+  "name": "Con /clear, SessionStart olvida el SessionEnd anterior",
+  "steps": [
+    { "signal": { "type": "PromptSubmitted" }, "expect": { "kind": "working", "reason": "hook" } },
+    { "signal": { "type": "SessionEnded" }, "expect": { "kind": "idle", "reason": "hook" } },
+    { "signal": { "type": "SessionStarted" }, "expect": { "kind": "idle", "reason": "hook" } },
+    { "signal": { "type": "ProcessGone" }, "expect": { "kind": "dead", "reason": "processGone" } }
+  ]
+}
