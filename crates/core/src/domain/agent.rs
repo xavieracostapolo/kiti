@@ -3,8 +3,10 @@
 use smallvec::SmallVec;
 
 use super::events::DomainEvent;
-use super::ids::{AgentId, ProcessIdentity, Provider, Timestamp, ToolName, ToolUseKey, WorkingDir};
-use super::signal::Signal;
+use super::ids::{
+    AgentId, ProcessIdentity, Provider, SessionId, Timestamp, ToolName, ToolUseKey, WorkingDir,
+};
+use super::signal::{AgentInfo, Signal};
 use super::stale::StalePolicy;
 use super::status::{Status, StatusKind, StatusReason, TrafficLight};
 
@@ -32,6 +34,10 @@ pub enum AgentInput {
     SessionFile(SessionActivity),
     /// Última herramienta vista en el transcript. Solo enriquece: no cambia el color.
     TranscriptTool(ToolName),
+    /// Título, actividad y último pedido (ADR 0009). Solo enriquece: no cambia el color.
+    Info(AgentInfo),
+    /// El registro enlazó la conversación que el proceso tiene abierta (ADR 0009).
+    Linked(SessionId),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -48,6 +54,10 @@ pub struct Agent {
     status: Status,
     pending_tools: SmallVec<[(ToolUseKey, ToolName); 4]>,
     last_tool: Option<ToolName>,
+    title: Option<String>,
+    activity: Option<String>,
+    last_prompt: Option<String>,
+    session: Option<SessionId>,
     last_event_at: Timestamp,
     exit_expected: bool,
     kill_requested: bool,
@@ -73,6 +83,10 @@ impl Agent {
             },
             pending_tools: SmallVec::new(),
             last_tool: None,
+            title: None,
+            activity: None,
+            last_prompt: None,
+            session: None,
             last_event_at: now,
             exit_expected: false,
             kill_requested: false,
@@ -106,6 +120,23 @@ impl Agent {
 
     pub fn last_tool(&self) -> Option<&ToolName> {
         self.last_tool.as_ref()
+    }
+
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    pub fn activity(&self) -> Option<&str> {
+        self.activity.as_deref()
+    }
+
+    pub fn last_prompt(&self) -> Option<&str> {
+        self.last_prompt.as_deref()
+    }
+
+    /// Conversación abierta, si ya se enlazó.
+    pub fn session(&self) -> Option<&SessionId> {
+        self.session.as_ref()
     }
 
     pub fn last_event_at(&self) -> Timestamp {
@@ -152,6 +183,28 @@ impl Agent {
             AgentInput::KillRequested => self.kill_requested = true,
             AgentInput::Tick(policy) => self.on_tick(policy, now, &mut ev),
             AgentInput::SessionFile(activity) => self.on_session_file(*activity, now, &mut ev),
+            AgentInput::Info(info) => {
+                let mut changed = false;
+                for (field, value) in [
+                    (&mut self.title, &info.title),
+                    (&mut self.activity, &info.activity),
+                    (&mut self.last_prompt, &info.prompt),
+                ] {
+                    if value.is_some() && field != value {
+                        field.clone_from(value);
+                        changed = true;
+                    }
+                }
+                if changed {
+                    self.revision += 1;
+                }
+            }
+            AgentInput::Linked(session) => {
+                if self.session.as_ref() != Some(session) {
+                    self.session = Some(session.clone());
+                    self.revision += 1;
+                }
+            }
             AgentInput::TranscriptTool(tool) => {
                 if self.last_tool.as_ref() != Some(tool) {
                     self.last_tool = Some(tool.clone());
@@ -175,6 +228,10 @@ impl Agent {
         self.revision += 1;
         match signal {
             Signal::SessionStart => {
+                // Conversación nueva (arranque, /clear, resume): su título y pedido llegarán.
+                self.title = None;
+                self.activity = None;
+                self.last_prompt = None;
                 self.pending_tools.clear();
                 self.exit_expected = false;
                 ev.push(DomainEvent::SessionStarted { id: self.id });
@@ -214,6 +271,7 @@ impl Agent {
                 }
             }
             Signal::Stop => {
+                self.activity = None;
                 self.pending_tools.clear();
                 if matches!(self.status.kind, Working | Waiting) {
                     self.set_status(Idle, StatusReason::Hook, now, ev);
@@ -296,7 +354,7 @@ impl Agent {
 mod tests {
     use super::*;
     use crate::domain::ids::{Pid, ProcessStartTime};
-    use crate::domain::signal::ToolOutcome;
+    use crate::domain::signal::{AgentInfo, ToolOutcome};
 
     const T0: Timestamp = Timestamp(1_000_000);
 
@@ -645,5 +703,57 @@ mod tests {
         let rev = a.revision();
         a.apply(&AgentInput::TranscriptTool(ToolName::new("Grep")), t(6));
         assert_eq!(a.revision(), rev, "repetida no genera diff");
+    }
+
+    fn info(title: Option<&str>, activity: Option<&str>, prompt: Option<&str>) -> AgentInput {
+        AgentInput::Info(AgentInfo {
+            title: title.map(Into::into),
+            activity: activity.map(Into::into),
+            prompt: prompt.map(Into::into),
+        })
+    }
+
+    #[test]
+    fn info_actualiza_solo_lo_que_trae_y_sube_la_revision() {
+        let mut a = working();
+        let rev = a.revision();
+        a.apply(
+            &info(Some("Vulnerabilidades"), None, Some("revisa deps")),
+            t(1),
+        );
+        a.apply(&info(None, Some("Editando a.ts"), None), t(2));
+        assert_eq!(a.title(), Some("Vulnerabilidades"));
+        assert_eq!(a.activity(), Some("Editando a.ts"));
+        assert_eq!(a.last_prompt(), Some("revisa deps"));
+        assert!(a.revision() > rev);
+        let rev = a.revision();
+        a.apply(&info(None, Some("Editando a.ts"), None), t(3));
+        assert_eq!(a.revision(), rev, "sin cambios no hay diff");
+    }
+
+    #[test]
+    fn stop_borra_la_actividad_y_session_start_empieza_de_cero() {
+        let mut a = working();
+        a.apply(
+            &info(
+                Some("Migración"),
+                Some("Editando a.ts"),
+                Some("migra users"),
+            ),
+            t(1),
+        );
+        sig(&mut a, Signal::Stop, t(2));
+        assert_eq!(a.activity(), None);
+        assert_eq!(
+            a.title(),
+            Some("Migración"),
+            "el título sigue: es la misma conversación"
+        );
+        sig(&mut a, Signal::SessionStart, t(3));
+        assert_eq!(
+            (a.title(), a.last_prompt()),
+            (None, None),
+            "/clear: conversación nueva"
+        );
     }
 }

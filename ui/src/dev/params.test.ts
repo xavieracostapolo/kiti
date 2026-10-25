@@ -11,6 +11,7 @@ describe("parseParams", () => {
       anim: true,
       zoom: "far",
       terminals: false,
+      conversations: false,
     });
   });
 
@@ -27,6 +28,7 @@ describe("parseParams", () => {
       focus: "3",
       bench: "pan",
       terminals: false,
+      conversations: false,
     });
   });
 

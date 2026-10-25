@@ -4,6 +4,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   AgentId,
+  ConversationInfo,
   Hello,
   KillResult,
   Provider,
@@ -11,7 +12,7 @@ import type {
   TerminalInfo,
   UiMetrics,
 } from "../../protocol";
-import type { TerminalApi, Transport } from "../Transport";
+import type { ConversationApi, TerminalApi, Transport } from "../Transport";
 
 const terminals: TerminalApi = {
   launch: (provider: Provider) => invoke<TerminalInfo | null>("launch_agent", { provider }),
@@ -26,9 +27,15 @@ const terminals: TerminalApi = {
   resize: (id, cols, rows) => invoke("terminal_resize", { id, cols, rows }),
 };
 
+const conversations: ConversationApi = {
+  list: () => invoke<ConversationInfo[]>("list_conversations"),
+  resume: (sessionId) => invoke<TerminalInfo>("resume_conversation", { sessionId }),
+};
+
 export class TauriTransport implements Transport {
   readonly killConfirmation = "native" as const;
   readonly terminals = terminals;
+  readonly conversations = conversations;
 
   async connect(onMsg: (msg: ServerMsg) => void): Promise<Hello> {
     const channel = new Channel<ServerMsg>();

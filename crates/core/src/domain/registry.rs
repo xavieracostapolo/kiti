@@ -9,7 +9,7 @@ use super::agent::{Agent, AgentInput, DetectedAgent, Events, SessionActivity};
 use super::events::DomainEvent;
 use super::ids::ToolName;
 use super::ids::{AgentId, Pid, Provider, SessionId, Timestamp};
-use super::signal::Signal;
+use super::signal::{AgentInfo, Signal};
 use super::stale::StalePolicy;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -30,7 +30,7 @@ const PENDING_MAX: usize = 64;
 
 struct Pending {
     first_at: Timestamp,
-    signals: Vec<(Signal, Timestamp)>,
+    hooks: Vec<(Signal, AgentInfo, Timestamp)>,
 }
 
 pub struct AgentRegistry {
@@ -138,14 +138,29 @@ impl AgentRegistry {
 
     /// Enlaza la sesión con su agente (y desenlaza otras sesiones del mismo proceso, que tras
     /// un `/clear` ya no volverán), y aplica los hooks que esperaban.
-    fn link(&mut self, session: &SessionId, id: AgentId) -> Events {
+    fn link(&mut self, session: &SessionId, id: AgentId, now: Timestamp) -> Events {
         self.sessions.retain(|s, a| *a != id || s == session);
         self.sessions.insert(session.clone(), id);
-        let mut events = Events::new();
+        let mut events = self.apply(&id, &AgentInput::Linked(session.clone()), now);
         if let Some(p) = self.pending.remove(session) {
-            for (signal, at) in p.signals {
-                events.extend(self.apply(&id, &AgentInput::Signal(signal), at));
+            for (signal, info, at) in p.hooks {
+                events.extend(self.deliver(id, &signal, &info, at));
             }
+        }
+        events
+    }
+
+    /// Aplica la señal y, si trae algo, la info del mismo hook.
+    fn deliver(
+        &mut self,
+        id: AgentId,
+        signal: &Signal,
+        info: &AgentInfo,
+        now: Timestamp,
+    ) -> Events {
+        let mut events = self.apply(&id, &AgentInput::Signal(signal.clone()), now);
+        if !info.is_empty() {
+            events.extend(self.apply(&id, &AgentInput::Info(info.clone()), now));
         }
         events
     }
@@ -159,12 +174,17 @@ impl AgentRegistry {
         signal: &Signal,
         now: Timestamp,
     ) -> Events {
-        self.hook_from(provider, session, cwd, &[], signal, now)
+        self.hook_info(
+            provider,
+            session,
+            cwd,
+            &[],
+            signal,
+            &AgentInfo::default(),
+            now,
+        )
     }
 
-    /// Orden de enlace: sesión conocida; el primer ancestro del forwarder que sea un agente vivo
-    /// del mismo provider (`X-Kiti-Ppid`, ADR 0005 §4); un único agente del mismo provider y
-    /// `cwd` sin sesión; si no, se retiene hasta 5 s.
     pub fn hook_from(
         &mut self,
         provider: Provider,
@@ -174,15 +194,40 @@ impl AgentRegistry {
         signal: &Signal,
         now: Timestamp,
     ) -> Events {
+        self.hook_info(
+            provider,
+            session,
+            cwd,
+            ancestry,
+            signal,
+            &AgentInfo::default(),
+            now,
+        )
+    }
+
+    /// Orden de enlace: sesión conocida; el primer ancestro del forwarder que sea un agente vivo
+    /// del mismo provider (`X-Kiti-Ppid`, ADR 0005 §4); un único agente del mismo provider y
+    /// `cwd` sin sesión; si no, se retiene hasta 5 s (con su info, ADR 0009).
+    #[allow(clippy::too_many_arguments)]
+    pub fn hook_info(
+        &mut self,
+        provider: Provider,
+        session: &SessionId,
+        cwd: &str,
+        ancestry: &[Pid],
+        signal: &Signal,
+        info: &AgentInfo,
+        now: Timestamp,
+    ) -> Events {
         if let Some(id) = self.sessions.get(session).copied() {
-            return self.apply(&id, &AgentInput::Signal(signal.clone()), now);
+            return self.deliver(id, signal, info, now);
         }
         if let Some(id) = ancestry
             .iter()
             .find_map(|pid| self.live_agent(provider, *pid))
         {
-            let mut events = self.link(session, id);
-            events.extend(self.apply(&id, &AgentInput::Signal(signal.clone()), now));
+            let mut events = self.link(session, id, now);
+            events.extend(self.deliver(id, signal, info, now));
             return events;
         }
         let linked: std::collections::HashSet<AgentId> = self.sessions.values().copied().collect();
@@ -194,16 +239,16 @@ impl AgentRegistry {
         });
         if let (Some(only), None) = (candidates.next(), candidates.next()) {
             let id = only.id();
-            let mut events = self.link(session, id);
-            events.extend(self.apply(&id, &AgentInput::Signal(signal.clone()), now));
+            let mut events = self.link(session, id, now);
+            events.extend(self.deliver(id, signal, info, now));
             return events;
         }
         let p = self.pending.entry(session.clone()).or_insert(Pending {
             first_at: now,
-            signals: Vec::new(),
+            hooks: Vec::new(),
         });
-        if p.signals.len() < PENDING_MAX {
-            p.signals.push((signal.clone(), now));
+        if p.hooks.len() < PENDING_MAX {
+            p.hooks.push((signal.clone(), info.clone(), now));
         } else {
             self.dropped_hooks += 1;
         }
@@ -227,7 +272,7 @@ impl AgentRegistry {
         let mut events = if self.sessions.get(session) == Some(&id) {
             Events::new()
         } else {
-            self.link(session, id)
+            self.link(session, id, now)
         };
         if let Some((activity, updated_at)) = activity {
             let changed = self.file_status.insert(id, activity) != Some(activity);
@@ -250,12 +295,25 @@ impl AgentRegistry {
         }
     }
 
+    /// Título y último pedido del transcript de una sesión ya enlazada (ADR 0009).
+    pub fn transcript_info(
+        &mut self,
+        session: &SessionId,
+        info: &AgentInfo,
+        now: Timestamp,
+    ) -> Events {
+        match self.sessions.get(session).copied() {
+            Some(id) => self.apply(&id, &AgentInput::Info(info.clone()), now),
+            None => Events::new(),
+        }
+    }
+
     fn expire_pending(&mut self, now: Timestamp) {
         let mut dropped = 0;
         self.pending.retain(|_, p| {
             let keep = now.0.saturating_sub(p.first_at.0) < PENDING_TTL_MS;
             if !keep {
-                dropped += p.signals.len() as u64;
+                dropped += p.hooks.len() as u64;
             }
             keep
         });
@@ -701,5 +759,30 @@ mod tests {
             reg.get(&id_of(&a)).and_then(|x| x.last_tool().cloned()),
             Some(ToolName::new("Read"))
         );
+    }
+
+    #[test]
+    fn la_info_del_hook_llega_aunque_el_hook_quede_retenido() {
+        let mut reg = AgentRegistry::new();
+        let (a, b) = (claude_at(1, "/w/x"), claude_at(2, "/w/x"));
+        reg.reconcile(&[a.clone(), b], Timestamp(10));
+        let info = AgentInfo {
+            prompt: Some("revisa las vulnerabilidades".into()),
+            ..AgentInfo::default()
+        };
+        reg.hook_info(
+            Provider::Claude,
+            &sid("s-a"),
+            "/w/x",
+            &[],
+            &Signal::PromptSubmit,
+            &info,
+            Timestamp(11),
+        );
+        reg.session_file(Provider::Claude, Pid(1), &sid("s-a"), None, Timestamp(12));
+        let agent = reg.get(&id_of(&a)).unwrap();
+        assert_eq!(agent.last_prompt(), Some("revisa las vulnerabilidades"));
+        assert_eq!(agent.session(), Some(&sid("s-a")));
+        assert_eq!(agent.status().kind, StatusKind::Working);
     }
 }

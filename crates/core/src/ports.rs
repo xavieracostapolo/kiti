@@ -6,6 +6,22 @@ use crate::domain::{AgentId, ProcessIdentity, ProcessSnapshot, Timestamp};
 use kiti_protocol::ServerMsg;
 use std::time::Duration;
 
+/// Proyecto (raíz git o carpeta) de un `cwd` (ADR 0009). Puede consultar el disco y guardar
+/// en caché: se llama al proyectar cada agente.
+pub trait ProjectResolver: Send + 'static {
+    fn project_of(&mut self, cwd: &str) -> String;
+}
+
+/// Sin disco: cada carpeta es su propio proyecto (simulador y tests).
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CwdProjects;
+
+impl ProjectResolver for CwdProjects {
+    fn project_of(&mut self, cwd: &str) -> String {
+        cwd.to_owned()
+    }
+}
+
 pub trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;
 }

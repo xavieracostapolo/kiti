@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AgentState } from "../protocol";
+import type { AgentState, ConversationInfo } from "../protocol";
+import { dormantId } from "./rooms";
 import { createKitiStore } from "./store";
 
 const a: AgentState = {
@@ -7,6 +8,7 @@ const a: AgentState = {
   provider: "codex",
   pid: 1,
   cwd: "/w/a",
+  project: "/w/a",
   startedAt: 0,
   status: { kind: "idle", reason: "hook", since: 0 },
   lastEventAt: 0,
@@ -93,5 +95,30 @@ describe("store", () => {
     store.getState().setHover({ id: "a", x: 12, y: 21 });
     store.getState().setHover(undefined);
     expect(calls).toBe(2);
+  });
+
+  it("las conversaciones cerradas son oficinas apagadas hasta que su agente se enciende", () => {
+    const store = createKitiStore();
+    const conv: ConversationInfo = {
+      sessionId: "s1",
+      provider: "claude",
+      cwd: "/w/a",
+      project: "/w/a",
+      updatedAt: 0,
+    };
+    store.getState().receive({ type: "Snapshot", seq: 0, agents: [a] });
+    store.getState().setConversations([conv]);
+    expect([...store.getState().dormant.keys()]).toEqual([dormantId("s1")]);
+    // Seleccionar una apagada no la pierde con el siguiente Diff.
+    store.getState().select(dormantId("s1"));
+    store.getState().receive({ type: "Diff", seq: 1, ingestMs: 0, upserts: [a], removed: [] });
+    expect(store.getState().view.selectedId).toBe(dormantId("s1"));
+    // Al retomarla, su agente trae la sesión: la apagada desaparece y se deselecciona.
+    const resumed = { ...a, id: "b", sessionId: "s1" };
+    store
+      .getState()
+      .receive({ type: "Diff", seq: 2, ingestMs: 0, upserts: [resumed], removed: [] });
+    expect(store.getState().dormant.size).toBe(0);
+    expect(store.getState().view.selectedId).toBeUndefined();
   });
 });

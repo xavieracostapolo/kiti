@@ -5,6 +5,7 @@ mod agent;
 mod events;
 mod ids;
 mod process;
+mod project;
 mod registry;
 mod signal;
 mod stale;
@@ -17,7 +18,8 @@ pub use ids::{
     Timestamp, ToolName, ToolUseKey, WorkingDir,
 };
 pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
+pub use project::project_root;
 pub use registry::{AgentRegistry, RegistryDiff};
-pub use signal::{Signal, ToolOutcome};
+pub use signal::{AgentInfo, Signal, ToolOutcome};
 pub use stale::StalePolicy;
 pub use status::{Status, StatusKind, StatusReason, TrafficLight};

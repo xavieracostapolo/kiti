@@ -31,6 +31,21 @@ pub enum Signal {
     },
 }
 
+/// Texto legible para el usuario (ADR 0009): de qué va la conversación, qué hace ahora y qué
+/// pidió por última vez. `None` = sin cambios. Nunca se escribe en los logs.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentInfo {
+    pub title: Option<String>,
+    pub activity: Option<String>,
+    pub prompt: Option<String>,
+}
+
+impl AgentInfo {
+    pub fn is_empty(&self) -> bool {
+        self.title.is_none() && self.activity.is_none() && self.prompt.is_none()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolOutcome {
     Ok,

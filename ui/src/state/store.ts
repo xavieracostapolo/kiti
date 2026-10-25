@@ -3,10 +3,19 @@
 
 import { createStore } from "zustand/vanilla";
 import type { Lod } from "../domain/lod";
-import type { AgentId, CoreMetrics, ServerMsg, Source, TerminalInfo } from "../protocol";
+import type {
+  AgentId,
+  ConversationInfo,
+  CoreMetrics,
+  ServerMsg,
+  Source,
+  TerminalInfo,
+} from "../protocol";
 import { type AgentsState, applyMsg, EMPTY_AGENTS } from "./agents";
+import { dormantRooms } from "./rooms";
 
 export type ViewState = {
+  /** Oficina seleccionada: un agente o una conversación cerrada (`conv:<id>`). */
   selectedId?: AgentId;
   pendingKill?: AgentId;
   lod: Lod;
@@ -17,6 +26,11 @@ export type Hover = { id: AgentId; x: number; y: number };
 
 export type KitiState = {
   agents: AgentsState;
+  /** Conversaciones de los últimos 7 días tal como llegan del core (ADR 0009). */
+  conversations: readonly ConversationInfo[];
+  /** Oficinas apagadas: las conversaciones sin agente encendido, por id de oficina. */
+  dormant: ReadonlyMap<string, ConversationInfo>;
+  setConversations(list: readonly ConversationInfo[]): void;
   /** Terminales de los agentes lanzados desde Kiti, por pid (ADR 0007). */
   terminals: ReadonlyMap<number, TerminalInfo>;
   openTerminalId: string | undefined;
@@ -49,9 +63,26 @@ function without<K extends keyof ViewState>(view: ViewState, key: K): ViewState 
   return rest as ViewState;
 }
 
+/** ¿Sigue existiendo esa oficina, encendida o apagada? */
+function exists(id: string, agents: AgentsState, dormant: ReadonlyMap<string, unknown>) {
+  return agents.agents.has(id) || dormant.has(id);
+}
+
 export function createKitiStore() {
   return createStore<KitiState>()((set, get) => ({
     agents: EMPTY_AGENTS,
+    conversations: [],
+    dormant: new Map(),
+    setConversations(list) {
+      const { agents, dormant: prev, view } = get();
+      const dormant = dormantRooms(agents.agents, list, prev);
+      const selected = view.selectedId;
+      set({
+        conversations: list,
+        dormant,
+        view: selected && !exists(selected, agents, dormant) ? without(view, "selectedId") : view,
+      });
+    },
     terminals: new Map(),
     openTerminalId: undefined,
     pendingLaunchPid: undefined,
@@ -89,14 +120,15 @@ export function createKitiStore() {
       }
       const agents = applyMsg(get().agents, msg);
       if (agents === get().agents) return;
+      const dormant = dormantRooms(agents.agents, get().conversations, get().dormant);
       let view = get().view;
-      if (view.selectedId !== undefined && !agents.agents.has(view.selectedId)) {
+      if (view.selectedId !== undefined && !exists(view.selectedId, agents, dormant)) {
         view = without(view, "selectedId");
       }
       if (view.pendingKill !== undefined && !agents.agents.has(view.pendingKill)) {
         view = without(view, "pendingKill");
       }
-      set({ agents, view });
+      set({ agents, dormant, view });
     },
     select(id) {
       const view = get().view;

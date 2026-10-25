@@ -38,6 +38,7 @@ async function bootstrap() {
       steps: params.steps,
       freeze: params.freeze,
       terminals: params.terminals,
+      conversations: params.conversations,
     });
     transport = sim;
     getNow = () => sim.now();
@@ -61,8 +62,23 @@ async function bootstrap() {
         store.getState().setSource(hello.source);
         // Terminales de agentes lanzados antes de abrir esta ventana (ADR 0007).
         void transport.terminals?.list().then((list) => store.getState().setTerminals(list));
+        refreshConversations();
         console.info(JSON.stringify({ event: "transport.connected", ...hello }));
       });
+  }
+  // Conversaciones cerradas (ADR 0009): al conectar, cada 15 s y cuando se cierra una oficina.
+  const conversations = transport.conversations;
+  function refreshConversations() {
+    void conversations
+      ?.list()
+      .then((list) => store.getState().setConversations(list))
+      .catch((e) => console.warn(JSON.stringify({ event: "conversations.error", error: e })));
+  }
+  if (conversations) {
+    setInterval(refreshConversations, 15_000);
+    store.subscribe((s, prev) => {
+      if (s.agents.agents.size < prev.agents.agents.size) refreshConversations();
+    });
   }
   connect();
   // Resumen de la UI al core cada 2 s (no-op en Sim).

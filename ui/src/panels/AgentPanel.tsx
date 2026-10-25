@@ -1,5 +1,6 @@
 import { useStore } from "zustand";
 import { displayName } from "../domain/names";
+import { projectName } from "../domain/zones";
 import type { KitiStore } from "../state/store";
 import { STATUS_COLOR } from "../world/palette";
 import type { WorldHandle } from "../world/World";
@@ -29,9 +30,27 @@ export function AgentPanel({ store, world, now, terminalsAvailable = false }: Pr
     <aside className={s.agentPanel} aria-label="Agente seleccionado">
       <h2 className={s.agentTitle}>
         <span className={s.dot} style={{ background: hex(STATUS_COLOR[agent.status.kind]) }} />
-        {displayName(agent.cwd)}
+        {agent.title ?? displayName(agent.cwd)}
       </h2>
       <dl className={s.fields}>
+        {agent.project && agent.project !== agent.cwd && (
+          <>
+            <dt>proyecto</dt>
+            <dd>{projectName(agent.project)}</dd>
+          </>
+        )}
+        {agent.activity && (
+          <>
+            <dt>ahora</dt>
+            <dd>{agent.activity}</dd>
+          </>
+        )}
+        {agent.lastPrompt && (
+          <>
+            <dt>último pedido</dt>
+            <dd>{agent.lastPrompt}</dd>
+          </>
+        )}
         <dt>proveedor</dt>
         <dd>{agent.provider}</dd>
         <dt>estado</dt>

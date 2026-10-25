@@ -11,6 +11,7 @@ const agent: AgentState = {
   provider: "claude",
   pid: 4242,
   cwd: "/Users/dev/billing",
+  project: "/Users/dev/billing",
   startedAt: 0,
   status: { kind: "working", reason: "hook", since: 0 },
   lastEventAt: 0,

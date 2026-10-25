@@ -10,16 +10,18 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, interval};
 
 use crate::application::projection::{project_diff, project_snapshot};
+use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Pid, Provider, SessionId,
-    StalePolicy, Timestamp, ToolName,
+    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Pid, Provider, StalePolicy,
+    Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
 use crate::ports::{
-    AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
+    AgentKiller, Clock, CwdProjects, DiffPublisher, KillError, KillOutcome, KillTarget,
+    ProjectResolver, SelfMonitor,
 };
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
 use tracing::{debug, info};
@@ -44,8 +46,8 @@ pub enum RuntimeCommand {
     Reconcile {
         detected: Vec<DetectedAgent>,
         sessions: Vec<SessionFile>,
-        /// Última herramienta nueva de cada transcript.
-        transcripts: Vec<(SessionId, ToolName)>,
+        /// Lo nuevo de cada transcript.
+        transcripts: Vec<TranscriptUpdate>,
         now: Timestamp,
     },
     /// Un hook ya traducido por la ACL de su CLI.
@@ -107,7 +109,7 @@ impl RuntimeHandle {
         &self,
         detected: Vec<DetectedAgent>,
         sessions: Vec<SessionFile>,
-        transcripts: Vec<(SessionId, ToolName)>,
+        transcripts: Vec<TranscriptUpdate>,
         now: Timestamp,
     ) {
         let _ = self
@@ -231,6 +233,7 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     source: Source,
     app_version: String,
     stale_policy: StalePolicy,
+    projects: Box<dyn ProjectResolver>,
 }
 
 impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
@@ -259,6 +262,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             source,
             app_version: app_version.into(),
             stale_policy: StalePolicy::default(),
+            projects: Box::new(CwdProjects),
         };
         (runtime, RuntimeHandle { tx, telemetry })
     }
@@ -266,6 +270,12 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     /// Muestreo de RSS y CPU del proceso para el panel de debug.
     pub fn with_monitor(mut self, monitor: impl SelfMonitor) -> Self {
         self.monitor = Some(Box::new(monitor));
+        self
+    }
+
+    /// Cómo agrupar oficinas por proyecto (ADR 0009). Por defecto, cada carpeta es uno.
+    pub fn with_projects(mut self, projects: impl ProjectResolver) -> Self {
+        self.projects = Box::new(projects);
         self
     }
 
@@ -333,8 +343,13 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                         now,
                     ));
                 }
-                for (session, tool) in &transcripts {
-                    self.registry.transcript(session, tool, now);
+                for t in &transcripts {
+                    if let Some(tool) = &t.tool {
+                        self.registry.transcript(&t.session, tool, now);
+                    }
+                    if !t.info.is_empty() {
+                        self.registry.transcript_info(&t.session, &t.info, now);
+                    }
                 }
                 log_status_changes(&events);
                 for ev in events {
@@ -357,12 +372,13 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 received,
             } => {
                 debug!(event = "hook.received", provider = %provider, name = %event.name);
-                let events = self.registry.hook_from(
+                let events = self.registry.hook_info(
                     provider,
                     &event.session,
                     &event.cwd,
                     &ancestry,
                     &event.signal,
+                    &event.info,
                     now,
                 );
                 log_status_changes(&events);
@@ -378,7 +394,11 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             } => {
                 self.seq = 0;
                 let snapshot_agents = self.registry.snapshot();
-                if publisher.publish(project_snapshot(self.seq, &snapshot_agents)) {
+                if publisher.publish(project_snapshot(
+                    self.seq,
+                    &snapshot_agents,
+                    self.projects.as_mut(),
+                )) {
                     self.publisher = Some(publisher);
                 } else {
                     self.drop_publisher();
@@ -413,7 +433,12 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             return;
         }
         self.seq += 1;
-        if !publisher.publish(project_diff(self.seq, self.clock.now().ms(), diff)) {
+        if !publisher.publish(project_diff(
+            self.seq,
+            self.clock.now().ms(),
+            diff,
+            self.projects.as_mut(),
+        )) {
             self.drop_publisher();
             return;
         }

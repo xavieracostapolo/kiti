@@ -2,12 +2,15 @@
 
 use serde::Deserialize;
 
+use super::clip;
 pub use super::{AclError, HookEvent};
 use crate::domain::{
-    Pid, SessionActivity, SessionId, Signal, Timestamp, ToolName, ToolOutcome, ToolUseKey,
+    AgentInfo, Pid, SessionActivity, SessionId, Signal, Timestamp, ToolName, ToolOutcome,
+    ToolUseKey,
 };
 
-/// Lista blanca de campos (ADR 0005 §7): `prompt`, `tool_input` y `tool_response` no se leen.
+/// Lista blanca de campos (ADR 0005 §7 y 0009): de `tool_input` solo se leen los campos que
+/// describen la acción; `command`, el contenido de los archivos y `tool_response` nunca.
 #[derive(Deserialize)]
 struct Payload {
     session_id: Option<String>,
@@ -16,6 +19,77 @@ struct Payload {
     tool_name: Option<String>,
     tool_use_id: Option<String>,
     notification_type: Option<String>,
+    tool_input: Option<ToolInput>,
+    prompt: Option<String>,
+    session_title: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ToolInput {
+    description: Option<String>,
+    file_path: Option<String>,
+    subagent_type: Option<String>,
+    todos: Option<Vec<Todo>>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Todo {
+    status: Option<String>,
+    content: Option<String>,
+    active_form: Option<String>,
+}
+
+const MAX_TEXT: usize = 140;
+
+fn file_name(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// "Qué está haciendo" en palabras, a partir de la herramienta y de campos descriptivos.
+fn activity(tool: &str, input: Option<&ToolInput>) -> String {
+    let file = input.and_then(|i| i.file_path.as_deref()).map(file_name);
+    let text = match (tool, file) {
+        ("Bash", _) => input
+            .and_then(|i| i.description.clone())
+            .unwrap_or_else(|| "Ejecutando un comando".into()),
+        ("Edit" | "MultiEdit" | "Write" | "NotebookEdit", Some(f)) => format!("Editando {f}"),
+        ("Read", Some(f)) => format!("Leyendo {f}"),
+        ("Grep" | "Glob", _) => "Buscando en el código".into(),
+        ("WebFetch" | "WebSearch", _) => "Buscando en la web".into(),
+        ("Task" | "Agent", _) => match input.and_then(|i| i.subagent_type.as_deref()) {
+            Some(kind) => match input.and_then(|i| i.description.as_deref()) {
+                Some(d) => format!("Subagente {kind}: {d}"),
+                None => format!("Subagente {kind}"),
+            },
+            None => "Delegando a un subagente".into(),
+        },
+        ("TodoWrite", _) => input
+            .and_then(|i| i.todos.as_ref())
+            .and_then(|todos| {
+                todos
+                    .iter()
+                    .find(|t| t.status.as_deref() == Some("in_progress"))
+            })
+            .and_then(|t| t.active_form.clone().or_else(|| t.content.clone()))
+            .unwrap_or_else(|| "Actualizando su lista de tareas".into()),
+        _ => tool.to_owned(),
+    };
+    clip(&text, MAX_TEXT)
+}
+
+fn info_of(name: &str, p: &Payload) -> AgentInfo {
+    AgentInfo {
+        title: p.session_title.as_deref().map(|t| clip(t, MAX_TEXT)),
+        activity: match (name, p.tool_name.as_deref()) {
+            ("PreToolUse", Some(tool)) => Some(activity(tool, p.tool_input.as_ref())),
+            _ => None,
+        },
+        prompt: match name {
+            "UserPromptSubmit" => p.prompt.as_deref().map(|t| clip(t, MAX_TEXT)),
+            _ => None,
+        },
+    }
 }
 
 fn tool_end(p: &Payload, outcome: ToolOutcome) -> Option<Signal> {
@@ -102,6 +176,79 @@ pub fn transcript_tool(line: &[u8]) -> Option<ToolName> {
         .map(ToolName::new)
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MetaRecord {
+    #[serde(rename = "type")]
+    kind: String,
+    ai_title: Option<String>,
+    last_prompt: Option<String>,
+}
+
+/// Título (`ai-title`) o último pedido (`last-prompt`) de una línea del transcript (ADR 0009).
+/// Se recortan aquí mismo y nunca se registran.
+pub fn transcript_info(line: &[u8]) -> AgentInfo {
+    let has = |needle: &[u8]| line.windows(needle.len()).any(|w| w == needle);
+    if !has(b"\"ai-title\"") && !has(b"\"last-prompt\"") {
+        return AgentInfo::default();
+    }
+    let Ok(r) = serde_json::from_slice::<MetaRecord>(line) else {
+        return AgentInfo::default();
+    };
+    let text = |t: Option<String>| t.map(|t| clip(&t, MAX_TEXT)).filter(|t| !t.is_empty());
+    match r.kind.as_str() {
+        "ai-title" => AgentInfo {
+            title: text(r.ai_title),
+            ..AgentInfo::default()
+        },
+        "last-prompt" => AgentInfo {
+            prompt: text(r.last_prompt),
+            ..AgentInfo::default()
+        },
+        _ => AgentInfo::default(),
+    }
+}
+
+/// Lo que Kiti muestra de una conversación cerrada (ADR 0009).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ConversationMeta {
+    pub cwd: Option<String>,
+    pub title: Option<String>,
+    pub prompt: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct CwdRecord {
+    cwd: Option<String>,
+}
+
+/// Recorre las líneas (las últimas de un transcript) de la más nueva a la más vieja y se queda
+/// con el `cwd`, el título y el último pedido más recientes.
+pub fn conversation_meta(lines: &[Vec<u8>]) -> ConversationMeta {
+    let mut meta = ConversationMeta::default();
+    for line in lines.iter().rev() {
+        let info = transcript_info(line);
+        meta.title = meta.title.or(info.title);
+        meta.prompt = meta.prompt.or(info.prompt);
+        if meta.cwd.is_none() && line.windows(6).any(|w| w == b"\"cwd\":") {
+            meta.cwd = serde_json::from_slice::<CwdRecord>(line)
+                .ok()
+                .and_then(|r| r.cwd)
+                .filter(|c| c.starts_with('/'));
+        }
+        if meta.cwd.is_some() && meta.title.is_some() && meta.prompt.is_some() {
+            break;
+        }
+    }
+    meta
+}
+
+/// ¿Puede ser un id de conversación? Va como argumento de `claude --resume` dentro de una
+/// línea de shell, así que solo se aceptan letras, dígitos y guiones.
+pub fn is_session_id(id: &str) -> bool {
+    (8..=64).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 /// Nombre de la carpeta de `~/.claude/projects` para un `cwd`: todo carácter no alfanumérico
 /// pasa a `-` (observado en local; no está documentado).
 pub fn project_dir_name(cwd: &str) -> String {
@@ -131,11 +278,13 @@ pub fn parse_hook(body: &[u8]) -> Result<HookEvent, AclError> {
         .ok_or(AclError::Missing("hook_event_name"))?;
     // Lo que no se reconoce (o le falta un campo necesario) no cambia el semáforo: solo cuenta.
     let signal = to_signal(&name, &p).unwrap_or_else(|| Signal::Unknown { name: name.clone() });
+    let info = info_of(&name, &p);
     Ok(HookEvent {
         session: SessionId::new(session),
         cwd: p.cwd.unwrap_or_default(),
         name,
         signal,
+        info,
     })
 }
 
@@ -351,6 +500,103 @@ mod tests {
         std::fs::remove_dir_all(projects).unwrap();
     }
 
+    fn activity(name: &str, extra: &str) -> Option<String> {
+        parse(&ev(name, extra)).unwrap().info.activity
+    }
+
+    #[test]
+    fn actividad_legible_segun_la_herramienta() {
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"Bash","tool_use_id":"t","tool_input":{"command":"npm test -- --token=SECRETO","description":"Ejecuta los tests"}"#
+            ),
+            Some("Ejecuta los tests".into())
+        );
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"Bash","tool_use_id":"t","tool_input":{"command":"ls"}"#
+            ),
+            Some("Ejecutando un comando".into())
+        );
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"Edit","tool_use_id":"t","tool_input":{"file_path":"/Users/dev/thoth/src/db/migrate.ts","old_string":"x"}"#
+            ),
+            Some("Editando migrate.ts".into())
+        );
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"Read","tool_use_id":"t","tool_input":{"file_path":"/a/b/README.md"}"#
+            ),
+            Some("Leyendo README.md".into())
+        );
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"Grep","tool_use_id":"t","tool_input":{"pattern":"password"}"#
+            ),
+            Some("Buscando en el código".into())
+        );
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"Task","tool_use_id":"t","tool_input":{"subagent_type":"security-reviewer","description":"Revisar dependencias","prompt":"largo"}"#
+            ),
+            Some("Subagente security-reviewer: Revisar dependencias".into())
+        );
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"TodoWrite","tool_use_id":"t","tool_input":{"todos":[{"content":"Auditar","status":"completed","activeForm":"Auditando"},{"content":"Migrar tabla users","status":"in_progress","activeForm":"Migrando la tabla users"}]}"#
+            ),
+            Some("Migrando la tabla users".into())
+        );
+        assert_eq!(
+            activity(
+                "PreToolUse",
+                r#","tool_name":"mcp__x__y","tool_use_id":"t","tool_input":{}"#
+            ),
+            Some("mcp__x__y".into())
+        );
+    }
+
+    #[test]
+    fn el_comando_completo_nunca_sale_de_la_acl() {
+        let e = parse(&ev(
+            "PreToolUse",
+            r#","tool_name":"Bash","tool_use_id":"t","tool_input":{"command":"curl -H 'Authorization: SECRETO'"}"#,
+        ))
+        .unwrap();
+        assert!(!format!("{e:?}").contains("SECRETO"));
+    }
+
+    #[test]
+    fn ultimo_pedido_recortado_y_titulo_de_sesion() {
+        let long = "a".repeat(300);
+        let e = parse(&ev(
+            "UserPromptSubmit",
+            &format!(r#","prompt":"Revisa   las\nvulnerabilidades {long}""#),
+        ))
+        .unwrap();
+        let prompt = e.info.prompt.unwrap();
+        assert!(
+            prompt.starts_with("Revisa las vulnerabilidades a"),
+            "{prompt}"
+        );
+        assert_eq!(prompt.chars().count(), 140);
+        assert!(prompt.ends_with('…'));
+        let e = parse(&ev(
+            "SessionStart",
+            r#","source":"startup","session_title":"Migración de datos""#,
+        ))
+        .unwrap();
+        assert_eq!(e.info.title.as_deref(), Some("Migración de datos"));
+    }
+
     #[test]
     fn errores_de_payload() {
         assert!(matches!(parse("no json"), Err(AclError::Json(_))));
@@ -362,5 +608,55 @@ mod tests {
             parse(r#"{"session_id":"s","cwd":"/w"}"#),
             Err(AclError::Missing("hook_event_name"))
         );
+    }
+
+    #[test]
+    fn el_transcript_da_titulo_y_ultimo_pedido() {
+        let title = br#"{"type":"ai-title","aiTitle":"Revisar vulnerabilidades","sessionId":"s1"}"#;
+        assert_eq!(
+            transcript_info(title).title.as_deref(),
+            Some("Revisar vulnerabilidades")
+        );
+        let prompt =
+            br#"{"type":"last-prompt","lastPrompt":"migra   los datos\n de prueba","leafUuid":"u","sessionId":"s1"}"#;
+        let info = transcript_info(prompt);
+        assert_eq!(info.prompt.as_deref(), Some("migra los datos de prueba"));
+        assert_eq!(info.title, None);
+        // Un mensaje cualquiera que mencione esas palabras no cuenta.
+        let user = br#"{"type":"user","message":{"content":"el \"ai-title\" es raro"}}"#;
+        assert!(transcript_info(user).is_empty());
+        assert!(transcript_info(b"no es json \"last-prompt\"").is_empty());
+    }
+
+    #[test]
+    fn meta_de_una_conversacion_cerrada() {
+        let lines: Vec<Vec<u8>> = [
+            r#"{"type":"user","cwd":"/w/viejo","message":{"content":"hola"}}"#,
+            r#"{"type":"ai-title","aiTitle":"Migrar datos","sessionId":"s1"}"#,
+            r#"{"type":"user","cwd":"/w/thoth","message":{"content":"x"}}"#,
+            r#"{"type":"last-prompt","lastPrompt":"pasa la tabla","sessionId":"s1"}"#,
+            r#"{"type":"assistant","message":{"content":[]}}"#,
+        ]
+        .iter()
+        .map(|l| l.as_bytes().to_vec())
+        .collect();
+        assert_eq!(
+            conversation_meta(&lines),
+            ConversationMeta {
+                cwd: Some("/w/thoth".into()),
+                title: Some("Migrar datos".into()),
+                prompt: Some("pasa la tabla".into()),
+            }
+        );
+        assert_eq!(conversation_meta(&[]), ConversationMeta::default());
+    }
+
+    #[test]
+    fn solo_ids_de_conversacion_seguros_para_la_shell() {
+        assert!(is_session_id("aeef3d7a-13ea-4240-b0f3-ded249409206"));
+        assert!(!is_session_id("x'; rm -rf ~; '"));
+        assert!(!is_session_id("a b c d e f"));
+        assert!(!is_session_id("corto"));
+        assert!(!is_session_id(&"a".repeat(65)));
     }
 }

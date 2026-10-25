@@ -21,6 +21,10 @@ export type KitiDev = {
   screenCenter(idOrIndex: string): { x: number; y: number } | undefined;
   scale(): number;
   lod(): string;
+  /** Zonas por proyecto con su número de oficinas (ADR 0009). */
+  zones(): { name: string; count: number }[];
+  /** Ids de las oficinas apagadas (conversaciones cerradas). */
+  dormant(): string[];
 };
 
 declare global {
@@ -54,6 +58,8 @@ export function installDevHooks(
     screenCenter: (id) => getWorld()?.screenCenter(id),
     scale: () => getWorld()?.scale() ?? 0,
     lod: () => store.getState().view.lod,
+    zones: () => getWorld()?.zones() ?? [],
+    dormant: () => [...store.getState().dormant.keys()],
     kill: (idOrIndex) => {
       const id = /^\d+$/.test(idOrIndex) ? ids()[Number(idOrIndex)] : idOrIndex;
       if (id) store.getState().requestKill(id);

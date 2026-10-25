@@ -3,6 +3,7 @@
 //! Trunca las cadenas a 256 caracteres antes de serializar hacia la UI.
 
 use crate::domain::{Agent, Provider, RegistryDiff, Status, StatusKind, StatusReason};
+use crate::ports::ProjectResolver;
 use kiti_protocol as proto;
 
 const MAX_STRING_LEN: usize = 256;
@@ -57,7 +58,7 @@ pub fn project_status(s: Status) -> proto::Status {
     }
 }
 
-pub fn project_agent(a: &Agent) -> proto::AgentState {
+pub fn project_agent(a: &Agent, projects: &mut dyn ProjectResolver) -> proto::AgentState {
     proto::AgentState {
         id: proto::AgentId(a.id().to_string()),
         provider: project_provider(a.id().provider),
@@ -67,21 +68,39 @@ pub fn project_agent(a: &Agent) -> proto::AgentState {
         status: project_status(a.status()),
         last_tool: a.last_tool().map(|t| truncate_str(t.as_str())),
         last_event_at: a.last_event_at().0,
+        project: truncate_str(&projects.project_of(a.cwd().as_str())),
+        session_id: a.session().map(|s| truncate_str(s.as_str())),
+        title: a.title().map(truncate_str),
+        activity: a.activity().map(truncate_str),
+        last_prompt: a.last_prompt().map(truncate_str),
     }
 }
 
-pub fn project_snapshot(seq: u64, agents: &[Agent]) -> proto::ServerMsg {
+pub fn project_snapshot(
+    seq: u64,
+    agents: &[Agent],
+    projects: &mut dyn ProjectResolver,
+) -> proto::ServerMsg {
     proto::ServerMsg::Snapshot {
         seq,
-        agents: agents.iter().map(project_agent).collect(),
+        agents: agents.iter().map(|a| project_agent(a, projects)).collect(),
     }
 }
 
-pub fn project_diff(seq: u64, ingest_ms: u64, diff: RegistryDiff) -> proto::ServerMsg {
+pub fn project_diff(
+    seq: u64,
+    ingest_ms: u64,
+    diff: RegistryDiff,
+    projects: &mut dyn ProjectResolver,
+) -> proto::ServerMsg {
     proto::ServerMsg::Diff {
         seq,
         ingest_ms,
-        upserts: diff.upserts.iter().map(project_agent).collect(),
+        upserts: diff
+            .upserts
+            .iter()
+            .map(|a| project_agent(a, projects))
+            .collect(),
         removed: diff
             .removed
             .into_iter()
@@ -97,6 +116,7 @@ mod tests {
         AgentId, DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Signal, Timestamp,
         ToolName, ToolUseKey, WorkingDir,
     };
+    use crate::ports::CwdProjects;
 
     fn sample_agent() -> Agent {
         let mut a = Agent::new(
@@ -138,14 +158,14 @@ mod tests {
             },
             Timestamp(200),
         );
-        let dto = project_agent(&a);
+        let dto = project_agent(&a, &mut CwdProjects);
         assert_eq!(dto.cwd.len(), 256);
     }
 
     #[test]
     fn project_diff_y_snapshot_generan_server_msg_valido() {
         let a = sample_agent();
-        let snap = project_snapshot(0, std::slice::from_ref(&a));
+        let snap = project_snapshot(0, std::slice::from_ref(&a), &mut CwdProjects);
         match snap {
             proto::ServerMsg::Snapshot { seq, agents } => {
                 assert_eq!(seq, 0);
@@ -164,7 +184,7 @@ mod tests {
                 start_time: ProcessStartTime(50),
             }],
         };
-        let diff_msg = project_diff(1, 1_700_000_100, diff);
+        let diff_msg = project_diff(1, 1_700_000_100, diff, &mut CwdProjects);
         match diff_msg {
             proto::ServerMsg::Diff {
                 seq,

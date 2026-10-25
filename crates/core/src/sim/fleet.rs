@@ -26,6 +26,25 @@ pub struct ProfilesConfig {
     pub profiles: Vec<Profile>,
 }
 
+/// Oficinas por proyecto, en ciclo: como quien abre varias sesiones en el mismo repositorio
+/// (ADR 0009). Igual que `projectFor` del simulador de la UI.
+const GROUP_SIZES: [usize; 8] = [3, 1, 4, 2, 2, 1, 3, 2];
+
+/// Proyecto del agente `i`: no depende de cuántos agentes haya.
+fn project_index(i: usize, projects: usize) -> usize {
+    let cycle: usize = GROUP_SIZES.iter().sum();
+    let mut rest = i % cycle;
+    let mut group = (i / cycle) * GROUP_SIZES.len();
+    for size in GROUP_SIZES {
+        if rest < size {
+            break;
+        }
+        rest -= size;
+        group += 1;
+    }
+    group % projects
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct ProviderSpec {
     pub provider: String,
@@ -285,13 +304,7 @@ impl SimFleet {
             let started_offset = rng.random_range(60_000..3 * 3_600_000);
             let started_at = now.saturating_sub(started_offset);
 
-            let project_idx = i % config.projects.len();
-            let round = i / config.projects.len();
-            let project_name = if round == 0 {
-                config.projects[project_idx].clone()
-            } else {
-                format!("{}-{}", config.projects[project_idx], round + 1)
-            };
+            let project_name = &config.projects[project_index(i, config.projects.len())];
 
             let identity = ProcessIdentity {
                 pid: Pid(pid),

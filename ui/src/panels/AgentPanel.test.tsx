@@ -27,6 +27,7 @@ const base: AgentState = {
   provider: "claude",
   pid: 4242,
   cwd: "/Users/dev/billing",
+  project: "/Users/dev/billing",
   startedAt: NOW - 3_600_000,
   status: { kind: "working", reason: "hook", since: NOW - 90_000 },
   lastTool: "Edit",

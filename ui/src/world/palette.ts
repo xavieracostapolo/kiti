@@ -48,4 +48,11 @@ export const PAL = {
   bubble: 0xffffff,
   bubbleText: 0x1a1d29,
   selection: 0xffffff,
+  /** Borde de una oficina apagada (conversación cerrada, ADR 0009). */
+  dormant: 0x4a5266,
+  /** Zona de un proyecto: suelo, borde y rótulo. */
+  zoneFloor: 0x2a3042,
+  zoneBorder: 0x3a4258,
+  zoneHeader: 0x323a50,
+  zoneText: 0xc9d1e3,
 } as const;

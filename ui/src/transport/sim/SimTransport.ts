@@ -2,7 +2,8 @@
 
 import type { AgentId, AgentState, Hello, KillResult, ServerMsg, UiMetrics } from "../../protocol";
 import { PROTOCOL_VERSION } from "../../protocol";
-import type { TerminalApi, Transport } from "../Transport";
+import type { ConversationApi, TerminalApi, Transport } from "../Transport";
+import { FakeConversations, fakeConversations } from "./FakeConversations";
 import { FakeTerminals } from "./FakeTerminals";
 import { SimFleet, TICK_MS } from "./fleet";
 
@@ -18,6 +19,8 @@ export type SimOptions = {
   schedule?: Schedule;
   /** Terminal falsa unida al primer agente (`?terminals=1`). */
   terminals?: boolean;
+  /** Conversaciones cerradas falsas (`?conversations=1`). */
+  conversations?: boolean;
 };
 
 const intervalSchedule: Schedule = (tick) => {
@@ -28,6 +31,7 @@ const intervalSchedule: Schedule = (tick) => {
 export class SimTransport implements Transport {
   readonly killConfirmation = "in-app" as const;
   readonly terminals?: TerminalApi;
+  readonly conversations?: ConversationApi;
   private readonly fleet: SimFleet;
   private readonly opts: SimOptions;
   private onMsg: ((msg: ServerMsg) => void) | undefined;
@@ -39,6 +43,16 @@ export class SimTransport implements Transport {
     this.fleet = new SimFleet({ count: opts.count, seed: opts.seed });
     const [first, second] = this.fleet.snapshot();
     if (opts.terminals && first) this.terminals = new FakeTerminals(first, second);
+    if (opts.conversations && first && second) {
+      const list = fakeConversations(first.project, this.fleet.now);
+      this.conversations = new FakeConversations(list, {
+        id: "sim-resumed",
+        pid: second.pid,
+        provider: "claude",
+        cwd: second.cwd,
+        running: true,
+      });
+    }
   }
 
   async connect(onMsg: (msg: ServerMsg) => void): Promise<Hello> {

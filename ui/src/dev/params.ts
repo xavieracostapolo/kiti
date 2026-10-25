@@ -15,6 +15,8 @@ export type Params = {
   bench?: string;
   /** Terminal falsa en el modo sim, para probar el panel de terminal (ADR 0007). */
   terminals: boolean;
+  /** Conversaciones cerradas falsas en el modo sim (ADR 0009). */
+  conversations: boolean;
 };
 
 const MAX_AGENTS = 200;
@@ -35,6 +37,7 @@ export function parseParams(search: string): Params {
     anim: q.get("anim") !== "0",
     zoom: zoom === "mid" || zoom === "near" ? zoom : "far",
     terminals: q.get("terminals") === "1",
+    conversations: q.get("conversations") === "1",
   };
   const focus = q.get("focus");
   if (focus) params.focus = focus;

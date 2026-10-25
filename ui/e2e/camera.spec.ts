@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openWorld } from "./helpers";
+import { officeAt, openWorld } from "./helpers";
 
 const Q = "sim=20&seed=42&steps=357&freeze=1";
 
@@ -41,9 +41,10 @@ test("el zoom respeta sus límites", async ({ page }) => {
 
 test("el pan no saca el mundo de la vista", async ({ page }) => {
   await openWorld(page, `${Q}&anim=0`);
+  const first = await officeAt(page, "topLeft");
   for (let i = 0; i < 20; i++) await page.mouse.wheel(-2000, -2000);
-  const c = await page.evaluate(() => window.__kiti?.screenCenter("0"));
-  // El centro de la cámara queda dentro del mundo: la primera oficina sigue a la vista.
+  const c = await page.evaluate((id) => window.__kiti?.screenCenter(id), first);
+  // El centro de la cámara queda dentro del mundo: la oficina de la esquina sigue a la vista.
   expect(c?.x).toBeGreaterThan(0);
   expect(c?.y).toBeGreaterThan(0);
   expect(c?.x).toBeLessThan(1440);
