@@ -1,0 +1,31 @@
+[package]
+name = "kiti-core"
+version = "0.1.0"
+description = "Núcleo de Kiti: dominio del semáforo, registro de agentes, runtime y simulador. Sin Tauri."
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[features]
+# Con --no-default-features solo quedan domain y application (CI lo comprueba, ADR 0002 §6).
+default = ["sim", "testing"]
+sim = ["dep:rand", "dep:rand_chacha"]
+testing = []
+
+[dependencies]
+kiti-protocol.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+smallvec.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true }
+tracing.workspace = true
+hdrhistogram.workspace = true
+rand = { workspace = true, optional = true }
+rand_chacha = { workspace = true, optional = true }
+
+[dev-dependencies]
+proptest.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true
+tokio = { workspace = true, features = ["test-util", "rt-multi-thread"] }

@@ -1,0 +1,548 @@
+//! Agregado raíz `Agent` y su reducer puro (ADR 0002 §2–§3).
+
+use smallvec::SmallVec;
+
+use super::events::DomainEvent;
+use super::ids::{AgentId, ProcessIdentity, Provider, Timestamp, ToolName, ToolUseKey, WorkingDir};
+use super::signal::Signal;
+use super::stale::StalePolicy;
+use super::status::{Status, StatusKind, StatusReason, TrafficLight};
+
+pub type Events = SmallVec<[DomainEvent; 2]>;
+
+/// Un proceso ya clasificado como agente. En el Hito 3 lo produce `classify` desde un
+/// `ProcessSnapshot`; en el Hito 2, `SimFleet`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DetectedAgent {
+    pub provider: Provider,
+    pub identity: ProcessIdentity,
+    pub cwd: WorkingDir,
+}
+
+/// Entrada ya enrutada a un agente concreto.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AgentInput {
+    Signal(Signal),
+    /// El escaneo de procesos ya no ve el proceso.
+    ProcessGone,
+    /// El usuario confirmó cerrar la oficina: la salida que siga será esperada.
+    KillRequested,
+    Tick(StalePolicy),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Agent {
+    id: AgentId,
+    identity: ProcessIdentity,
+    cwd: WorkingDir,
+    status: Status,
+    pending_tools: SmallVec<[(ToolUseKey, ToolName); 4]>,
+    last_tool: Option<ToolName>,
+    last_event_at: Timestamp,
+    exit_expected: bool,
+    kill_requested: bool,
+    /// Sube con cada cambio visible para la UI. El registro lo usa para saber qué enviar.
+    revision: u64,
+}
+
+impl Agent {
+    pub fn new(detected: DetectedAgent, now: Timestamp) -> Self {
+        let id = AgentId {
+            provider: detected.provider,
+            pid: detected.identity.pid,
+            start_time: detected.identity.start_time,
+        };
+        Self {
+            id,
+            identity: detected.identity,
+            cwd: detected.cwd,
+            status: Status {
+                kind: StatusKind::Idle,
+                reason: StatusReason::Startup,
+                since: now,
+            },
+            pending_tools: SmallVec::new(),
+            last_tool: None,
+            last_event_at: now,
+            exit_expected: false,
+            kill_requested: false,
+            revision: 0,
+        }
+    }
+
+    pub fn id(&self) -> AgentId {
+        self.id
+    }
+
+    pub fn identity(&self) -> &ProcessIdentity {
+        &self.identity
+    }
+
+    pub fn cwd(&self) -> &WorkingDir {
+        &self.cwd
+    }
+
+    pub fn status(&self) -> Status {
+        self.status
+    }
+
+    pub fn light(&self) -> TrafficLight {
+        self.status.kind.into()
+    }
+
+    pub fn is_dead(&self) -> bool {
+        self.status.kind == StatusKind::Dead
+    }
+
+    pub fn last_tool(&self) -> Option<&ToolName> {
+        self.last_tool.as_ref()
+    }
+
+    pub fn last_event_at(&self) -> Timestamp {
+        self.last_event_at
+    }
+
+    pub fn pending_tools(&self) -> impl ExactSizeIterator<Item = &ToolUseKey> {
+        self.pending_tools.iter().map(|(key, _)| key)
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Puro y determinista: sin I/O, sin reloj, sin aleatoriedad.
+    pub fn apply(&mut self, input: &AgentInput, now: Timestamp) -> Events {
+        let mut ev = Events::new();
+        if self.is_dead() {
+            if let AgentInput::Tick(policy) = input
+                && now.since(self.status.since) >= policy.dead_ttl
+            {
+                ev.push(DomainEvent::AgentRemoved { id: self.id });
+            }
+            return ev;
+        }
+        match input {
+            AgentInput::Signal(signal) => self.on_signal(signal, now, &mut ev),
+            AgentInput::ProcessGone => {
+                if self.exit_expected || self.kill_requested {
+                    ev.push(DomainEvent::AgentExited {
+                        id: self.id,
+                        expected: true,
+                    });
+                    ev.push(DomainEvent::AgentRemoved { id: self.id });
+                } else {
+                    self.pending_tools.clear();
+                    self.set_status(StatusKind::Dead, StatusReason::ProcessGone, now, &mut ev);
+                    ev.push(DomainEvent::AgentExited {
+                        id: self.id,
+                        expected: false,
+                    });
+                }
+            }
+            AgentInput::KillRequested => self.kill_requested = true,
+            AgentInput::Tick(policy) => self.on_tick(policy, now, &mut ev),
+        }
+        ev
+    }
+
+    fn on_signal(&mut self, signal: &Signal, now: Timestamp, ev: &mut Events) {
+        use StatusKind::*;
+        match signal {
+            Signal::Unknown { .. } => return,
+            Signal::ToolEnd { key, .. } if !self.pending_tools.iter().any(|(k, _)| k == key) => {
+                return;
+            }
+            _ => {}
+        }
+        self.last_event_at = now;
+        self.revision += 1;
+        match signal {
+            Signal::SessionStart => {
+                self.pending_tools.clear();
+                self.exit_expected = false;
+                ev.push(DomainEvent::SessionStarted { id: self.id });
+                self.set_status(Idle, StatusReason::Hook, now, ev);
+            }
+            Signal::PromptSubmit => self.set_status(Working, StatusReason::Hook, now, ev),
+            Signal::ToolStart { key, tool } => {
+                if !self.pending_tools.iter().any(|(k, _)| k == key) {
+                    self.pending_tools.push((key.clone(), tool.clone()));
+                }
+                self.last_tool = Some(tool.clone());
+                ev.push(DomainEvent::ToolStarted {
+                    id: self.id,
+                    tool: tool.clone(),
+                });
+                self.set_status(Working, StatusReason::Hook, now, ev);
+            }
+            Signal::ToolEnd { key, outcome } => {
+                let index = self
+                    .pending_tools
+                    .iter()
+                    .position(|(k, _)| k == key)
+                    .expect("filtrado arriba");
+                let (_, tool) = self.pending_tools.remove(index);
+                ev.push(DomainEvent::ToolFinished {
+                    id: self.id,
+                    tool,
+                    outcome: *outcome,
+                });
+                if matches!(self.status.kind, Working | Waiting) {
+                    self.set_status(Working, StatusReason::Hook, now, ev);
+                }
+            }
+            Signal::AwaitingInput => {
+                if self.status.kind == Working {
+                    self.set_status(Waiting, StatusReason::Hook, now, ev);
+                }
+            }
+            Signal::Stop => {
+                self.pending_tools.clear();
+                if matches!(self.status.kind, Working | Waiting) {
+                    self.set_status(Idle, StatusReason::Hook, now, ev);
+                }
+            }
+            Signal::Failure => {
+                self.pending_tools.clear();
+                self.set_status(Error, StatusReason::Failure, now, ev);
+            }
+            Signal::SessionEnd => {
+                self.pending_tools.clear();
+                self.exit_expected = true;
+                self.set_status(Idle, StatusReason::Hook, now, ev);
+            }
+            Signal::Unknown { .. } => unreachable!("filtrado arriba"),
+        }
+    }
+
+    fn on_tick(&mut self, policy: &StalePolicy, now: Timestamp, ev: &mut Events) {
+        if self.status.kind != StatusKind::Working {
+            return;
+        }
+        let quiet = now.since(self.last_event_at);
+        let limit = if self.pending_tools.is_empty() {
+            policy.idle_after
+        } else {
+            policy.pending_max
+        };
+        if quiet >= limit {
+            self.pending_tools.clear();
+            self.set_status(StatusKind::Idle, StatusReason::Stale, now, ev);
+        }
+    }
+
+    /// `since` solo cambia con el color; la revisión sube si cambia el color o el motivo.
+    fn set_status(
+        &mut self,
+        kind: StatusKind,
+        reason: StatusReason,
+        now: Timestamp,
+        ev: &mut Events,
+    ) {
+        let from = self.status.kind;
+        if from == kind && self.status.reason == reason {
+            return;
+        }
+        if from != kind {
+            self.status.since = now;
+            ev.push(DomainEvent::StatusChanged {
+                id: self.id,
+                from,
+                to: kind,
+                reason,
+                at: now,
+            });
+        }
+        self.status.kind = kind;
+        self.status.reason = reason;
+        self.revision += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::ids::{Pid, ProcessStartTime};
+    use crate::domain::signal::ToolOutcome;
+
+    const T0: Timestamp = Timestamp(1_000_000);
+
+    fn t(ms: u64) -> Timestamp {
+        Timestamp(T0.0 + ms)
+    }
+
+    fn agent() -> Agent {
+        Agent::new(
+            DetectedAgent {
+                provider: Provider::Claude,
+                identity: ProcessIdentity {
+                    pid: Pid(4242),
+                    start_time: ProcessStartTime(900_000),
+                    uid: 501,
+                    cmd_fingerprint: 7,
+                },
+                cwd: WorkingDir::new("/Users/dev/kiti"),
+            },
+            T0,
+        )
+    }
+
+    fn sig(a: &mut Agent, s: Signal, at: Timestamp) -> Events {
+        a.apply(&AgentInput::Signal(s), at)
+    }
+
+    fn tool_start(key: &str, tool: &str) -> Signal {
+        Signal::ToolStart {
+            key: ToolUseKey::new(key),
+            tool: ToolName::new(tool),
+        }
+    }
+
+    fn tool_end(key: &str, outcome: ToolOutcome) -> Signal {
+        Signal::ToolEnd {
+            key: ToolUseKey::new(key),
+            outcome,
+        }
+    }
+
+    fn tick(a: &mut Agent, at: Timestamp) -> Events {
+        a.apply(&AgentInput::Tick(StalePolicy::default()), at)
+    }
+
+    fn working() -> Agent {
+        let mut a = agent();
+        sig(&mut a, Signal::PromptSubmit, t(0));
+        a
+    }
+
+    fn kind(a: &Agent) -> StatusKind {
+        a.status().kind
+    }
+
+    fn removed(ev: &Events) -> bool {
+        ev.iter()
+            .any(|e| matches!(e, DomainEvent::AgentRemoved { .. }))
+    }
+
+    #[test]
+    fn nace_en_gris_por_arranque() {
+        let a = agent();
+        assert_eq!(a.status().reason, StatusReason::Startup);
+        assert_eq!(a.light(), TrafficLight::Gray);
+        assert_eq!(a.id().to_string(), "claude:4242:900000");
+    }
+
+    #[test]
+    fn permission_request_pone_amarillo_y_stop_vuelve_a_gris() {
+        let mut a = working();
+        let ev = sig(&mut a, Signal::AwaitingInput, t(10));
+        assert_eq!(a.light(), TrafficLight::Yellow);
+        assert_eq!(
+            ev[..],
+            [DomainEvent::StatusChanged {
+                id: a.id(),
+                from: StatusKind::Working,
+                to: StatusKind::Waiting,
+                reason: StatusReason::Hook,
+                at: t(10),
+            }]
+        );
+        sig(&mut a, Signal::Stop, t(20));
+        assert_eq!(a.light(), TrafficLight::Gray);
+    }
+
+    #[test]
+    fn prompt_y_tool_start_ponen_verde_desde_idle_waiting_y_error() {
+        for prepare in [
+            |_: &mut Agent| {},
+            |a: &mut Agent| {
+                sig(a, Signal::PromptSubmit, t(1));
+                sig(a, Signal::AwaitingInput, t(2));
+            },
+            |a: &mut Agent| {
+                sig(a, Signal::Failure, t(1));
+            },
+        ] {
+            let mut a = agent();
+            prepare(&mut a);
+            sig(&mut a, tool_start("k1", "Bash"), t(5));
+            assert_eq!(kind(&a), StatusKind::Working);
+            assert_eq!(a.last_tool().map(ToolName::as_str), Some("Bash"));
+        }
+    }
+
+    #[test]
+    fn un_fallo_de_herramienta_no_es_rojo() {
+        let mut a = working();
+        sig(&mut a, tool_start("k1", "Edit"), t(1));
+        let ev = sig(&mut a, tool_end("k1", ToolOutcome::Failed), t(2));
+        assert_eq!(kind(&a), StatusKind::Working);
+        assert_eq!(a.pending_tools().len(), 0);
+        assert!(ev.contains(&DomainEvent::ToolFinished {
+            id: a.id(),
+            tool: ToolName::new("Edit"),
+            outcome: ToolOutcome::Failed,
+        }));
+    }
+
+    #[test]
+    fn tool_end_sin_su_tool_start_se_ignora() {
+        let mut a = working();
+        sig(&mut a, Signal::AwaitingInput, t(1));
+        let rev = a.revision();
+        let ev = sig(&mut a, tool_end("huerfana", ToolOutcome::Ok), t(2));
+        assert!(ev.is_empty());
+        assert_eq!(kind(&a), StatusKind::Waiting);
+        assert_eq!(a.revision(), rev);
+    }
+
+    #[test]
+    fn awaiting_input_solo_cuenta_desde_working() {
+        let mut a = agent();
+        sig(&mut a, Signal::AwaitingInput, t(1));
+        assert_eq!(kind(&a), StatusKind::Idle);
+    }
+
+    #[test]
+    fn stop_vacia_las_herramientas_abiertas() {
+        let mut a = working();
+        sig(&mut a, tool_start("k1", "Bash"), t(1));
+        sig(&mut a, tool_start("k2", "Read"), t(2));
+        sig(&mut a, Signal::Stop, t(3));
+        assert_eq!(kind(&a), StatusKind::Idle);
+        assert_eq!(a.pending_tools().len(), 0);
+    }
+
+    #[test]
+    fn failure_es_rojo_hasta_el_siguiente_prompt() {
+        let mut a = working();
+        sig(&mut a, Signal::Failure, t(1));
+        assert_eq!(a.status().reason, StatusReason::Failure);
+        assert_eq!(a.light(), TrafficLight::Red);
+        sig(&mut a, Signal::Stop, t(2));
+        assert_eq!(kind(&a), StatusKind::Error);
+        sig(&mut a, Signal::PromptSubmit, t(3));
+        assert_eq!(kind(&a), StatusKind::Working);
+    }
+
+    #[test]
+    fn process_gone_sin_causa_es_dead_y_absorbente() {
+        let mut a = working();
+        let ev = a.apply(&AgentInput::ProcessGone, t(1));
+        assert_eq!(kind(&a), StatusKind::Dead);
+        assert_eq!(a.status().reason, StatusReason::ProcessGone);
+        assert!(ev.contains(&DomainEvent::AgentExited {
+            id: a.id(),
+            expected: false,
+        }));
+        assert!(!removed(&ev));
+        for s in [Signal::PromptSubmit, Signal::SessionStart, Signal::Stop] {
+            assert!(sig(&mut a, s, t(2)).is_empty());
+            assert_eq!(kind(&a), StatusKind::Dead);
+        }
+    }
+
+    #[test]
+    fn session_end_hace_esperada_la_salida() {
+        let mut a = working();
+        sig(&mut a, Signal::SessionEnd, t(1));
+        assert_eq!(kind(&a), StatusKind::Idle);
+        let ev = a.apply(&AgentInput::ProcessGone, t(2));
+        assert!(ev.contains(&DomainEvent::AgentExited {
+            id: a.id(),
+            expected: true,
+        }));
+        assert!(removed(&ev));
+    }
+
+    #[test]
+    fn session_start_olvida_un_session_end_anterior() {
+        let mut a = working();
+        sig(&mut a, Signal::SessionEnd, t(1));
+        let ev = sig(&mut a, Signal::SessionStart, t(2));
+        assert!(ev.contains(&DomainEvent::SessionStarted { id: a.id() }));
+        a.apply(&AgentInput::ProcessGone, t(3));
+        assert_eq!(kind(&a), StatusKind::Dead);
+    }
+
+    #[test]
+    fn kill_pedido_hace_esperada_la_salida() {
+        let mut a = working();
+        a.apply(&AgentInput::KillRequested, t(1));
+        let ev = a.apply(&AgentInput::ProcessGone, t(2));
+        assert!(removed(&ev));
+    }
+
+    #[test]
+    fn since_solo_cambia_cuando_cambia_el_color() {
+        let mut a = working();
+        sig(&mut a, tool_start("k1", "Read"), t(10));
+        assert_eq!(a.status().since, t(0));
+        sig(&mut a, Signal::AwaitingInput, t(30));
+        assert_eq!(a.status().since, t(30));
+    }
+
+    #[test]
+    fn working_sin_senales_30_s_pasa_a_idle_por_stale() {
+        let mut a = working();
+        tick(&mut a, t(29_999));
+        assert_eq!(kind(&a), StatusKind::Working);
+        tick(&mut a, t(30_000));
+        assert_eq!(kind(&a), StatusKind::Idle);
+        assert_eq!(a.status().reason, StatusReason::Stale);
+    }
+
+    #[test]
+    fn con_herramientas_abiertas_espera_10_min() {
+        let mut a = working();
+        sig(&mut a, tool_start("k1", "Bash"), t(0));
+        tick(&mut a, t(60_000));
+        assert_eq!(kind(&a), StatusKind::Working);
+        tick(&mut a, t(600_000));
+        assert_eq!(kind(&a), StatusKind::Idle);
+        assert_eq!(a.pending_tools().len(), 0);
+    }
+
+    #[test]
+    fn waiting_nunca_caduca() {
+        let mut a = working();
+        sig(&mut a, Signal::AwaitingInput, t(0));
+        tick(&mut a, t(24 * 3_600_000));
+        assert_eq!(kind(&a), StatusKind::Waiting);
+    }
+
+    #[test]
+    fn dead_se_retira_tras_el_ttl() {
+        let mut a = working();
+        a.apply(&AgentInput::ProcessGone, t(0));
+        assert!(!removed(&tick(&mut a, t(59_999))));
+        assert!(removed(&tick(&mut a, t(60_000))));
+    }
+
+    #[test]
+    fn cada_senal_refresca_last_event_at_y_la_revision() {
+        let mut a = working();
+        let rev = a.revision();
+        sig(&mut a, tool_start("k1", "Grep"), t(7));
+        assert_eq!(a.last_event_at(), t(7));
+        assert!(a.revision() > rev);
+    }
+
+    #[test]
+    fn unknown_no_cambia_nada() {
+        let mut a = working();
+        let rev = a.revision();
+        let ev = sig(&mut a, Signal::Unknown { name: "Foo".into() }, t(5));
+        assert!(ev.is_empty());
+        assert_eq!(a.revision(), rev);
+        assert_eq!(a.last_event_at(), t(0));
+    }
+
+    #[test]
+    fn un_tick_sin_cambios_no_toca_la_revision() {
+        let mut a = working();
+        let rev = a.revision();
+        tick(&mut a, t(1_000));
+        assert_eq!(a.revision(), rev);
+    }
+}
