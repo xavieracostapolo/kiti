@@ -11,6 +11,8 @@ pub mod hooks;
 mod killer;
 #[cfg(any(feature = "scanner", feature = "killer"))]
 mod process_read;
+#[cfg(feature = "pty")]
+pub mod pty;
 #[cfg(feature = "scanner")]
 mod scanner;
 pub mod tail;

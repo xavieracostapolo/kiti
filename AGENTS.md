@@ -36,6 +36,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0004](docs/decisiones/0004-integracion-seguridad-observabilidad/README.md) | IPC por Channel y `ts-rs` en `crates/protocol`, mínimo privilegio, HookServer seguro, `tracing`, `mise` y CI |
 | [0005](docs/decisiones/0005-integracion-clis-agentes/README.md) | Contrato con los CLIs: hooks como fuente del semáforo, 8 eventos normalizados, detección por `exe`/`argv` y fixtures |
 | [0006](docs/decisiones/0006-arquitectura-consolidada/README.md) | Arquitectura consolidada: decisiones de los conflictos, dependencias aprobadas y plan del Hito 1 |
+| [0007](docs/decisiones/0007-terminal-embebida/README.md) | Terminal embebida: lanzar agentes desde Kiti en un PTY (`portable-pty`) y verlos con xterm.js; los externos solo muestran un aviso |
 
 ## Decisiones tomadas (no repetir)
 
