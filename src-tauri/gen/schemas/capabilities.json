@@ -1,0 +1,1 @@
+{"main":{"identifier":"main","description":"Permisos mínimos para la ventana principal","local":true,"windows":["main"],"permissions":["allow-subscribe","allow-kill-agent","allow-report-ui-metrics","allow-set-debug-stream","allow-ui-log"]}}

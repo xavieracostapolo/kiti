@@ -7,6 +7,7 @@
   ],
   "then": [
     { "signal": { "type": "SessionStarted" }, "expect": { "kind": "idle", "reason": "hook" } },
-    { "signal": { "type": "SessionEnded" }, "expect": "removed" }
+    { "signal": { "type": "SessionEnded" }, "expect": { "kind": "idle", "reason": "hook" } },
+    { "signal": { "type": "ProcessGone" }, "expect": "removed" }
   ]
 }

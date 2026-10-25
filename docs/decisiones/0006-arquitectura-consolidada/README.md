@@ -174,6 +174,89 @@ mise run ui:visual                       # solo macOS: --project=webkit-visual
 mise run ui:perf                         # 50 agentes, headed
 ```
 
+## Plan del Hito 2: "Shell Tauri y core con simulador"
+
+**Alcance:** `crates/core` (dominio, reducer, registro, coalescedor, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands, capabilities, CSP, `tracing` y diálogo nativo) y `TauriTransport`. Sin procesos reales, HookServer ni forwarder.
+
+**Decisiones del arranque (2026-10-24):**
+
+1. **`SessionEnded` deja de eliminar.** El fixture `salidas.json` y el simulador TS decían `SessionEnded → removed`, en contra del ADR 0002 §3. Con `/clear`, Claude emite `SessionEnd` sin que muera el proceso. Ahora `SessionEnded → idle` (salida esperada) y el `ProcessGone` posterior elimina el agente.
+2. **Plugins:** solo `tauri-plugin-dialog` (confirmación nativa). `tauri-plugin-log` y `tauri-plugin-single-instance` pasan al Hito 4, cuando haya HookServer.
+3. **Icono:** pixel art propio, pasado por `tauri icon`.
+
+**Orden TDD** (rojo → verde → refactor):
+
+1. Fixture `salidas.json` y simulador TS alineados con el ADR 0002.
+2. Esqueleto de `kiti-core` con *features* (`sim`, `testing`); compila con `--no-default-features`.
+3. Dominio: value objects, `Signal`, `Observation` y `Agent::apply`, con las filas del ADR 0002 §3, el runner de conformidad y proptest.
+4. `StalePolicy` vía `Tick`: 30 s, 10 min con herramientas abiertas y TTL de `Dead` de 60 s.
+5. `AgentRegistry` y `RegistryDiff`; `application::projection` hacia `kiti_protocol`.
+6. `Coalescer` y `Runtime` (actor) con `tokio::test(start_paused)`: `Snapshot` primero, `seq` monótono, ≤ 1 `Diff` cada 100 ms.
+7. `application::telemetry` y `CoreMetrics` a 1 Hz solo con el stream de debug.
+8. `sim::SimFleet`: ChaCha8 por agente, `profiles.json`, determinismo y `KITI_SIM=N:SEED[:freeze]`.
+9. Cerrar oficina: port `AgentKiller` con `SimKiller`.
+10. `src-tauri`: `AppManifest`, capability sin `core:default`, CSP, commands finos, diálogo nativo y `tracing`.
+11. `TauriTransport` con `@tauri-apps/api/mocks`; `main.tsx` lo carga con `import()`.
+12. Medición de RAM y CPU con 20 y 50 agentes.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿Cuánta RAM usa la app con 20 agentes? | `core.rss_bytes` + `footprint` de la app y su WebContent | 100–150 MB en total |
+| ¿CPU en reposo? | `core.cpu_percent` con `KITI_SIM=20:42:freeze` | < 1 % |
+| ¿Cuánto tarda una observación en salir por el Channel? | `core.ingest_to_send_ms` | p95 < 120 ms |
+| ¿Y en pintarse? | `ui.ingest_to_paint_ms` | p95 < 200 ms |
+| ¿Se respeta la coalescencia? | `core.ipc_flush_total`, `core.ipc_batch_bytes`, span `ipc.flush` | ≤ 10 Diff/s y 0 Diff sin cambios |
+| ¿Core y simulador TS dicen lo mismo? | Suite de conformidad | 100 % en Rust y TS |
+| ¿Se pierden diffs? | `ui.resync_total` | 0 en 10 min |
+| ¿El panel cuesta algo cerrado? | `core.metrics_msgs_total` | 0 sin `set_debug_stream(true)` |
+| ¿El reducer escala? | criterion `registry/*` | < 1 µs por observación y < 50 µs por flush con 50 agentes |
+
+Logs y spans: `app.start`, `ipc.subscribe`, `ipc.flush`, `sim.tick`, `kill.audit` y un resumen de métricas cada 60 s, en JSON con rotación diaria. Se verifica con `tracing-test`, `tokio::time` pausado, Vitest y el panel de debug de la app.
+
+**Criterios de aceptación**
+
+1. `mise run app:dev` abre Kiti con 20 oficinas de `SimFleet` (`KITI_SIM=20:42`), semáforos que cambian, 0 errores de consola y 0 violaciones de CSP.
+2. Conformidad al 100 % en Rust y en TS.
+3. `kiti-core` compila con `--no-default-features` y `cargo tree -p kiti-core` no contiene `tauri`.
+4. Cerrar una oficina pide **un** diálogo nativo: confirmar la quita y cancelar no hace nada.
+5. El panel de debug muestra RSS, CPU, eventos/s y el p95 de `ingest_to_send_ms` de la app real.
+6. RAM y CPU medidas y registradas. Si se supera el presupuesto, se investiga antes del Hito 3.
+7. `mise run check` en verde, con clippy y los tests de `kiti-core` y `src-tauri`.
+
+## Resultados del Hito 2
+
+**Revisión del trabajo de Gemini (2026-10-24).** El core llegó bien diseñado y probado, pero con fallos que la revisión y la ejecución real destaparon:
+
+| Problema | Corrección |
+|---|---|
+| La app entraba en pánico al arrancar (`tokio::spawn` fuera de un runtime) | `Runtime::new` devuelve el actor; `src-tauri` lo arranca en `setup` sobre el runtime de Tauri |
+| El runtime leía `SystemTime` y `SimFleet` usaba el epoch del fixture: todos los agentes en verde pasaban a gris cada 2 s | Toda la hora sale del port `Clock` (`SystemClock`, `ManualClock`); `SimFleet::starting_at` alinea el reloj virtual con el real |
+| `handle_kill` esperaba la gracia de 5 s dentro del actor y congelaba los diffs | El kill corre en otra tarea y vuelve con `KillFinished` |
+| Un crash de `SimFleet` no emitía `ProcessGone`: el rojo de "caído" nunca aparecía | `step()` devuelve `AgentInput` e incluye `ProcessGone` |
+| `AgentId` desconocido se trataba como Gemini | `AgentId: FromStr` validado; un id inválido da `NotFound` |
+| `freezePrototype: true` rompía el bundle de Pixi y la UI no arrancaba | Desactivado (Pixi asigna sobre prototipos al cargar) |
+| El `EventSystem` de Pixi mantenía un rAF a 60 Hz en reposo (5,4 % de CPU) | `Ticker.system.stop()`; test E2E de 0 llamadas a rAF en reposo |
+| Diálogo nativo bloqueante, logs sin JSON ni rotación, panel de debug sin datos del core | `show` asíncrono, `tracing-appender` diario en JSON, `ui_log`, `SelfMonitor` y `set_debug_stream` desde el panel |
+
+**Medición** (`mise run app:measure`, release, MacBook Air, 15 s de calentamiento y 15 s de muestra). La RAM es `footprint`, lo que muestra el Monitor de Actividad. La CPU es el tiempo de CPU consumido en la ventana.
+
+| Escenario | kiti-app | WebContent | GPU | Networking | **Total RAM** | **CPU** |
+|---|---|---|---|---|---|---|
+| 0 agentes, reposo | 32 MB | 135 MB | 17 MB | 6 MB | **190 MB** | 0 % |
+| 20 agentes, reposo (`freeze`) | 32 MB | 142 MB | 17 MB | 6 MB | **197 MB** | **0–0,06 %** |
+| 20 agentes, activa | 32 MB | 155 MB | 81 MB | 6 MB | **274 MB** | 4,0 % |
+| 50 agentes, activa | 33 MB | 166 MB | 83 MB | 6 MB | **288 MB** | 7,0 % |
+
+Lectura:
+
+- **CPU en reposo:** cumple (< 1 %).
+- **RAM:** la estimación de 100–150 MB no era realista para WKWebView con WebGL. La base sin agentes ya son 190 MB y el core en Rust ocupa solo 32 MB. Cada agente cuesta ~0,5–1 MB; el proceso GPU pasa de 17 a ~80 MB mientras hay animación.
+- **Presupuesto revisado, aceptado por el usuario (2026-10-24):** ≤ 220 MB en reposo y ≤ 320 MB activa con 50 agentes (medido: 197 y 288 MB).
+- **Palancas si hace falta bajar:** destruir el renderer con la ventana oculta (Hito 7, bandeja), canvas a resolución 1 en lugar de 2 (texto menos nítido) y atlas de texturas más pequeños.
+- Pendiente de la ficha: `core.ingest_to_send_ms` como histograma propio (hoy se mide el tiempo de publicación) y `ui.resync_total`.
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.

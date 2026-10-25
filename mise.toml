@@ -31,6 +31,23 @@ run = "pnpm -C ui shots"
 description = "Benchmark de 50 agentes (local, WebKit headed)"
 run = "pnpm -C ui exec playwright test --project=webkit-perf"
 
+[tasks."app:dev"]
+description = "Abre la app nativa (Tauri) con 20 agentes simulados; KITI_SIM=N:SEED[:freeze] para cambiarlo"
+run = "pnpm exec tauri dev"
+
+[tasks."app:build"]
+description = "Compila la app nativa en release sin empaquetar: target/release/kiti-app"
+run = "pnpm exec tauri build --no-bundle"
+
+[tasks."app:measure"]
+description = "RAM y CPU de la app release con 20 (reposo y activa) y 50 agentes simulados"
+depends = ["app:build"]
+run = [
+  "node scripts/measure.mjs --sim=20:42:freeze",
+  "node scripts/measure.mjs --sim=20:42",
+  "node scripts/measure.mjs --sim=50:1",
+]
+
 [tasks.deny]
 description = "Advisories, licencias y orígenes de las dependencias Rust (cargo-deny)"
 run = "cargo deny check"
@@ -42,6 +59,7 @@ run = [
   "cargo deny check",
   "cargo clippy --workspace --all-targets -- -D warnings",
   "cargo test --workspace",
+  "cargo build -p kiti-core --no-default-features",
   "pnpm -C ui exec biome ci .",
   "pnpm -C ui typecheck",
   "pnpm -C ui test --coverage",

@@ -38,7 +38,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
       {transport.killConfirmation === "in-app" && (
         <CloseOfficeDialog store={store} killAgent={killAgent} />
       )}
-      <DebugPanel metrics={metrics} />
+      <DebugPanel metrics={metrics} store={store} transport={transport} />
     </Profiler>
   );
 }

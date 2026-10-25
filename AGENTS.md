@@ -16,15 +16,15 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 1, "Oficina visual simulada", **cerrado** (2026-10-24) en la rama `hito-1-oficina-visual`: el usuario aprobó el estilo y las baselines `webkit-darwin` están fijadas en `ui/e2e/__screenshots__/` (ver [Roadmap](#roadmap) y el [plan del ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#plan-del-hito-1-oficina-visual-simulada)).
-- **Hecho:** `kiti-protocol` con tipos TS generados, simulador TS con conformidad compartida, dominio (layout, cámara, LOD), store, mundo Pixi con render bajo demanda, paneles React, telemetría, E2E y benchmark.
-- **Pendientes que deja el Hito 1** (desviaciones del plan, a resolver en iteraciones siguientes):
+- **Fase:** Hito 3, "Procesos reales", en curso en la rama `hito-3-procesos-reales`. Hitos 1 y 2 cerrados y fusionados en `main` (2026-10-24); el usuario aceptó el presupuesto de RAM revisado.
+- **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
+- **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
+- **Pendientes que arrastra el proyecto:**
   - La oficina se dibuja de forma procedural (`world/officeTemplate.ts`); los tilesheets de Kenney, el `.tmj` de Tiled y `domain/tiles` quedan pendientes.
   - Las capturas usan `steps=357` en lugar de `steps=120`: con `seed=42` es el primer paso en el que conviven los cinco colores.
-  - `ui.react_commits_total` sube cuando cambian los contadores de la barra superior, no con cada diff.
-  - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales: 601 frames en 10 s) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
-  - Faltan `lefthook`, commitlint, Renovate, `deny.toml` y el workflow de CI.
-- **Siguiente paso:** Hito 2, shell Tauri y core con simulador. Cualquier cambio visual se itera con `mise run ui:shots` y, con el visto bueno del usuario, se refijan las baselines con `pnpm -C ui exec playwright test --project=webkit-visual --update-snapshots`.
+  - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
+  - Falta verificar a mano el diálogo nativo de cierre (Playwright no lo controla).
+- **Siguiente paso:** Hito 3, procesos reales (ver [Roadmap](#roadmap)).
 
 ## Índice de ADRs
 
@@ -142,7 +142,7 @@ Verificado en el [ADR 0005](docs/decisiones/0005-integracion-clis-agentes/README
 
 Objetivo: con 20 agentes activos, la app debe ir "como si nada".
 
-- **Reposo:** CPU por debajo del 1 % y RAM de 100–150 MB (estimación; se mide en el Hito 2).
+- **Reposo:** CPU por debajo del 1 % (medido: 0,06 %). RAM: presupuesto ≤ 220 MB en reposo y ≤ 320 MB activa con 50 agentes (medido en el Hito 2: 197, 274 con 20 y 288 MB), de los que ~158 MB son la base de WebKit + WebGL; cada agente añade ~0,5–1 MB.
 - **Backend:**
   - Los JSONL se leen de forma incremental desde el último offset. Nunca se releen completos.
   - `sysinfo` refresca solo cmd, cwd, exe y usuario, con `OnlyIfNotSet`.
@@ -160,7 +160,7 @@ Objetivo: con 20 agentes activos, la app debe ir "como si nada".
 Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md).
 
 - [x] **1. Oficina visual simulada:** `crates/protocol` + `ui/` en el navegador con `SimTransport`. Grilla de 20 oficinas, cámara (zoom, pan, doble clic para enfocar), LOD, culling, semáforos, diálogo de cierre, telemetría y panel de debug. Capturas con Playwright en 3 niveles de zoom.
-- [ ] **2. Shell Tauri y core con simulador:** `src-tauri` (Channel, capabilities, CSP, `tracing`), dominio y reducer de `kiti-core`, `SimFleet` y `TauriTransport`. Medir RAM y CPU.
+- [x] **2. Shell Tauri y core con simulador:** `src-tauri` (Channel, capabilities, CSP, `tracing`), dominio y reducer de `kiti-core`, `SimFleet` y `TauriTransport`. Medir RAM y CPU.
 - [ ] **3. Procesos reales:** `sysinfo`, `classify` con roles y cerrar oficina de verdad, con verificación.
 - [ ] **4. Hooks de Claude Code:** HookServer, token, instalador de hooks, `sessions/<pid>.json` y experimento E1.
 - [ ] **5. Forwarder:** hooks para Codex y Gemini.
@@ -170,7 +170,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 
 ## Pendientes de verificar
 
-- Medir la RAM y la CPU reales en Tauri frente al presupuesto (Hito 2).
+- Probar a mano el diálogo nativo de "Cerrar oficina" en la app (confirmar y cancelar).
 - E1: si Claude muestra avisos en el TUI cuando el hook `http` no conecta (Hito 4, requiere permiso).
 - El `argv` real de Gemini con npx y Homebrew, y su ruta de chats en la 0.65.0.
 - La ruta del cask de Claude y los subcomandos de Codex que no son agentes.
@@ -204,7 +204,10 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run ui:e2e        # Playwright funcional (Chromium)
   mise run ui:visual     # regresión visual (solo macOS, WebKit)
   mise run ui:perf       # 50 agentes, WebKit headed, solo local
-  mise run check         # fmt, clippy, tests Rust, Biome, tsc, Vitest con cobertura y E2E
+  mise run app:dev       # app nativa con 20 agentes simulados (KITI_SIM=N:SEED[:freeze])
+  mise run app:build     # release sin empaquetar: target/release/kiti-app
+  mise run app:measure   # RAM y CPU con 20 y 50 agentes (footprint + tiempo de CPU)
+  mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
 - **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`. En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames` y `bench`. El panel de debug se abre con `Cmd+Shift+D`.
