@@ -5,7 +5,7 @@ import { parseParams } from "./dev/params";
 import { App } from "./panels/App";
 import "./styles.css";
 import { createKitiStore } from "./state/store";
-import { createMetrics } from "./telemetry/metrics";
+import { createMetrics, toUiMetrics } from "./telemetry/metrics";
 import { SimTransport } from "./transport/sim/SimTransport";
 import type { Transport } from "./transport/Transport";
 import type { WorldHandle } from "./world/World";
@@ -53,9 +53,22 @@ async function bootstrap() {
           console.warn(JSON.stringify({ event: "transport.resync" }));
           transport.dispose();
           connect();
+
+          // Resumen de la UI al core cada 2 s (no-op en Sim). Solo envía números: no pinta nada.
+          const REPORT_MS = 2000;
+          let lastFrames = 0;
+          setInterval(() => {
+            const snap = metrics.snapshot();
+            const frames = snap["ui.frames_total"];
+            transport.reportUiMetrics(toUiMetrics(snap, frames - lastFrames, REPORT_MS));
+            lastFrames = frames;
+          }, REPORT_MS);
         }
       })
-      .then((hello) => console.info(JSON.stringify({ event: "transport.connected", ...hello })));
+      .then((hello) => {
+        store.getState().setSource(hello.source);
+        console.info(JSON.stringify({ event: "transport.connected", ...hello }));
+      });
   }
   connect();
 

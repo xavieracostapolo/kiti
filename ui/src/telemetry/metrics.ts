@@ -2,6 +2,7 @@
 // Se lee con window.__kiti.metrics() y en el panel de debug.
 
 import type { Lod } from "../domain/lod";
+import type { UiMetrics } from "../protocol";
 
 /** Ventana deslizante de las últimas `size` muestras, con percentiles por rango más cercano. */
 export class Histogram {
@@ -83,5 +84,25 @@ export function createMetrics(window = 600) {
         "ui.ticker_running": gauges.tickerRunning,
       };
     },
+  };
+}
+
+/**
+ * Resumen que la UI envía al core cada 2 s (`reportUiMetrics`, ADR 0004 §3).
+ * `framesInWindow` son los frames pintados en la ventana: con la oficina quieta debe ser 0.
+ */
+export function toUiMetrics(
+  s: MetricsSnapshot,
+  framesInWindow: number,
+  windowMs: number,
+): UiMetrics {
+  return {
+    frameMsP50: s["ui.frame_ms"].p50,
+    frameMsP95: s["ui.frame_ms"].p95,
+    diffToPaintMsP50: s["ui.diff_to_paint_ms"].p50,
+    diffToPaintMsP95: s["ui.diff_to_paint_ms"].p95,
+    fps: framesInWindow / (windowMs / 1000),
+    idleFrames: framesInWindow,
+    officesVisible: s["ui.offices_visible"],
   };
 }

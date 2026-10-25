@@ -3,7 +3,7 @@
 
 import { createStore } from "zustand/vanilla";
 import type { Lod } from "../domain/lod";
-import type { AgentId, ServerMsg } from "../protocol";
+import type { AgentId, ServerMsg, Source } from "../protocol";
 import { type AgentsState, applyMsg, EMPTY_AGENTS } from "./agents";
 
 export type ViewState = {
@@ -15,6 +15,9 @@ export type ViewState = {
 export type KitiState = {
   agents: AgentsState;
   view: ViewState;
+  /** De dónde vienen los agentes (Hello.source). `undefined` hasta conectar. */
+  source?: Source;
+  setSource(source: Source): void;
   receive(msg: ServerMsg): void;
   select(id: AgentId | undefined): void;
   requestKill(id: AgentId): void;
@@ -33,6 +36,9 @@ export function createKitiStore() {
   return createStore<KitiState>()((set, get) => ({
     agents: EMPTY_AGENTS,
     view: { lod: "far" },
+    setSource(source) {
+      set({ source });
+    },
     receive(msg) {
       const agents = applyMsg(get().agents, msg);
       if (agents === get().agents) return;

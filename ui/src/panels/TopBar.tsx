@@ -23,10 +23,16 @@ export function TopBar({ store }: { store: KitiStore }) {
     store,
     useShallow((st) => countsByKind(st.agents.agents)),
   );
+  const simulated = useStore(store, (st) => st.source === "sim");
   const total = ORDER.reduce((sum, k) => sum + counts[k], 0);
   return (
     <header className={s.topbar}>
       <span className={s.brand}>KITI</span>
+      {simulated && (
+        <span className={s.simBadge} title="Agentes generados por el simulador, no procesos reales">
+          SIMULADO
+        </span>
+      )}
       <span>{total} agentes</span>
       <span className={s.counts}>
         {ORDER.map((k) => (

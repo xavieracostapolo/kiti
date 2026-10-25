@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createMetrics, Histogram } from "./metrics";
+import { createMetrics, Histogram, toUiMetrics } from "./metrics";
 
 describe("Histogram", () => {
   it("percentiles por rango más cercano", () => {
@@ -39,6 +39,25 @@ describe("createMetrics", () => {
       "ui.offices_visible": 7,
       "ui.lod": "mid",
       "ui.ticker_running": false,
+    });
+  });
+});
+
+describe("toUiMetrics", () => {
+  it("resume la telemetría en el DTO UiMetrics que recibe el core cada 2 s", () => {
+    const m = createMetrics();
+    m.frame(4, 16);
+    m.frame(6, 17);
+    m.diffToPaint(12);
+    m.setGauges({ officesVisible: 7 });
+    expect(toUiMetrics(m.snapshot(), 2, 2000)).toEqual({
+      frameMsP50: 4,
+      frameMsP95: 6,
+      diffToPaintMsP50: 12,
+      diffToPaintMsP95: 12,
+      fps: 1,
+      idleFrames: 2,
+      officesVisible: 7,
     });
   });
 });

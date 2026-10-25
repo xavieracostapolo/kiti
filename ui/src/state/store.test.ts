@@ -47,4 +47,11 @@ describe("store", () => {
     store.getState().setLod("mid");
     expect(calls).toBe(1);
   });
+
+  it("guarda la fuente de datos del Hello para avisar si es simulada", () => {
+    const store = createKitiStore();
+    expect(store.getState().source).toBeUndefined();
+    store.getState().setSource("sim");
+    expect(store.getState().source).toBe("sim");
+  });
 });
