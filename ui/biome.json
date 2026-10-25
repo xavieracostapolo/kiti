@@ -1,0 +1,30 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
+  "files": {
+    "includes": ["**", "!src/protocol/generated/**", "!.shots/**", "!test-results/**", "!playwright-report/**", "!coverage/**"]
+  },
+  "formatter": { "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "linter": {
+    "rules": { "recommended": true }
+  },
+  "overrides": [
+    {
+      "includes": ["src/domain/**", "src/state/**", "src/telemetry/**", "src/transport/sim/**"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "pixi.js": "Solo world/ importa pixi.js (ADR 0003)",
+                  "react": "domain/state/telemetry/sim no dependen de React (ADR 0003)"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
