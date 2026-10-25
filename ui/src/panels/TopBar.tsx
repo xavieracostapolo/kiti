@@ -4,15 +4,8 @@ import type { StatusKind } from "../protocol";
 import { countsByKind } from "../state/agents";
 import type { KitiStore } from "../state/store";
 import { STATUS_COLOR } from "../world/palette";
+import { STATUS_LABEL as LABEL } from "./labels";
 import s from "./panels.module.css";
-
-const LABEL: Record<StatusKind, string> = {
-  working: "trabajando",
-  waiting: "esperando",
-  idle: "inactivo",
-  error: "error",
-  dead: "caído",
-};
 
 const ORDER: StatusKind[] = ["working", "waiting", "idle", "error", "dead"];
 

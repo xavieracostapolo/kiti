@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use super::agent::{Agent, AgentInput, DetectedAgent, Events, SessionActivity};
 use super::events::DomainEvent;
+use super::ids::ToolName;
 use super::ids::{AgentId, Pid, Provider, SessionId, Timestamp};
 use super::signal::Signal;
 use super::stale::StalePolicy;
@@ -239,6 +240,14 @@ impl AgentRegistry {
             }
         }
         events
+    }
+
+    /// Última herramienta del transcript de una sesión ya enlazada; si no lo está, se ignora.
+    pub fn transcript(&mut self, session: &SessionId, tool: &ToolName, now: Timestamp) -> Events {
+        match self.sessions.get(session).copied() {
+            Some(id) => self.apply(&id, &AgentInput::TranscriptTool(tool.clone()), now),
+            None => Events::new(),
+        }
     }
 
     fn expire_pending(&mut self, now: Timestamp) {
@@ -673,5 +682,24 @@ mod tests {
             Timestamp(2),
         );
         assert_eq!(kind_of(&reg, &claude), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn el_transcript_llega_por_la_sesion_enlazada() {
+        let mut reg = AgentRegistry::new();
+        let a = claude_at(1, "/w/x");
+        reg.reconcile(std::slice::from_ref(&a), Timestamp(10));
+        reg.transcript(&sid("s"), &ToolName::new("Read"), Timestamp(11));
+        assert_eq!(
+            reg.get(&id_of(&a)).and_then(|x| x.last_tool().cloned()),
+            None,
+            "sin enlace"
+        );
+        reg.session_file(Provider::Claude, Pid(1), &sid("s"), None, Timestamp(12));
+        reg.transcript(&sid("s"), &ToolName::new("Read"), Timestamp(13));
+        assert_eq!(
+            reg.get(&id_of(&a)).and_then(|x| x.last_tool().cloned()),
+            Some(ToolName::new("Read"))
+        );
     }
 }

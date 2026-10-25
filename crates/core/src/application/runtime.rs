@@ -12,8 +12,8 @@ use tokio::time::{Instant, interval};
 use crate::application::projection::{project_diff, project_snapshot};
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Pid, Provider, StalePolicy,
-    Timestamp,
+    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Pid, Provider, SessionId,
+    StalePolicy, Timestamp, ToolName,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
@@ -43,6 +43,8 @@ pub enum RuntimeCommand {
     Reconcile {
         detected: Vec<DetectedAgent>,
         sessions: Vec<SessionFile>,
+        /// Última herramienta nueva de cada transcript.
+        transcripts: Vec<(SessionId, ToolName)>,
         now: Timestamp,
     },
     /// Un hook ya traducido por la ACL de su CLI.
@@ -102,6 +104,7 @@ impl RuntimeHandle {
         &self,
         detected: Vec<DetectedAgent>,
         sessions: Vec<SessionFile>,
+        transcripts: Vec<(SessionId, ToolName)>,
         now: Timestamp,
     ) {
         let _ = self
@@ -109,6 +112,7 @@ impl RuntimeHandle {
             .send(RuntimeCommand::Reconcile {
                 detected,
                 sessions,
+                transcripts,
                 now,
             })
             .await;
@@ -305,6 +309,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             RuntimeCommand::Reconcile {
                 detected,
                 sessions,
+                transcripts,
                 now,
             } => {
                 let mut events = self.registry.reconcile(&detected, now);
@@ -316,6 +321,9 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                         sf.activity,
                         now,
                     ));
+                }
+                for (session, tool) in &transcripts {
+                    self.registry.transcript(session, tool, now);
                 }
                 log_status_changes(&events);
                 for ev in events {

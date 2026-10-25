@@ -197,7 +197,7 @@ async fn de_extremo_a_extremo_un_hook_http_pone_verde_su_oficina() {
         cwd: WorkingDir::new("/Users/dev/kiti"),
     };
     runtime
-        .reconcile(vec![agent], vec![], Timestamp(10_000))
+        .reconcile(vec![agent], vec![], vec![], Timestamp(10_000))
         .await;
     let msgs = Arc::new(Mutex::new(Vec::new()));
     runtime.subscribe(Collect(msgs.clone())).await.unwrap();

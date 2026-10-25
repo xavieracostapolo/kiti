@@ -30,6 +30,8 @@ pub enum AgentInput {
     Tick(StalePolicy),
     /// Solo Claude: `status` de `~/.claude/sessions/<pid>.json`. Segunda fuente tras los hooks.
     SessionFile(SessionActivity),
+    /// Última herramienta vista en el transcript. Solo enriquece: no cambia el color.
+    TranscriptTool(ToolName),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -150,6 +152,12 @@ impl Agent {
             AgentInput::KillRequested => self.kill_requested = true,
             AgentInput::Tick(policy) => self.on_tick(policy, now, &mut ev),
             AgentInput::SessionFile(activity) => self.on_session_file(*activity, now, &mut ev),
+            AgentInput::TranscriptTool(tool) => {
+                if self.last_tool.as_ref() != Some(tool) {
+                    self.last_tool = Some(tool.clone());
+                    self.revision += 1;
+                }
+            }
         }
         ev
     }
@@ -618,5 +626,24 @@ mod tests {
         let rev = a.revision();
         assert!(session_file(&mut a, SessionActivity::Idle, t(1)).is_empty());
         assert_eq!(a.revision(), rev);
+    }
+
+    #[test]
+    fn el_transcript_solo_actualiza_la_ultima_herramienta() {
+        let mut a = agent();
+        let rev = a.revision();
+        let ev = a.apply(&AgentInput::TranscriptTool(ToolName::new("Grep")), t(5));
+        assert!(ev.is_empty(), "no cambia el semáforo");
+        assert_eq!(kind(&a), StatusKind::Idle);
+        assert_eq!(a.last_tool().map(ToolName::as_str), Some("Grep"));
+        assert!(a.revision() > rev, "la UI debe recibirlo");
+        assert_eq!(
+            a.last_event_at(),
+            T0,
+            "no cuenta como actividad para la caducidad"
+        );
+        let rev = a.revision();
+        a.apply(&AgentInput::TranscriptTool(ToolName::new("Grep")), t(6));
+        assert_eq!(a.revision(), rev, "repetida no genera diff");
     }
 }

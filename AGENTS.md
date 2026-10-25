@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hito 5, "Forwarder para Codex y Gemini", implementado en la rama `hito-5-codex-gemini`. Hitos 1 a 4 fusionados en `main`. Codex y Gemini CLI no están instalados en la máquina del usuario: sus hooks se instalan a mano (`mise run hooks:install-codex` / `hooks:install-gemini`). Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-5).
+- **Fase:** Hito 6, "Transcripts y panel lateral", implementado en la rama `hito-6-transcripts-panel`. Hitos 1 a 5 fusionados en `main`. Resultados en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-6).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -164,7 +164,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **3. Procesos reales:** `sysinfo`, `classify` con roles y cerrar oficina de verdad, con verificación.
 - [x] **4. Hooks de Claude Code:** HookServer, token, instalador de hooks, `sessions/<pid>.json` y experimento E1.
 - [x] **5. Forwarder:** hooks para Codex y Gemini.
-- [ ] **6. Tailer de transcripts** y panel lateral con la última herramienta, el cwd y el último evento.
+- [x] **6. Tailer de transcripts** y panel lateral con la última herramienta, el cwd y el último evento.
 - [ ] **7. Barra de menú y bandeja**, y pausa del render con la ventana oculta.
 - [ ] **Después:** terminal embebida (`@xterm/xterm`), soporte para Windows y lanzar agentes desde Kiti.
 

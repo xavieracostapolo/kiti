@@ -13,6 +13,7 @@ mod killer;
 mod process_read;
 #[cfg(feature = "scanner")]
 mod scanner;
+pub mod tail;
 
 pub use clock::SystemClock;
 #[cfg(feature = "killer")]
