@@ -11,15 +11,16 @@ use kiti_core::adapters::tmux::Tmux;
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
-/// tmux con un socket único; mata su servidor al soltarse.
-struct Fixture(Tmux);
+/// tmux con un socket único; mata su servidor y borra el archivo del socket al soltarse.
+struct Fixture(Tmux, String);
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let socket = self.0.socket_path();
         self.0.kill_server();
-        // tmux deja el archivo del socket en /tmp/tmux-<uid>/: los de test se borran.
-        if let Some(path) = socket {
+        // tmux deja el archivo en /tmp/tmux-<uid>/ aunque el servidor ya haya terminado.
+        use std::os::unix::fs::MetadataExt;
+        if let Some(uid) = std::env::var_os("HOME").and_then(|h| std::fs::metadata(h).ok()) {
+            let path = format!("/tmp/tmux-{}/{}", uid.uid(), self.1);
             let _ = std::fs::remove_file(path);
         }
     }
@@ -31,7 +32,7 @@ fn tmux() -> Option<Fixture> {
         std::process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     );
-    Tmux::detect(&socket, None).map(Fixture)
+    Tmux::detect(&socket, None).map(|t| Fixture(t, socket))
 }
 
 fn until(cond: impl Fn() -> bool) -> bool {
