@@ -21,7 +21,7 @@ Con varios agentes abiertos, el usuario quiere saber cuándo uno lo necesita sin
   - `StatusChanged` a `waiting` → `Permission`.
   - De trabajando a `idle` por hook o archivo de sesión, tras un turno de **15 s o más** → `Finished`. El turno empieza en el primer `working` desde el último `idle`; esperar un permiso no lo reinicia. Un `idle` por silencio (`stale`) no cuenta como terminar.
   - `StatusChanged` a `error` → `Failed`.
-  - `AgentExited { expected: false }` → `Crashed`. Cerrar una oficina o un `SessionEnd` no avisan.
+  - `AgentExited { expected: false }` → `Crashed`, solo si el agente llegó a trabajar (o a esperar, o a fallar) o llevaba vivo **60 s o más**. Cerrar una oficina o un `SessionEnd` no avisan.
   - **Antirrebote:** el mismo aviso para el mismo agente, como mucho uno cada 30 s.
 - **`ports::AlertSink`** recibe `AlertNotice`: tipo, agente, proveedor, proyecto, `cwd` y **título** de la conversación. Nunca recibe el pedido del usuario.
 - **`application::alert_text`** arma el texto. Título: «Claude pide permiso», «Claude terminó», «Claude falló» o «Claude se cerró de forma inesperada». Cuerpo: «thoth-assets · Revisar vulnerabilidades» y, en una subcarpeta, «thoth-assets/api».
@@ -48,6 +48,11 @@ La notificación muestra el nombre del proyecto y el título de la conversación
 | ¿Falló el sistema de notificaciones? | `alert.error` | warn | `error` |
 
 Ningún evento lleva títulos ni pedidos.
+
+## Resultados
+
+- Prueba real: al terminar un turno largo de esta misma sesión llegó «Claude terminó» (`alert.sent`, kind `Finished`).
+- La misma prueba sacó ruido: tres «se cerró de forma inesperada» de procesos `claude` que vivieron segundos sin trabajar (auxiliares lanzados por otra herramienta). De ahí la regla de los 60 s.
 
 ## Límites conocidos
 
