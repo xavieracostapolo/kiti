@@ -307,7 +307,7 @@ Lectura:
 - **Instalador:** con el `settings.json` real del usuario (11 claves y un hook `PreToolUse` propio) añadió un grupo por evento sin tocar lo demás. Hizo backup único en `settings.json.kiti.bak` y conservó los permisos `0600`. `mise run hooks:uninstall` lo revierte.
 - **Correlación:** `sessions/<pid>.json` se aplica solo cuando cambia y si es más reciente que el último hook, porque se lee cada 3 s y puede ir atrasado.
 - **Seguridad del HookServer:** un test por control (Host, Origin/Sec-Fetch, token, JSON, 4 MiB, canal lleno) y un extremo a extremo que comprueba que el prompt nunca sale del core.
-- **E1:** en las pruebas, Kiti se cerró y se reinició varias veces mientras esta sesión de Claude disparaba hooks hacia el puerto cerrado. Resultado pendiente de lo que el usuario vio en su terminal.
+- **E1 (cerrado, 2026-10-24):** Kiti se cerró y reinició varias veces mientras una sesión interactiva de Claude disparaba hooks hacia el puerto cerrado. El usuario no vio avisos en el TUI. Claude se queda con el hook `http` directo, sin forwarder.
 - **Pendiente:** indicador en la UI del estado de los hooks, acción "Regenerar token" y `hook_to_publish_ms` en el panel de debug con tráfico real.
 
 ## Plan del Hito 5: "Forwarder para Codex y Gemini"
