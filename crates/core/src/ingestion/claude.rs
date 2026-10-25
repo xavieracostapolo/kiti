@@ -3,7 +3,9 @@
 use serde::Deserialize;
 
 pub use super::{AclError, HookEvent};
-use crate::domain::{SessionId, Signal, ToolName, ToolOutcome, ToolUseKey};
+use crate::domain::{
+    Pid, SessionActivity, SessionId, Signal, Timestamp, ToolName, ToolOutcome, ToolUseKey,
+};
 
 /// Lista blanca de campos (ADR 0005 §7): `prompt`, `tool_input` y `tool_response` no se leen.
 #[derive(Deserialize)]
@@ -50,6 +52,39 @@ fn to_signal(name: &str, p: &Payload) -> Option<Signal> {
     })
 }
 
+/// Contenido útil de `~/.claude/sessions/<pid>.json`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionFile {
+    pub pid: Pid,
+    pub session: SessionId,
+    /// `status` con su `updatedAt`. `None` si falta o no se reconoce.
+    pub activity: Option<(SessionActivity, Timestamp)>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SessionFilePayload {
+    pid: Option<u32>,
+    session_id: Option<String>,
+    status: Option<String>,
+    updated_at: Option<u64>,
+}
+
+/// Parser tolerante: el esquema no está documentado y puede cambiar entre versiones.
+pub fn parse_session_file(body: &[u8]) -> Option<SessionFile> {
+    let p: SessionFilePayload = serde_json::from_slice(body).ok()?;
+    let activity = match p.status.as_deref() {
+        Some("busy") => Some(SessionActivity::Busy),
+        Some("idle") => Some(SessionActivity::Idle),
+        _ => None,
+    };
+    Some(SessionFile {
+        pid: Pid(p.pid?),
+        session: SessionId::new(p.session_id?),
+        activity: activity.map(|a| (a, Timestamp(p.updated_at.unwrap_or(0)))),
+    })
+}
+
 pub fn parse_hook(body: &[u8]) -> Result<HookEvent, AclError> {
     let p: Payload = serde_json::from_slice(body).map_err(|e| AclError::Json(e.to_string()))?;
     let session = p
@@ -73,7 +108,9 @@ pub fn parse_hook(body: &[u8]) -> Result<HookEvent, AclError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::{Signal, ToolName, ToolOutcome, ToolUseKey};
+    use crate::domain::{
+        Pid, SessionActivity, SessionId, Signal, Timestamp, ToolName, ToolOutcome, ToolUseKey,
+    };
 
     fn parse(json: &str) -> Result<HookEvent, AclError> {
         parse_hook(json.as_bytes())
@@ -207,6 +244,31 @@ mod tests {
             signal(&ev("PreToolUse", r#","tool_name":"Edit""#)),
             Signal::Unknown { .. }
         ));
+    }
+
+    #[test]
+    fn archivo_de_sesion_real() {
+        // Esquema observado en local (ADR 0005 §4); no está documentado.
+        let body = r#"{ "pid": 46618, "sessionId": "abc-123", "cwd": "/Users/USER/proj",
+          "startedAt": 1792886198259, "procStart": "x", "version": "2.1.310",
+          "kind": "interactive", "entrypoint": "cli", "status": "busy", "updatedAt": 1792886999000 }"#;
+        assert_eq!(
+            parse_session_file(body.as_bytes()),
+            Some(SessionFile {
+                pid: Pid(46618),
+                session: SessionId::new("abc-123"),
+                activity: Some((SessionActivity::Busy, Timestamp(1_792_886_999_000))),
+            })
+        );
+    }
+
+    #[test]
+    fn archivo_de_sesion_tolerante() {
+        // Sin status o con uno desconocido: enlaza igual, sin cambiar el semáforo.
+        let e = parse_session_file(br#"{"pid": 1, "sessionId": "s", "status": "raro"}"#).unwrap();
+        assert_eq!(e.activity, None);
+        assert_eq!(parse_session_file(br#"{"pid": 1}"#), None);
+        assert_eq!(parse_session_file(b"basura"), None);
     }
 
     #[test]

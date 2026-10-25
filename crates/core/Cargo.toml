@@ -8,11 +8,13 @@ publish.workspace = true
 
 [features]
 # Con --no-default-features solo quedan domain y application (CI lo comprueba, ADR 0002 §6).
-default = ["sim", "testing", "scanner", "killer"]
+default = ["sim", "testing", "scanner", "killer", "hooks"]
 sim = ["dep:rand", "dep:rand_chacha"]
 # Adapters de procesos reales con sysinfo (ADR 0002 §5).
 scanner = ["dep:sysinfo"]
 killer = ["dep:sysinfo"]
+# Servidor HTTP local para los hooks de los CLIs (ADR 0004 §2).
+hooks = ["dep:axum", "dep:tower", "dep:tower-http", "dep:getrandom", "dep:constant_time_eq"]
 testing = []
 
 [dependencies]
@@ -27,6 +29,11 @@ hdrhistogram.workspace = true
 rand = { workspace = true, optional = true }
 rand_chacha = { workspace = true, optional = true }
 sysinfo = { workspace = true, optional = true }
+axum = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true }
+getrandom = { workspace = true, optional = true }
+constant_time_eq = { workspace = true, optional = true }
 
 [dev-dependencies]
 proptest.workspace = true

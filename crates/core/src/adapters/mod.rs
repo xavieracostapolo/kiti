@@ -1,7 +1,10 @@
 //! Adapters de los ports (ADR 0002 §5). Los que traen dependencias (sysinfo, y más adelante
 //! axum y notify) van detrás de *features*.
 
+pub mod claude_settings;
 mod clock;
+#[cfg(feature = "hooks")]
+pub mod hooks;
 #[cfg(feature = "killer")]
 mod killer;
 #[cfg(any(feature = "scanner", feature = "killer"))]
