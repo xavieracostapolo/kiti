@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 14 en `main`. El último, "Ir a la terminal", está en el [ADR 0012](docs/decisiones/0012-ir-a-la-terminal/README.md).
+- **Fase:** Hitos 1 a 15 en `main`. El último, "Arreglos", amplía el [ADR 0010](docs/decisiones/0010-avisos/README.md) (clic en el aviso) y el [ADR 0009](docs/decisiones/0009-proyectos-conversaciones/README.md) (verde desde el arranque).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -180,6 +180,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **12. Avisos:** notificaciones de macOS al pedir permiso, terminar un turno largo, fallar o caerse, solo con Kiti en segundo plano.
 - [x] **13. Ver desde lejos y filtrar:** título legible en la vista lejana, contadores que filtran por estado, buscador (`/`), y atenuar lo que no coincide.
 - [x] **14. Ir a la terminal:** botón para mostrar la pestaña de Ghostty o Terminal.app de un agente abierto fuera de Kiti.
+- [x] **15. Arreglos:** un agente que ya trabajaba al arrancar Kiti sale en verde; el clic en un aviso abre Kiti y enfoca la oficina.
 - [ ] **Después:** soporte para Windows, enfocar las pestañas de Ghostty de los agentes externos (AppleScript) y mejora visual con Kenney.
 
 ## Pendientes de verificar

@@ -147,6 +147,10 @@ pub enum ServerMsg {
         removed: Vec<AgentId>,
     },
     Metrics(CoreMetrics),
+    /// Enfocar y seleccionar esa oficina (clic en una notificación, ADR 0010).
+    Focus {
+        id: AgentId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]

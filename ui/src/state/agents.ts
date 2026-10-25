@@ -23,6 +23,7 @@ export function applyMsg(state: AgentsState, msg: ServerMsg): AgentsState {
       return { seq: msg.seq, agents, resync: false };
     }
     case "Metrics":
+    case "Focus":
       return state;
   }
 }

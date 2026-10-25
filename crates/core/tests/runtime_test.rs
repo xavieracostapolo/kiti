@@ -573,3 +573,35 @@ async fn un_publicador_muerto_se_descarta_tras_el_primer_fallo() {
     // El Snapshot falla y ya no se intenta nada más hasta una nueva suscripción.
     assert_eq!(*attempts.lock().unwrap(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn el_foco_pedido_sin_ventana_llega_tras_el_snapshot() {
+    // Clic en una notificación con la ventana cerrada: la oficina se enfoca al reabrirla.
+    let handle = spawn(TestKiller, ManualClock::new(1000));
+    let detected = sample_agent(4321);
+    let id = id_of(&detected);
+    handle.register_agent(detected, Timestamp(1000)).await;
+    handle.focus(id).await;
+
+    let publisher = TestPublisher::new();
+    let msgs = publisher.messages.clone();
+    handle.subscribe(publisher).await.expect("subscribe ok");
+    {
+        let list = msgs.lock().unwrap();
+        assert!(matches!(list[0], ServerMsg::Snapshot { .. }));
+        assert_eq!(
+            list[1],
+            ServerMsg::Focus {
+                id: kiti_protocol::AgentId(id.to_string())
+            }
+        );
+    }
+    // Con la ventana ya abierta, llega en el momento; y no se repite en otra suscripción.
+    handle.focus(id).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(msgs.lock().unwrap().len(), 3);
+    let again = TestPublisher::new();
+    let again_msgs = again.messages.clone();
+    handle.subscribe(again).await.expect("subscribe ok");
+    assert_eq!(again_msgs.lock().unwrap().len(), 1);
+}

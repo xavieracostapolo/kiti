@@ -134,6 +134,12 @@ export function createKitiStore() {
         set({ coreMetrics });
         return;
       }
+      if (msg.type === "Focus") {
+        // Clic en un aviso: como un agente recién lanzado, el mundo lo enfoca y lo selecciona.
+        const agent = get().agents.agents.get(msg.id);
+        if (agent) set({ pendingLaunchPid: agent.pid, openTerminalId: undefined });
+        return;
+      }
       const agents = applyMsg(get().agents, msg);
       if (agents === get().agents) return;
       const dormant = dormantRooms(agents.agents, get().conversations, get().dormant);

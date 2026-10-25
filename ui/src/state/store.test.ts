@@ -121,4 +121,17 @@ describe("store", () => {
     expect(store.getState().dormant.size).toBe(0);
     expect(store.getState().view.selectedId).toBeUndefined();
   });
+
+  it("un Focus del core (clic en un aviso) pide enfocar esa oficina", () => {
+    const store = createKitiStore();
+    store.getState().receive({ type: "Snapshot", seq: 0, agents: [a] });
+    store.getState().openTerminal("kiti-1");
+    store.getState().receive({ type: "Focus", id: "a" });
+    expect(store.getState().pendingLaunchPid).toBe(a.pid);
+    expect(store.getState().openTerminalId).toBeUndefined();
+    // Un id desconocido no hace nada.
+    store.getState().setPendingLaunch(undefined);
+    store.getState().receive({ type: "Focus", id: "nadie" });
+    expect(store.getState().pendingLaunchPid).toBeUndefined();
+  });
 });

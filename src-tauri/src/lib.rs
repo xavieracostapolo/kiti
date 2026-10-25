@@ -830,6 +830,7 @@ pub fn run() {
                         .with_alerts(NativeAlerts {
                             app: app.handle().clone(),
                         });
+                    on_alert_click(app.handle(), handle.clone());
                     tauri::async_runtime::spawn(runtime.run());
                     let home = app.path().home_dir().ok();
                     tauri::async_runtime::spawn(run_scanner(
@@ -935,7 +936,6 @@ fn show_window(app: &AppHandle) {
     }
 }
 
-/// Icono en la barra de menú con el resumen del semáforo, actualizado cada segundo.
 /// Avisos como notificaciones de macOS (ADR 0010). Si la ventana de Kiti está al frente no
 /// molesta: el usuario ya lo ve en el mapa.
 struct NativeAlerts {
@@ -954,20 +954,49 @@ impl AlertSink for NativeAlerts {
             return;
         }
         let (title, body) = alert_text(&notice);
-        match self
+        let shown = self
             .app
             .notification()
             .builder()
             .title(title)
             .body(body)
-            .show()
-        {
+            // Para saber qué oficina enfocar si el usuario hace clic en ella.
+            .extra("agentId", notice.agent.to_string())
+            .show();
+        match shown {
             Ok(()) => info!(event = "alert.sent", agent_id = %notice.agent, kind = ?notice.kind),
             Err(e) => warn!(event = "alert.error", error = %e),
         }
     }
 }
 
+/// Clic en un aviso: abre la ventana (aunque estuviera cerrada) y enfoca la oficina del agente.
+/// El manejador se registra antes del primer aviso: los anteriores no informan del clic.
+fn on_alert_click(app: &AppHandle, runtime: RuntimeHandle) {
+    let handle = app.clone();
+    let registered = app.notification().on_action(move |performed| {
+        let id = performed
+            .notification()
+            .and_then(|n| n.extra().get("agentId"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<AgentId>().ok());
+        info!(
+            event = "alert.clicked",
+            action = performed.action_id(),
+            known = id.is_some()
+        );
+        show_window(&handle);
+        if let Some(id) = id {
+            let runtime = runtime.clone();
+            tauri::async_runtime::spawn(async move { runtime.focus(id).await });
+        }
+    });
+    if let Err(e) = registered {
+        warn!(event = "alert.click_handler", error = %e);
+    }
+}
+
+/// Icono en la barra de menú con el resumen del semáforo, actualizado cada segundo.
 fn start_tray(app: &AppHandle, runtime: RuntimeHandle) -> tauri::Result<()> {
     let show = MenuItem::with_id(app, "show", "Mostrar Kiti", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Salir de Kiti", true, None::<&str>)?;

@@ -215,6 +215,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
 
     sync(EMPTY, NO_ROOMS);
     applyInitialCamera();
+    // Pudo pedirse antes de existir el mundo (clic en un aviso con la ventana cerrada).
+    takePendingLaunch();
 
     cleanup.push(
       store.subscribe((s, prev) => {
@@ -223,15 +225,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           pendingDiffAt ??= performance.now();
           scheduler?.request();
         }
-        // Agente recién lanzado desde Kiti: en cuanto aparece su oficina, se enfoca y se selecciona.
-        if (s.pendingLaunchPid !== undefined) {
-          const launched = [...s.agents.agents.values()].find((a) => a.pid === s.pendingLaunchPid);
-          if (launched) {
-            s.setPendingLaunch(undefined);
-            s.select(launched.id);
-            focusId(launched.id);
-          }
-        }
+        takePendingLaunch();
         // Al abrir o cerrar la terminal cambia la zona libre: se encuadran TODAS las oficinas en
         // ella, para seguir viendo los semáforos y poder cambiar de terminal con un clic.
         if (s.openTerminalId !== prev.openTerminalId) setCamera(fitAllCamera(), true);
@@ -295,6 +289,20 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     scheduler.request();
     await firstPaint;
   })();
+
+  /**
+   * Agente recién lanzado desde Kiti, o el de un aviso en el que se hizo clic: en cuanto existe su
+   * oficina, se enfoca y se selecciona.
+   */
+  function takePendingLaunch() {
+    const s = store.getState();
+    if (s.pendingLaunchPid === undefined) return;
+    const agent = [...s.agents.agents.values()].find((a) => a.pid === s.pendingLaunchPid);
+    if (!agent) return;
+    s.setPendingLaunch(undefined);
+    s.select(agent.id);
+    focusId(agent.id);
+  }
 
   function newView(id: string): OfficeView {
     const view = new OfficeView(template as Texture, room);

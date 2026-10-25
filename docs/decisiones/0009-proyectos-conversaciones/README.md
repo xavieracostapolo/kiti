@@ -73,6 +73,8 @@ Todo queda **en la máquina**: viaja solo del core a la UI por IPC, **nunca se e
 - **Texto que se adapta al zoom** (pedido del usuario): el título de la pared, la nota inferior y los rótulos de zona miden más o menos lo mismo en pantalla. Al acercarse, la letra se hace más pequeña en el mundo, así caben el título entero (hasta 3 líneas) y el pedido o la actividad (hasta 4 líneas). `domain/text.ts` (`fontFor`, `fitLines`) es puro y cuantiza a medio píxel para no recalcular el texto en cada frame del zoom.
 - El puente de logs de la UI escribe los errores de los commands como JSON en lugar de `[object Object]`.
 
+- **Verde desde el arranque (Hito 15):** si Kiti arranca mientras un agente ya trabaja, el `busy` de su archivo de sesión es anterior al registro del agente y se descartaba por "atrasado". Ahora un agente sin eventos todavía (`Startup`) acepta el status del archivo aunque sea más viejo: es lo único que se sabe de él.
+
 ## Ficha de observabilidad
 
 | Evento | Nivel | Campos |
