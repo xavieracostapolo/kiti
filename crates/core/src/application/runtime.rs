@@ -12,7 +12,7 @@ use tokio::time::{Instant, interval};
 use crate::application::projection::{project_diff, project_snapshot};
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Provider, StalePolicy,
+    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Pid, Provider, StalePolicy,
     Timestamp,
 };
 use crate::ingestion::HookEvent;
@@ -49,6 +49,8 @@ pub enum RuntimeCommand {
     Hook {
         provider: Provider,
         event: HookEvent,
+        /// PID del forwarder y sus ancestros (vacío para Claude, que llega por http directo).
+        ancestry: Vec<Pid>,
         now: Timestamp,
         received: Instant,
     },
@@ -113,11 +115,22 @@ impl RuntimeHandle {
     }
 
     pub async fn hook(&self, provider: Provider, event: HookEvent, now: Timestamp) {
+        self.hook_from(provider, event, Vec::new(), now).await;
+    }
+
+    pub async fn hook_from(
+        &self,
+        provider: Provider,
+        event: HookEvent,
+        ancestry: Vec<Pid>,
+        now: Timestamp,
+    ) {
         let _ = self
             .tx
             .send(RuntimeCommand::Hook {
                 provider,
                 event,
+                ancestry,
                 now,
                 received: Instant::now(),
             })
@@ -320,13 +333,19 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             RuntimeCommand::Hook {
                 provider,
                 event,
+                ancestry,
                 now,
                 received,
             } => {
                 debug!(event = "hook.received", provider = %provider, name = %event.name);
-                let events =
-                    self.registry
-                        .hook(provider, &event.session, &event.cwd, &event.signal, now);
+                let events = self.registry.hook_from(
+                    provider,
+                    &event.session,
+                    &event.cwd,
+                    &ancestry,
+                    &event.signal,
+                    now,
+                );
                 log_status_changes(&events);
                 self.telemetry.record_event();
                 self.oldest_unpublished_hook.get_or_insert(received);

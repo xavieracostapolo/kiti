@@ -1,0 +1,16 @@
+[package]
+name = "kiti-forwarder"
+version = "0.1.0"
+description = "kiti-hook: reenvía los hooks de Codex y Gemini al HookServer de Kiti"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "kiti-hook"
+path = "src/main.rs"
+
+[dependencies]
+# Sin features por defecto ni TLS: solo HTTP a 127.0.0.1, arranque rápido y binario pequeño.
+ureq = { version = "3.5.0", default-features = false }
+

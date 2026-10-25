@@ -307,8 +307,32 @@ Lectura:
 - **Instalador:** con el `settings.json` real del usuario (11 claves y un hook `PreToolUse` propio) añadió un grupo por evento sin tocar lo demás. Hizo backup único en `settings.json.kiti.bak` y conservó los permisos `0600`. `mise run hooks:uninstall` lo revierte.
 - **Correlación:** `sessions/<pid>.json` se aplica solo cuando cambia y si es más reciente que el último hook, porque se lee cada 3 s y puede ir atrasado.
 - **Seguridad del HookServer:** un test por control (Host, Origin/Sec-Fetch, token, JSON, 4 MiB, canal lleno) y un extremo a extremo que comprueba que el prompt nunca sale del core.
-- **E1:** en las pruebas, Kiti se cerró y se reinició varias veces mientras esta sesión de Claude disparaba hooks hacia el puerto cerrado. Resultado pendiente de lo que el usuario vio en su terminal.
+- **E1 (cerrado, 2026-10-24):** Kiti se cerró y reinició varias veces mientras una sesión interactiva de Claude disparaba hooks hacia el puerto cerrado. El usuario no vio avisos en el TUI. Claude se queda con el hook `http` directo, sin forwarder.
 - **Pendiente:** indicador en la UI del estado de los hooks, acción "Regenerar token" y `hook_to_publish_ms` en el panel de debug con tráfico real.
+
+## Plan del Hito 5: "Forwarder para Codex y Gemini"
+
+**Alcance:** binario `kiti-hook` (crate `crates/forwarder`, con `ureq` sin TLS), ACLs de Codex y Gemini, correlación por ancestros con `X-Kiti-Ppid` e instaladores de `~/.codex/hooks.json` y `~/.gemini/settings.json`.
+
+**Contexto (2026-10-24):** ni Codex CLI ni Gemini CLI están instalados en la máquina del usuario. Todo se construye contra la documentación y con fixtures. **No se instala nada** en las configuraciones de esos CLIs hasta que el usuario los use y dé permiso.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿El forwarder frena al agente? | Duración de `kiti-hook` con Kiti abierta y cerrada | < 150 ms siempre, `exit 0` |
+| ¿Gemini acepta su salida? | stdout del forwarder con `gemini` | Exactamente `{}` |
+| ¿Cada hook encuentra su oficina? | `session.linked` con fuente `ppid` | Enlaza por ancestros sin heurística de `cwd` |
+| ¿Se respeta la config ajena? | Tests de los instaladores con hooks de terceros | Igual salvo lo de Kiti |
+
+## Resultados del Hito 5
+
+- **`kiti-hook`:** binario de 1,1 MB. Con Kiti cerrada, termina en ~18 ms (conexión rechazada); si el puerto no responde, el plazo de 150 ms lo corta. Siempre `exit 0`, nada por stderr y `{}` por stdout para Gemini. Tiene 4 tests contra un servidor TCP mínimo.
+- **ACLs:** Codex (`Interrupt` → gris) y Gemini (empareja herramientas por nombre, porque no envía `tool_use_id`). Ninguna lee prompts, respuestas ni salidas de herramientas.
+- **Correlación por ancestros:** el HookServer lee `X-Kiti-Ppid`, el bombeo sube por los procesos padre y el registro enlaza con el primer agente vivo del mismo CLI, aunque haya varios en el mismo `cwd`.
+- **Instaladores:** `~/.codex/hooks.json` y `~/.gemini/settings.json` con la misma lógica genérica que Claude (`hook_config`), probados con configuraciones de terceros.
+- **Sin instalación automática:** Codex CLI y Gemini CLI no están instalados en la máquina. Cuando el usuario los use: `mise run hooks:install-codex` / `hooks:install-gemini`. En Codex hay que confiar en el hook con `/hooks`.
+- **Pendiente de verificar con los CLIs reales:** el `argv` de Gemini (npm, Homebrew y npx), si Gemini pide confirmación para los hooks de usuario, y los payloads reales (hoy son los documentados).
 
 ## Hitos siguientes
 

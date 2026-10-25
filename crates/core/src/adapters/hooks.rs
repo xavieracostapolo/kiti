@@ -27,6 +27,8 @@ pub const MAX_BODY: usize = 4 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub struct HookRequest {
     pub provider: Provider,
+    /// `X-Kiti-Ppid` del forwarder (Codex y Gemini): punto de partida para buscar el agente.
+    pub ppid: Option<u32>,
     pub body: Bytes,
 }
 
@@ -72,8 +74,18 @@ async fn handle(
     let Ok(provider) = Provider::from_str(&provider) else {
         return reject("provider", StatusCode::NOT_FOUND);
     };
+    let ppid =
+        header_str(header::HeaderName::from_static("x-kiti-ppid")).and_then(|v| v.parse().ok());
     debug!(event = "hook.accepted", provider = %provider, bytes = body.len());
-    if ctx.tx.try_send(HookRequest { provider, body }).is_err() {
+    if ctx
+        .tx
+        .try_send(HookRequest {
+            provider,
+            ppid,
+            body,
+        })
+        .is_err()
+    {
         warn!(event = "hook.dropped", provider = %provider);
     }
     StatusCode::NO_CONTENT
@@ -135,20 +147,49 @@ pub fn load_or_create_token(path: &Path) -> std::io::Result<String> {
     }
 }
 
+/// `pid` y sus ancestros (hasta 16 niveles), para enlazar un hook con el proceso del agente.
+pub fn ancestry(pid: u32) -> Vec<crate::domain::Pid> {
+    let mut chain = Vec::new();
+    let mut cur = Some(crate::domain::Pid(pid));
+    while let Some(p) = cur {
+        if chain.len() >= 16 || p.0 <= 1 || chain.contains(&p) {
+            break;
+        }
+        chain.push(p);
+        cur = super::read_process(p).and_then(|s| s.ppid);
+    }
+    chain
+}
+
 /// Saca los hooks aceptados de la cola, aplica la ACL de su CLI y los entrega al runtime.
-/// Codex y Gemini llegan en el Hito 5: por ahora solo se cuentan.
 pub async fn run_hook_pump<C: crate::ports::Clock>(
     mut rx: mpsc::Receiver<HookRequest>,
     runtime: crate::application::RuntimeHandle,
     clock: C,
 ) {
+    use crate::ingestion::{claude, codex, gemini};
     while let Some(req) = rx.recv().await {
-        match req.provider {
-            Provider::Claude => match crate::ingestion::claude::parse_hook(&req.body) {
-                Ok(event) => runtime.hook(req.provider, event, clock.now()).await,
-                Err(e) => warn!(event = "hook.invalid", provider = %req.provider, error = %e),
-            },
-            other => debug!(event = "hook.unsupported", provider = %other),
-        }
+        let parsed = match req.provider {
+            Provider::Claude => claude::parse_hook(&req.body),
+            Provider::Codex => codex::parse_hook(&req.body),
+            Provider::Gemini => gemini::parse_hook(&req.body),
+        };
+        let event = match parsed {
+            Ok(event) => event,
+            Err(e) => {
+                warn!(event = "hook.invalid", provider = %req.provider, error = %e);
+                continue;
+            }
+        };
+        // Leer la cadena de procesos es bloqueante (sysinfo): fuera del runtime async.
+        let chain = match req.ppid {
+            Some(ppid) => tokio::task::spawn_blocking(move || ancestry(ppid))
+                .await
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        runtime
+            .hook_from(req.provider, event, chain, clock.now())
+            .await;
     }
 }

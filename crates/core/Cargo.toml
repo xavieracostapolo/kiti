@@ -14,7 +14,7 @@ sim = ["dep:rand", "dep:rand_chacha"]
 scanner = ["dep:sysinfo"]
 killer = ["dep:sysinfo"]
 # Servidor HTTP local para los hooks de los CLIs (ADR 0004 §2).
-hooks = ["dep:axum", "dep:tower", "dep:tower-http", "dep:getrandom", "dep:constant_time_eq"]
+hooks = ["scanner", "dep:axum", "dep:tower", "dep:tower-http", "dep:getrandom", "dep:constant_time_eq"]
 testing = []
 
 [dependencies]

@@ -228,3 +228,32 @@ async fn de_extremo_a_extremo_un_hook_http_pone_verde_su_oficina() {
     let all = format!("{:?}", msgs.lock().unwrap());
     assert!(!all.contains("secreto"));
 }
+
+#[tokio::test]
+async fn el_forwarder_manda_su_ppid_y_se_lee() {
+    let req = Request::post("/v1/hooks/codex")
+        .header("host", format!("127.0.0.1:{PORT}"))
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .header("x-kiti-ppid", "4242")
+        .body(Body::from("{}"))
+        .unwrap();
+    let (status, _, mut rx) = send(req).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let got = rx.try_recv().unwrap();
+    assert_eq!(got.provider, Provider::Codex);
+    assert_eq!(got.ppid, Some(4242));
+}
+
+#[test]
+fn la_cadena_de_ancestros_empieza_en_el_pid_y_sube() {
+    use kiti_core::adapters::hooks::ancestry;
+    use kiti_core::domain::Pid;
+    let me = std::process::id();
+    let chain = ancestry(me);
+    assert_eq!(chain.first(), Some(&Pid(me)));
+    assert_eq!(
+        chain.get(1),
+        Some(&Pid(std::os::unix::process::parent_id()))
+    );
+}
