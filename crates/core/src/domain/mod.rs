@@ -4,6 +4,7 @@
 mod agent;
 mod events;
 mod ids;
+mod process;
 mod registry;
 mod signal;
 mod stale;
@@ -15,6 +16,7 @@ pub use ids::{
     AgentId, ParseAgentIdError, Pid, ProcessIdentity, ProcessStartTime, Provider, Timestamp,
     ToolName, ToolUseKey, WorkingDir,
 };
+pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
 pub use registry::{AgentRegistry, RegistryDiff};
 pub use signal::{Signal, ToolOutcome};
 pub use stale::StalePolicy;

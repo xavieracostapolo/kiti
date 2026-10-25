@@ -5,8 +5,8 @@
 
 use std::time::Duration;
 
-use kiti_core::adapters::SystemClock;
-use kiti_core::application::{Runtime, RuntimeHandle, Telemetry};
+use kiti_core::adapters::{SysinfoScanner, SystemClock, UnixKiller};
+use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, run_scanner};
 use kiti_core::domain::{AgentId, Timestamp};
 use kiti_core::ports::{
     AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
@@ -24,6 +24,15 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
+
+/// Cada cuánto se escanean los procesos en modo real. 3 s: con ~600 procesos cada escaneo
+/// cuesta ~6 ms y a 2 s superaba el 1 % de CPU en reposo (ADR 0006). `KITI_SCAN_MS` lo cambia.
+fn scan_interval() -> Duration {
+    std::env::var("KITI_SCAN_MS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .map_or(Duration::from_secs(3), Duration::from_millis)
+}
 
 pub struct AppState {
     pub runtime: RuntimeHandle,
@@ -112,10 +121,13 @@ async fn kill_agent(
     info!(event = "kill.audit", agent_id = %core_id, step = "requested");
 
     // `show` con callback: no bloquea un hilo del runtime mientras el diálogo está abierto.
+    let Some(cwd) = state.runtime.describe(core_id).await else {
+        return Ok(KillResult::NotFound);
+    };
     let (tx, rx) = oneshot::channel();
     app.dialog()
         .message(format!(
-            "Se terminará el agente {} (PID {}).\nSi está editando archivos, pueden quedar a medias.",
+            "Se terminará el agente {} de {cwd} (PID {}).\nSi está editando archivos, pueden quedar a medias.",
             core_id.provider, core_id.pid.0
         ))
         .title("¿Cerrar la oficina?")
@@ -224,35 +236,58 @@ pub fn run() {
                 tracing_appender::non_blocking(std::io::sink()).1
             })));
 
-            let sim_env = std::env::var("KITI_SIM").unwrap_or_else(|_| "20:42".to_string());
-            let spec = SimSpec::parse(&sim_env).unwrap_or(SimSpec {
-                count: 20,
-                seed: 42,
-                freeze: false,
-            });
-            info!(
-                event = "app.start",
-                count = spec.count,
-                seed = spec.seed,
-                freeze = spec.freeze,
-                "Kiti arranca en modo simulado"
-            );
-
-            let (forget_tx, forget_rx) = mpsc::unbounded_channel();
-            let (runtime, handle) = Runtime::new(
-                SimFleetKiller(forget_tx),
-                SystemClock,
-                Arc::new(Telemetry::new()),
-                Source::Sim,
-                env!("CARGO_PKG_VERSION"),
-            );
-            let runtime = runtime.with_monitor(ProcessMonitor {
+            let telemetry = Arc::new(Telemetry::new());
+            let monitor = ProcessMonitor {
                 system: System::new(),
                 pid: Pid::from_u32(std::process::id()),
-            });
-            // Dentro del runtime de tokio de Tauri: fuera de él, tokio::spawn entra en pánico.
-            tauri::async_runtime::spawn(runtime.run());
-            tauri::async_runtime::spawn(run_sim(handle.clone(), spec, forget_rx));
+            };
+            // Todo se arranca dentro del runtime de tokio de Tauri: fuera de él, tokio::spawn
+            // entra en pánico.
+            let handle = match std::env::var("KITI_SIM") {
+                Ok(sim_env) => {
+                    let spec = SimSpec::parse(&sim_env).unwrap_or(SimSpec {
+                        count: 20,
+                        seed: 42,
+                        freeze: false,
+                    });
+                    info!(
+                        event = "app.start",
+                        mode = "sim",
+                        count = spec.count,
+                        seed = spec.seed,
+                        freeze = spec.freeze
+                    );
+                    let (forget_tx, forget_rx) = mpsc::unbounded_channel();
+                    let (runtime, handle) = Runtime::new(
+                        SimFleetKiller(forget_tx),
+                        SystemClock,
+                        telemetry,
+                        Source::Sim,
+                        env!("CARGO_PKG_VERSION"),
+                    );
+                    tauri::async_runtime::spawn(runtime.with_monitor(monitor).run());
+                    tauri::async_runtime::spawn(run_sim(handle.clone(), spec, forget_rx));
+                    handle
+                }
+                Err(_) => {
+                    info!(event = "app.start", mode = "live");
+                    let (runtime, handle) = Runtime::new(
+                        UnixKiller::default(),
+                        SystemClock,
+                        telemetry,
+                        Source::Live,
+                        env!("CARGO_PKG_VERSION"),
+                    );
+                    tauri::async_runtime::spawn(runtime.with_monitor(monitor).run());
+                    tauri::async_runtime::spawn(run_scanner(
+                        SysinfoScanner::new(),
+                        handle.clone(),
+                        SystemClock,
+                        scan_interval(),
+                    ));
+                    handle
+                }
+            };
             app.manage(AppState { runtime: handle });
             Ok(())
         })

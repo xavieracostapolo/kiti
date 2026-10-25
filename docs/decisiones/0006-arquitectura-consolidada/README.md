@@ -257,6 +257,33 @@ Lectura:
 - **Palancas si hace falta bajar:** destruir el renderer con la ventana oculta (Hito 7, bandeja), canvas a resolución 1 en lugar de 2 (texto menos nítido) y atlas de texturas más pequeños.
 - Pendiente de la ficha: `core.ingest_to_send_ms` como histograma propio (hoy se mide el tiempo de publicación) y `ui.resync_total`.
 
+## Plan del Hito 3: "Procesos reales"
+
+**Alcance:** `classify` y `dedupe_tree` puros, `ProcessScanner` con `SysinfoScanner` (feature `scanner`), `AgentRegistry::reconcile`, `UnixKiller` con verificación de identidad (feature `killer`) y modo real por defecto en la app (`KITI_SIM` activa el simulador). Sin hooks: los agentes reales aparecen en gris (`Startup`) hasta el Hito 4.
+
+**Datos reales usados para los fixtures** (2026-10-24, solo lectura de `ps` y `lsof`): Claude Code nativo en `~/.local/share/claude/versions/<semver>` con `argv = ["claude"]`, un `~/.claude/sessions/<pid>.json` por sesión, y `Gemini.app` con helpers en `/Applications/Gemini.app/Contents/…`, que hay que excluir.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿Cuánto tarda un escaneo? | span `scan` con `duration_ms` y `processes` | p95 < 50 ms con ~600 procesos |
+| ¿Cuánto tarda en aparecer o desaparecer una oficina? | `agent.appeared` / `agent.exited` en el log, con `expected` | ≤ 3 s (un intervalo de escaneo) |
+| ¿Hay falsos positivos? | test de `classify` con `Claude.app`, `Gemini.app`, subcomandos de Codex y `node` ajenos | 0 |
+| ¿El kill es seguro? | `kill.audit` con `step` (`verified`, `term`, `kill`, `stale`) | 0 señales a un PID que no coincide en `start_time`, `uid` y huella de `argv` |
+| ¿Cuánto tarda un cierre? | `kill.audit` `done` con `elapsed_ms` | ≤ 5,5 s en el peor caso (SIGTERM ignorado) |
+| ¿Cuánto cuesta en reposo? | `mise run app:measure` en modo real | CPU < 1 % |
+
+## Resultados del Hito 3
+
+- **Detección real:** las 5 a 7 sesiones de Claude Code abiertas en la máquina aparecen al arrancar, con su `cwd`. Un `claude` falso compilado para la prueba aparece en el siguiente escaneo y, al matarlo desde fuera, pasa a `dead` (`expected=false`).
+- **Corrección al ADR 0005:** sysinfo devuelve como `exe` el symlink `~/.local/bin/claude`, no la versión resuelta `~/.local/share/claude/versions/<semver>` que muestra `lsof`. `classify` acepta las dos y cualquier ejecutable llamado `claude` fuera de una `.app`.
+- **Escaneo en dos pasadas:** primero `exe` y usuario de todos los procesos, y `argv` y `cwd` solo de los candidatos (`is_candidate_exe`). Cuesta ~6 ms con ~600 procesos; casi todo es sysinfo recorriendo la tabla de procesos.
+- **Intervalo de 3 s, no 2 s:** medido en release, en reposo y con 7 agentes reales. Con 2 s la CPU total era del 1,06 %; con 3 s, del **0,68 %**; con 60 s, del 0,2 %. Configurable con `KITI_SCAN_MS`. Con los hooks del Hito 4, el escaneo pasa a ser un respaldo y se puede espaciar más.
+- **RAM en modo real:** ~197 MB en reposo, dentro del presupuesto.
+- **Kill real:** `UnixKiller` probado contra procesos lanzados por los tests (SIGTERM, SIGKILL tras la gracia, identidad distinta → no envía señales, PID 1 y propio rechazados). Falta probar a mano el diálogo nativo con un agente real.
+- **Fallo encontrado y corregido:** el reporte `UiMetrics` de cada 2 s había quedado dentro de la rama de resincronización y nunca se enviaba. Ahora está en `telemetry/report.ts`, con su test.
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.
