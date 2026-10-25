@@ -28,6 +28,14 @@ pub enum AgentInput {
     /// El usuario confirmó cerrar la oficina: la salida que siga será esperada.
     KillRequested,
     Tick(StalePolicy),
+    /// Solo Claude: `status` de `~/.claude/sessions/<pid>.json`. Segunda fuente tras los hooks.
+    SessionFile(SessionActivity),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SessionActivity {
+    Busy,
+    Idle,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,6 +149,7 @@ impl Agent {
             }
             AgentInput::KillRequested => self.kill_requested = true,
             AgentInput::Tick(policy) => self.on_tick(policy, now, &mut ev),
+            AgentInput::SessionFile(activity) => self.on_session_file(*activity, now, &mut ev),
         }
         ev
     }
@@ -212,6 +221,22 @@ impl Agent {
                 self.set_status(Idle, StatusReason::Hook, now, ev);
             }
             Signal::Unknown { .. } => unreachable!("filtrado arriba"),
+        }
+    }
+
+    /// `idle` cierra verde y amarillo (cubre Esc, que no envía `Stop`); `busy` solo abre el
+    /// verde desde gris: un amarillo o un rojo vienen de hooks más precisos.
+    fn on_session_file(&mut self, activity: SessionActivity, now: Timestamp, ev: &mut Events) {
+        use StatusKind::*;
+        match (activity, self.status.kind) {
+            (SessionActivity::Idle, Working | Waiting) => {
+                self.pending_tools.clear();
+                self.set_status(Idle, StatusReason::SessionFile, now, ev);
+            }
+            (SessionActivity::Busy, Idle) => {
+                self.set_status(Working, StatusReason::SessionFile, now, ev);
+            }
+            _ => {}
         }
     }
 
@@ -543,6 +568,55 @@ mod tests {
         let mut a = working();
         let rev = a.revision();
         tick(&mut a, t(1_000));
+        assert_eq!(a.revision(), rev);
+    }
+
+    fn session_file(a: &mut Agent, activity: SessionActivity, at: Timestamp) -> Events {
+        a.apply(&AgentInput::SessionFile(activity), at)
+    }
+
+    #[test]
+    fn session_file_idle_cierra_el_verde_aunque_no_llegue_stop() {
+        // Interrupción con Esc: Claude no envía Stop, pero sessions/<pid>.json pasa a idle.
+        let mut a = working();
+        sig(&mut a, tool_start("k1", "Bash"), t(1));
+        session_file(&mut a, SessionActivity::Idle, t(2));
+        assert_eq!(kind(&a), StatusKind::Idle);
+        assert_eq!(a.status().reason, StatusReason::SessionFile);
+        assert_eq!(a.pending_tools().len(), 0);
+    }
+
+    #[test]
+    fn session_file_idle_tambien_cierra_el_amarillo() {
+        let mut a = working();
+        sig(&mut a, Signal::AwaitingInput, t(1));
+        session_file(&mut a, SessionActivity::Idle, t(2));
+        assert_eq!(kind(&a), StatusKind::Idle);
+    }
+
+    #[test]
+    fn session_file_busy_abre_el_verde_solo_desde_gris() {
+        let mut a = agent();
+        session_file(&mut a, SessionActivity::Busy, t(1));
+        assert_eq!(kind(&a), StatusKind::Working);
+        assert_eq!(a.status().reason, StatusReason::SessionFile);
+
+        // No pisa un amarillo ni un rojo, que vienen de hooks más precisos.
+        let mut waiting = working();
+        sig(&mut waiting, Signal::AwaitingInput, t(1));
+        session_file(&mut waiting, SessionActivity::Busy, t(2));
+        assert_eq!(kind(&waiting), StatusKind::Waiting);
+        let mut failed = working();
+        sig(&mut failed, Signal::Failure, t(1));
+        session_file(&mut failed, SessionActivity::Busy, t(2));
+        assert_eq!(kind(&failed), StatusKind::Error);
+    }
+
+    #[test]
+    fn session_file_sin_cambio_no_genera_eventos() {
+        let mut a = agent();
+        let rev = a.revision();
+        assert!(session_file(&mut a, SessionActivity::Idle, t(1)).is_empty());
         assert_eq!(a.revision(), rev);
     }
 }

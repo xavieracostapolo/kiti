@@ -12,13 +12,16 @@ use tokio::time::{Instant, interval};
 use crate::application::projection::{project_diff, project_snapshot};
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, StalePolicy, Timestamp,
+    AgentId, AgentInput, AgentRegistry, DetectedAgent, DomainEvent, Provider, StalePolicy,
+    Timestamp,
 };
+use crate::ingestion::HookEvent;
+use crate::ingestion::claude::SessionFile;
 use crate::ports::{
     AgentKiller, Clock, DiffPublisher, KillError, KillOutcome, KillTarget, SelfMonitor,
 };
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
-use tracing::info;
+use tracing::{debug, info};
 
 pub const FLUSH_INTERVAL: Duration = Duration::from_millis(100);
 pub const METRICS_INTERVAL: Duration = Duration::from_secs(1);
@@ -36,10 +39,18 @@ pub enum RuntimeCommand {
         input: AgentInput,
         now: Timestamp,
     },
-    /// Resultado de un escaneo de procesos ya clasificado.
+    /// Resultado de un escaneo de procesos ya clasificado, más los archivos de sesión de Claude.
     Reconcile {
         detected: Vec<DetectedAgent>,
+        sessions: Vec<SessionFile>,
         now: Timestamp,
+    },
+    /// Un hook ya traducido por la ACL de su CLI.
+    Hook {
+        provider: Provider,
+        event: HookEvent,
+        now: Timestamp,
+        received: Instant,
     },
     /// `cwd` del agente, para el diálogo de confirmación.
     Describe {
@@ -85,10 +96,31 @@ impl RuntimeHandle {
             .await;
     }
 
-    pub async fn reconcile(&self, detected: Vec<DetectedAgent>, now: Timestamp) {
+    pub async fn reconcile(
+        &self,
+        detected: Vec<DetectedAgent>,
+        sessions: Vec<SessionFile>,
+        now: Timestamp,
+    ) {
         let _ = self
             .tx
-            .send(RuntimeCommand::Reconcile { detected, now })
+            .send(RuntimeCommand::Reconcile {
+                detected,
+                sessions,
+                now,
+            })
+            .await;
+    }
+
+    pub async fn hook(&self, provider: Provider, event: HookEvent, now: Timestamp) {
+        let _ = self
+            .tx
+            .send(RuntimeCommand::Hook {
+                provider,
+                event,
+                now,
+                received: Instant::now(),
+            })
             .await;
     }
 
@@ -139,6 +171,21 @@ impl RuntimeHandle {
     }
 }
 
+fn log_status_changes(events: &[DomainEvent]) {
+    for ev in events {
+        if let DomainEvent::StatusChanged {
+            id,
+            from,
+            to,
+            reason,
+            ..
+        } = ev
+        {
+            info!(event = "status.changed", agent_id = %id, ?from, ?to, ?reason);
+        }
+    }
+}
+
 pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     registry: AgentRegistry,
     rx: mpsc::Receiver<RuntimeCommand>,
@@ -151,6 +198,8 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     telemetry: Arc<Telemetry>,
     seq: u64,
     debug_stream: bool,
+    /// Hook más antiguo aún no publicado: mide hook → Diff.
+    oldest_unpublished_hook: Option<Instant>,
     source: Source,
     app_version: String,
     stale_policy: StalePolicy,
@@ -178,6 +227,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             telemetry: Arc::clone(&telemetry),
             seq: 0,
             debug_stream: false,
+            oldest_unpublished_hook: None,
             source,
             app_version: app_version.into(),
             stale_policy: StalePolicy::default(),
@@ -239,8 +289,23 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 self.registry.apply(&id, &input, now);
                 self.telemetry.record_event();
             }
-            RuntimeCommand::Reconcile { detected, now } => {
-                for ev in self.registry.reconcile(&detected, now) {
+            RuntimeCommand::Reconcile {
+                detected,
+                sessions,
+                now,
+            } => {
+                let mut events = self.registry.reconcile(&detected, now);
+                for sf in &sessions {
+                    events.extend(self.registry.session_file(
+                        Provider::Claude,
+                        sf.pid,
+                        &sf.session,
+                        sf.activity,
+                        now,
+                    ));
+                }
+                log_status_changes(&events);
+                for ev in events {
                     match ev {
                         DomainEvent::AgentAppeared { id } => {
                             info!(event = "agent.appeared", agent_id = %id);
@@ -251,6 +316,20 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                         _ => {}
                     }
                 }
+            }
+            RuntimeCommand::Hook {
+                provider,
+                event,
+                now,
+                received,
+            } => {
+                debug!(event = "hook.received", provider = %provider, name = %event.name);
+                let events =
+                    self.registry
+                        .hook(provider, &event.session, &event.cwd, &event.signal, now);
+                log_status_changes(&events);
+                self.telemetry.record_event();
+                self.oldest_unpublished_hook.get_or_insert(received);
             }
             RuntimeCommand::Describe { id, reply } => {
                 let _ = reply.send(self.registry.get(&id).map(|a| a.cwd().as_str().to_owned()));
@@ -286,11 +365,13 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             return;
         }
         self.seq += 1;
-        let start_send = Instant::now();
         publisher.publish(project_diff(self.seq, self.clock.now().ms(), diff));
         self.telemetry.record_flush();
-        self.telemetry
-            .record_publish_latency_ms(start_send.elapsed().as_millis() as u64);
+        if let Some(received) = self.oldest_unpublished_hook.take() {
+            // ADR 0006, ficha del Hito 4: hook recibido → Diff publicado.
+            self.telemetry
+                .record_publish_latency_ms(received.elapsed().as_millis() as u64);
+        }
     }
 
     fn send_metrics(&mut self) {

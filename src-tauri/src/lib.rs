@@ -5,6 +5,8 @@
 
 use std::time::Duration;
 
+use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
+use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pump, serve_hooks};
 use kiti_core::adapters::{SysinfoScanner, SystemClock, UnixKiller};
 use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, run_scanner};
 use kiti_core::domain::{AgentId, Timestamp};
@@ -19,7 +21,7 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 use tokio::sync::{mpsc, oneshot};
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -33,6 +35,8 @@ fn scan_interval() -> Duration {
         .and_then(|v| v.parse().ok())
         .map_or(Duration::from_secs(3), Duration::from_millis)
 }
+
+const DEFAULT_HOOK_PORT: u16 = 47821;
 
 pub struct AppState {
     pub runtime: RuntimeHandle,
@@ -182,6 +186,48 @@ async fn set_debug_stream(on: bool, state: State<'_, AppState>) -> Result<(), Ip
     Ok(())
 }
 
+/// Puerto fijo del HookServer: los hooks instalados en `~/.claude/settings.json` apuntan a él.
+fn hook_port() -> u16 {
+    std::env::var("KITI_HOOK_PORT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_HOOK_PORT)
+}
+
+/// HookServer en 127.0.0.1, token `0600` y hooks de Claude instalados (permiso del usuario,
+/// ADR 0006). Si algo falla, Kiti sigue funcionando sin semáforo de hooks y lo deja en el log.
+fn start_claude_hooks(app: &AppHandle, home: Option<&std::path::Path>, runtime: RuntimeHandle) {
+    let port = hook_port();
+    let token = match app
+        .path()
+        .app_data_dir()
+        .map_err(|e| std::io::Error::other(e.to_string()))
+        .and_then(|dir| load_or_create_token(&dir.join("hook-token")))
+    {
+        Ok(token) => token,
+        Err(e) => {
+            error!(event = "hooks.token", error = %e, "sin token no se aceptan hooks");
+            return;
+        }
+    };
+    let (tx, rx) = mpsc::channel(1024);
+    tauri::async_runtime::spawn(run_hook_pump(rx, runtime, SystemClock));
+    let router = hook_router(token.clone(), port, tx);
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = serve_hooks(port, router).await {
+            error!(event = "hooks.server", port, error = %e, "¿puerto ocupado? (KITI_HOOK_PORT)");
+        }
+    });
+    let Some(home) = home else { return };
+    let settings = home.join(".claude/settings.json");
+    let url = format!("http://127.0.0.1:{port}/v1/hooks/claude");
+    if !is_installed_file(&settings, &url)
+        && let Err(e) = install_file(&settings, &url, &token)
+    {
+        error!(event = "hooks.install", error = %e);
+    }
+}
+
 /// Logs legibles por stderr y JSON con rotación diaria en el directorio de logs de la app.
 fn init_tracing(app: &AppHandle) -> Option<WorkerGuard> {
     let filter = || EnvFilter::try_from_env("KITI_LOG").unwrap_or_else(|_| "info".into());
@@ -279,12 +325,15 @@ pub fn run() {
                         env!("CARGO_PKG_VERSION"),
                     );
                     tauri::async_runtime::spawn(runtime.with_monitor(monitor).run());
+                    let home = app.path().home_dir().ok();
                     tauri::async_runtime::spawn(run_scanner(
                         SysinfoScanner::new(),
+                        home.as_ref().map(|h| h.join(".claude/sessions")),
                         handle.clone(),
                         SystemClock,
                         scan_interval(),
                     ));
+                    start_claude_hooks(app.handle(), home.as_deref(), handle.clone());
                     handle
                 }
             };

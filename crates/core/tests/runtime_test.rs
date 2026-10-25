@@ -8,6 +8,7 @@ use kiti_core::domain::{
     AgentId, AgentInput, DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Signal,
     Timestamp, WorkingDir,
 };
+use kiti_core::ports::Clock;
 use kiti_core::ports::{
     AgentKiller, DiffPublisher, KillOutcome, KillTarget, ProcessScanner, ScanError,
 };
@@ -361,6 +362,7 @@ async fn el_escaner_alimenta_el_registro_y_detecta_salidas() {
     let scanner = ScriptedScanner(vec![vec![claude_process(77), zsh.clone()], vec![zsh]]);
     tokio::spawn(run_scanner(
         scanner,
+        None,
         handle.clone(),
         clock.clone(),
         Duration::from_secs(2),
@@ -395,4 +397,54 @@ async fn eventually(cond: impl Fn() -> bool) {
         tokio::task::yield_now().await;
     }
     panic!("la condición no se cumplió");
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_hook_de_claude_pone_verde_la_oficina_enlazada_por_el_archivo_de_sesion() {
+    let clock = ManualClock::new(10_000);
+    let handle = spawn(TestKiller, clock.clone());
+    let publisher = TestPublisher::new();
+    let msgs = publisher.messages.clone();
+    handle.subscribe(publisher).await.unwrap();
+
+    // Dos agentes en la misma carpeta: solo el archivo de sesión dice cuál es cuál.
+    let dir = std::env::temp_dir().join(format!("kiti-sessions-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("78.json"),
+        r#"{"pid": 78, "sessionId": "s-78", "status": "idle", "updatedAt": 9000}"#,
+    )
+    .unwrap();
+    let scanner = ScriptedScanner(vec![vec![claude_process(77), claude_process(78)]]);
+    tokio::spawn(run_scanner(
+        scanner,
+        Some(dir.clone()),
+        handle.clone(),
+        clock.clone(),
+        Duration::from_secs(2),
+    ));
+    let pids_with = |kind: kiti_protocol::StatusKind| {
+        let mut last = std::collections::HashMap::new();
+        for m in msgs.lock().unwrap().iter() {
+            if let ServerMsg::Diff { upserts, .. } = m {
+                for a in upserts {
+                    last.insert(a.pid, a.status.kind);
+                }
+            }
+        }
+        let mut pids: Vec<u32> = last
+            .into_iter()
+            .filter(|(_, k)| *k == kind)
+            .map(|(p, _)| p)
+            .collect();
+        pids.sort();
+        pids
+    };
+    eventually(|| pids_with(kiti_protocol::StatusKind::Idle).len() == 2).await;
+
+    let body = br#"{"session_id":"s-78","cwd":"/Users/dev/kiti","hook_event_name":"UserPromptSubmit","prompt":"x"}"#;
+    let event = kiti_core::ingestion::claude::parse_hook(body).unwrap();
+    handle.hook(Provider::Claude, event, clock.now()).await;
+    eventually(|| pids_with(kiti_protocol::StatusKind::Working) == vec![78]).await;
+    std::fs::remove_dir_all(dir).unwrap();
 }

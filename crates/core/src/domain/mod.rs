@@ -10,11 +10,11 @@ mod signal;
 mod stale;
 mod status;
 
-pub use agent::{Agent, AgentInput, DetectedAgent, Events};
+pub use agent::{Agent, AgentInput, DetectedAgent, Events, SessionActivity};
 pub use events::DomainEvent;
 pub use ids::{
-    AgentId, ParseAgentIdError, Pid, ProcessIdentity, ProcessStartTime, Provider, Timestamp,
-    ToolName, ToolUseKey, WorkingDir,
+    AgentId, ParseAgentIdError, Pid, ProcessIdentity, ProcessStartTime, Provider, SessionId,
+    Timestamp, ToolName, ToolUseKey, WorkingDir,
 };
 pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
 pub use registry::{AgentRegistry, RegistryDiff};

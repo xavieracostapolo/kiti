@@ -1,0 +1,154 @@
+//! HookServer (ADR 0002 §5, ADR 0004 §2): `POST /v1/hooks/{provider}` en `127.0.0.1`.
+//!
+//! Responde `204` vacío en cuanto valida la petición y encola el cuerpo con `try_send`: nunca
+//! bloquea al agente ni le devuelve decisiones. La ACL se aplica después, fuera del handler.
+
+use std::io::Write;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::Path;
+use std::str::FromStr;
+use std::time::Duration;
+
+use axum::Router;
+use axum::body::Bytes;
+use axum::extract::{DefaultBodyLimit, Path as UrlPath, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::routing::post;
+use tokio::sync::mpsc;
+use tower::limit::ConcurrencyLimitLayer;
+use tower_http::timeout::TimeoutLayer;
+use tracing::{debug, warn};
+
+use crate::domain::Provider;
+
+pub const MAX_BODY: usize = 4 * 1024 * 1024;
+
+/// Un hook aceptado, aún sin interpretar.
+#[derive(Debug, Clone)]
+pub struct HookRequest {
+    pub provider: Provider,
+    pub body: Bytes,
+}
+
+#[derive(Clone)]
+struct Ctx {
+    token: String,
+    host: String,
+    tx: mpsc::Sender<HookRequest>,
+}
+
+fn reject(reason: &'static str, status: StatusCode) -> StatusCode {
+    warn!(event = "hook.rejected", reason, status = status.as_u16());
+    status
+}
+
+async fn handle(
+    State(ctx): State<Ctx>,
+    UrlPath(provider): UrlPath<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> StatusCode {
+    let header_str = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
+    // Host exacto: corta el DNS rebinding (un dominio ajeno que resuelve a 127.0.0.1).
+    if header_str(header::HOST) != Some(ctx.host.as_str()) {
+        return reject("host", StatusCode::MISDIRECTED_REQUEST);
+    }
+    // Un CLI no envía Origin ni Sec-Fetch-*; un navegador sí.
+    if headers.contains_key(header::ORIGIN)
+        || headers.keys().any(|k| k.as_str().starts_with("sec-fetch-"))
+    {
+        return reject("origin", StatusCode::FORBIDDEN);
+    }
+    let bearer = header_str(header::AUTHORIZATION).and_then(|v| v.strip_prefix("Bearer "));
+    if !bearer
+        .is_some_and(|t| constant_time_eq::constant_time_eq(t.as_bytes(), ctx.token.as_bytes()))
+    {
+        return reject("token", StatusCode::UNAUTHORIZED);
+    }
+    // Exigir JSON obliga a un navegador a un preflight CORS que nunca se responde.
+    if !header_str(header::CONTENT_TYPE).is_some_and(|c| c.starts_with("application/json")) {
+        return reject("content_type", StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+    let Ok(provider) = Provider::from_str(&provider) else {
+        return reject("provider", StatusCode::NOT_FOUND);
+    };
+    debug!(event = "hook.accepted", provider = %provider, bytes = body.len());
+    if ctx.tx.try_send(HookRequest { provider, body }).is_err() {
+        warn!(event = "hook.dropped", provider = %provider);
+    }
+    StatusCode::NO_CONTENT
+}
+
+pub fn hook_router(token: String, port: u16, tx: mpsc::Sender<HookRequest>) -> Router {
+    let ctx = Ctx {
+        token,
+        host: format!("127.0.0.1:{port}"),
+        tx,
+    };
+    Router::new()
+        .route("/v1/hooks/{provider}", post(handle))
+        .layer(DefaultBodyLimit::max(MAX_BODY))
+        .layer(ConcurrencyLimitLayer::new(64))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(2),
+        ))
+        .with_state(ctx)
+}
+
+/// Escucha solo en `127.0.0.1` (nunca `0.0.0.0`).
+pub async fn serve_hooks(port: u16, router: Router) -> std::io::Result<()> {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
+    axum::serve(listener, router).await
+}
+
+/// Token de 32 bytes del CSPRNG, en hex, en un archivo `0600` creado con `O_EXCL`. Si el archivo
+/// existe con otros permisos, se rechaza: alguien lo tocó.
+pub fn load_or_create_token(path: &Path) -> std::io::Result<String> {
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            if meta.permissions().mode() & 0o077 != 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    format!("{} debe tener permisos 0600", path.display()),
+                ));
+            }
+            Ok(std::fs::read_to_string(path)?.trim().to_owned())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)?;
+            }
+            let mut bytes = [0u8; 32];
+            getrandom::fill(&mut bytes).map_err(|e| std::io::Error::other(e.to_string()))?;
+            let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(path)?;
+            file.write_all(token.as_bytes())?;
+            file.sync_all()?;
+            Ok(token)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// Saca los hooks aceptados de la cola, aplica la ACL de su CLI y los entrega al runtime.
+/// Codex y Gemini llegan en el Hito 5: por ahora solo se cuentan.
+pub async fn run_hook_pump<C: crate::ports::Clock>(
+    mut rx: mpsc::Receiver<HookRequest>,
+    runtime: crate::application::RuntimeHandle,
+    clock: C,
+) {
+    while let Some(req) = rx.recv().await {
+        match req.provider {
+            Provider::Claude => match crate::ingestion::claude::parse_hook(&req.body) {
+                Ok(event) => runtime.hook(req.provider, event, clock.now()).await,
+                Err(e) => warn!(event = "hook.invalid", provider = %req.provider, error = %e),
+            },
+            other => debug!(event = "hook.unsupported", provider = %other),
+        }
+    }
+}

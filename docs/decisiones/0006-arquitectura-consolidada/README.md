@@ -284,6 +284,32 @@ Lectura:
 - **Kill real:** `UnixKiller` probado contra procesos lanzados por los tests (SIGTERM, SIGKILL tras la gracia, identidad distinta → no envía señales, PID 1 y propio rechazados). Falta probar a mano el diálogo nativo con un agente real.
 - **Fallo encontrado y corregido:** el reporte `UiMetrics` de cada 2 s había quedado dentro de la rama de resincronización y nunca se enviaba. Ahora está en `telemetry/report.ts`, con su test.
 
+## Plan del Hito 4: "Hooks de Claude Code"
+
+**Alcance:** ACL de Claude (payload → `Signal`), correlación `session_id` ↔ agente con `~/.claude/sessions/<pid>.json`, `SessionFile` (`busy`/`idle`) en el reducer, HookServer (feature `hooks`), token `0600`, instalador de hooks en `~/.claude/settings.json` con desinstalación, y experimento E1 (con permiso del usuario, 2026-10-24).
+
+**Decisión:** `sessions/<pid>.json` se lee en cada escaneo (3 s) en lugar de vigilarlo con `notify`. Son pocos archivos pequeños, los hooks son la fuente principal y ese archivo solo cubre la interrupción con Esc. Se reevalúa si la latencia de esa caída a gris molesta.
+
+**Ficha de observabilidad**
+
+| Pregunta | Señal | Umbral |
+|---|---|---|
+| ¿Cuánto tarda un hook en verse? | `hook.received` → `Diff` (`core.hook_to_publish_ms`) | p95 < 120 ms |
+| ¿Se rechazan peticiones ajenas? | `hook.rejected` con `reason` (`host`, `origin`, `token`, `content_type`, `size`) | Cualquier rechazo queda en el log |
+| ¿Cada sesión encuentra su oficina? | `session.linked` / `session.unlinked` con la fuente (`session_file`, `cwd`) | 0 sesiones sin oficina tras 5 s |
+| ¿Se pierden eventos? | `hook.dropped` (canal lleno) | 0 |
+| ¿El instalador respeta lo ajeno? | Tests con settings reales: hooks de otros, orden de claves y backup | Byte a byte igual salvo lo de Kiti |
+| ¿Molesta con Kiti cerrada? | E1 | Sin avisos en el TUI de Claude |
+
+## Resultados del Hito 4
+
+- **Semáforo real con hooks:** la app instala sus hooks (`hooks:status` muestra 11 de 11), escucha solo en `127.0.0.1:47821` y, en cuanto la sesión de Claude de este proyecto usó una herramienta, su oficina pasó de gris a verde (`status.changed … from=Idle to=Working reason=Hook`).
+- **Instalador:** con el `settings.json` real del usuario (11 claves y un hook `PreToolUse` propio) añadió un grupo por evento sin tocar lo demás. Hizo backup único en `settings.json.kiti.bak` y conservó los permisos `0600`. `mise run hooks:uninstall` lo revierte.
+- **Correlación:** `sessions/<pid>.json` se aplica solo cuando cambia y si es más reciente que el último hook, porque se lee cada 3 s y puede ir atrasado.
+- **Seguridad del HookServer:** un test por control (Host, Origin/Sec-Fetch, token, JSON, 4 MiB, canal lleno) y un extremo a extremo que comprueba que el prompt nunca sale del core.
+- **E1:** en las pruebas, Kiti se cerró y se reinició varias veces mientras esta sesión de Claude disparaba hooks hacia el puerto cerrado. Resultado pendiente de lo que el usuario vio en su terminal.
+- **Pendiente:** indicador en la UI del estado de los hooks, acción "Regenerar token" y `hook_to_publish_ms` en el panel de debug con tráfico real.
+
 ## Hitos siguientes
 
 2. **Shell Tauri y core con simulador:** `src-tauri` con Channel, capabilities, CSP y `tracing`; dominio y reducer de `kiti-core` contra la conformidad; `SimFleet` con `KITI_SIM=20:42`; `TauriTransport`; medir RAM y CPU.
