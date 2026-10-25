@@ -7,7 +7,7 @@ const text = (chunks: Uint8Array[]) => chunks.map((c) => new TextDecoder().decod
 describe("FakeTerminals", () => {
   it("se une a un agente, saluda al conectar y repite lo que se escribe", async () => {
     const t = new FakeTerminals({ pid: 42, provider: "codex", cwd: "/w/x" });
-    expect(await t.launch()).toBeNull();
+    expect(await t.launch(), "sin agente lanzable").toBeNull();
     expect(await t.list()).toEqual([
       { id: "sim-1", pid: 42, provider: "codex", cwd: "/w/x", running: true },
     ]);
@@ -28,5 +28,21 @@ describe("FakeTerminals", () => {
       if (m.type === "Snapshot") first = m.agents[0]?.pid;
     });
     expect(info?.pid).toBe(first);
+  });
+
+  it("Nuevo agente une una segunda terminal al agente lanzable, una sola vez", async () => {
+    const t = new FakeTerminals(
+      { pid: 1, provider: "claude", cwd: "/a" },
+      { pid: 2, provider: "gemini", cwd: "/b" },
+    );
+    expect(await t.launch()).toEqual({
+      id: "sim-2",
+      pid: 2,
+      provider: "gemini",
+      cwd: "/b",
+      running: true,
+    });
+    expect((await t.list()).map((x) => x.pid)).toEqual([1, 2]);
+    expect(await t.launch()).toBeNull();
   });
 });

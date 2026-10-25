@@ -34,6 +34,8 @@ export class OfficeView {
   private readonly bubbleText: BitmapText;
   private readonly deadShade = new Graphics();
   private readonly selection = new Graphics();
+  /** Insignia `>_`: la oficina tiene una terminal de Kiti (ADR 0007). */
+  private readonly terminalBadge = new Container();
   private agent: AgentState | undefined;
 
   constructor(
@@ -57,6 +59,16 @@ export class OfficeView {
     this.avatar.position.set(a.avatar.x, a.avatar.y);
 
     this.near.addChild(this.badge, this.badgeText, this.avatar, this.bubble, this.bubbleText);
+    const badgeBg = new Graphics()
+      .roundRect(0, 0, 22, 14, 3)
+      .fill(PAL.housing)
+      .stroke({ color: PAL.text, width: 1 });
+    const badgeLabel = new BitmapText({ text: ">_", style: { fontFamily: FONT, fontSize: 9 } });
+    badgeLabel.position.set(4, 1);
+    this.terminalBadge.addChild(badgeBg, badgeLabel);
+    // Junto al semáforo: es lo primero que se mira y se ve en cualquier zoom.
+    this.terminalBadge.position.set(size.w - 52, 7);
+    this.terminalBadge.visible = false;
     this.root.addChild(
       new Sprite(template),
       this.screen,
@@ -65,6 +77,7 @@ export class OfficeView {
       this.border,
       this.light,
       this.label,
+      this.terminalBadge,
       this.selection,
     );
   }
@@ -82,6 +95,10 @@ export class OfficeView {
   setLod(lod: Lod): void {
     this.label.visible = lod !== "far";
     this.near.visible = lod === "near";
+  }
+
+  setHasTerminal(has: boolean): void {
+    this.terminalBadge.visible = has;
   }
 
   setSelected(selected: boolean): void {

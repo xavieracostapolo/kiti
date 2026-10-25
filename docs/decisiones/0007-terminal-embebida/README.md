@@ -75,6 +75,15 @@ xterm.js (y otros componentes) inyectan estilos en tiempo de ejecución. Un E2E 
 - **Pruebas en el navegador:** `?terminals=1` añade al simulador una terminal falsa que repite lo que se escribe. Los E2E abren la terminal con un clic, escriben y comprueban el eco, también con el build de producción y la CSP real.
 - **Pendiente manual:** lanzar un agente real desde la app (requiere elegir carpeta en el selector nativo).
 
+## Ajustes tras la primera prueba del usuario (2026-10-25, Hito 9)
+
+- **Fallo:** una sesión lanzada desde Kiti no tenía oficina. El escáner leía el `exe` una sola vez por proceso, y el lanzamiento es `zsh -lic 'exec claude'`: el PID se mantiene y el ejecutable cambia. Ahora el `exe` se relee en cada escaneo (6,59 → 6,76 ms), con un test que hace `exec` de un `claude` falso tras el primer escaneo.
+- **Oficina primero:** al lanzar un agente ya no se abre su terminal; la cámara enfoca su oficina en cuanto aparece y la selecciona.
+- **Clic del usuario** en una oficina con terminal la abre; en una sin terminal, cierra la abierta y muestra el panel con el aviso.
+- **Con la terminal abierta**, todas las oficinas se reencuadran en el espacio libre de la izquierda (`fitInto` con márgenes): los semáforos siguen a la vista y se cambia de terminal con un clic. La cabecera de la terminal muestra el estado del agente y el panel de detalle se oculta para no tapar oficinas.
+- **Insignia `>_`** junto al semáforo de las oficinas con terminal de Kiti.
+- **Límite conocido:** el PTY pertenece a Kiti. Si Kiti se cierra del todo ("Salir"), las sesiones lanzadas desde ella terminan. Cerrar la ventana no les afecta.
+
 ## Cuándo reabrir
 
 - Si `portable-pty` no publica un release antes de dar soporte a Windows, o aparece un advisory: se cambia por `pty-process` (Unix) más ConPTY directo.

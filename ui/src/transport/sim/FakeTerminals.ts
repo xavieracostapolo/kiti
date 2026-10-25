@@ -1,22 +1,40 @@
-// Terminal falsa para el modo sim (`?terminals=1`): permite probar el panel de terminal en el
-// navegador y en E2E sin Tauri ni PTY. Repite lo que se escribe, como un `cat`.
+// Terminales falsas para el modo sim (`?terminals=1`): permiten probar en el navegador y en E2E
+// el panel de terminal y "Nuevo agente" sin Tauri ni PTY. Repiten lo que se escribe, como `cat`.
 import type { Provider, TerminalInfo } from "../../protocol";
 import type { TerminalApi } from "../Transport";
 
 const encoder = new TextEncoder();
 
+type Target = { pid: number; provider: Provider; cwd: string };
+
 export class FakeTerminals implements TerminalApi {
   private readonly sinks = new Map<string, (bytes: Uint8Array) => void>();
+  private readonly open: TerminalInfo[] = [];
 
-  constructor(private readonly attached: { pid: number; provider: Provider; cwd: string }) {}
+  /**
+   * `attached`: agente que ya tiene terminal al arrancar. `launchable`: agente que "aparece" con
+   * terminal al usar "Nuevo agente" (en el simulador no se crea un proceso nuevo).
+   */
+  constructor(
+    attached: Target,
+    private readonly launchable?: Target,
+  ) {
+    this.open.push(this.info("sim-1", attached));
+  }
+
+  private info(id: string, { pid, provider, cwd }: Target): TerminalInfo {
+    return { id, pid, provider, cwd, running: true };
+  }
 
   async launch(): Promise<TerminalInfo | null> {
-    return null;
+    if (!this.launchable || this.open.some((t) => t.id === "sim-2")) return null;
+    const info = this.info("sim-2", this.launchable);
+    this.open.push(info);
+    return info;
   }
 
   async list(): Promise<TerminalInfo[]> {
-    const { pid, provider, cwd } = this.attached;
-    return [{ id: "sim-1", pid, provider, cwd, running: true }];
+    return [...this.open];
   }
 
   async attach(id: string, onData: (bytes: Uint8Array) => void): Promise<void> {

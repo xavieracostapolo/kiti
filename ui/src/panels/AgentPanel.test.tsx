@@ -81,4 +81,17 @@ describe("AgentPanel", () => {
     setup(base, false);
     expect(screen.queryByText(/abierto fuera de Kiti/i)).toBeNull();
   });
+
+  it("con la terminal abierta el panel de detalle se oculta", () => {
+    const store = setup(base, true);
+    act(() => {
+      store
+        .getState()
+        .setTerminals([
+          { id: "pty-7", pid: base.pid, provider: "claude", cwd: base.cwd, running: true },
+        ]);
+      store.getState().openTerminal("pty-7");
+    });
+    expect(screen.queryByRole("complementary", { name: "Agente seleccionado" })).toBeNull();
+  });
 });

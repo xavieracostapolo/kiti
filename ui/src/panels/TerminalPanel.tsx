@@ -6,7 +6,11 @@ import { useStore } from "zustand";
 import { displayName } from "../domain/names";
 import type { KitiStore } from "../state/store";
 import type { TerminalApi } from "../transport/Transport";
+import { STATUS_COLOR } from "../world/palette";
+import { STATUS_LABEL } from "./labels";
 import s from "./panels.module.css";
+
+const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 
 type Props = { store: KitiStore; api: TerminalApi };
 
@@ -17,6 +21,9 @@ export function TerminalPanel({ store, api }: Props) {
     st.openTerminalId
       ? [...st.terminals.values()].find((t) => t.id === st.openTerminalId)
       : undefined,
+  );
+  const agent = useStore(store, (st) =>
+    info ? [...st.agents.agents.values()].find((a) => a.pid === info.pid) : undefined,
   );
   const host = useRef<HTMLDivElement>(null);
 
@@ -55,7 +62,11 @@ export function TerminalPanel({ store, api }: Props) {
     <section className={s.terminalPanel} aria-label="Terminal del agente">
       <header className={s.terminalHeader}>
         <span>
+          {agent && (
+            <span className={s.dot} style={{ background: hex(STATUS_COLOR[agent.status.kind]) }} />
+          )}{" "}
           {info ? `${info.provider} · ${displayName(info.cwd)}` : id}
+          {agent ? ` · ${STATUS_LABEL[agent.status.kind]}` : ""}
           {info && !info.running ? " · terminado" : ""}
         </span>
         <button type="button" className={s.button} onClick={() => store.getState().closeTerminal()}>

@@ -1,4 +1,4 @@
-import { Profiler, useCallback, useEffect, useRef } from "react";
+import { Profiler, useCallback, useRef } from "react";
 import type { Params } from "../dev/params";
 import type { Provider } from "../protocol";
 import type { KitiStore } from "../state/store";
@@ -34,18 +34,6 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
   const killAgent = useCallback((id: string) => transport.killAgent(id), [transport]);
   const terminals = transport.terminals;
 
-  // Clic en una oficina lanzada desde Kiti: se abre su terminal directamente (ADR 0007).
-  useEffect(
-    () =>
-      store.subscribe((st, prev) => {
-        if (st.view.selectedId === prev.view.selectedId || !st.view.selectedId) return;
-        const agent = st.agents.agents.get(st.view.selectedId);
-        const terminal = agent && st.terminals.get(agent.pid);
-        if (terminal) st.openTerminal(terminal.id);
-      }),
-    [store],
-  );
-
   const launch = useCallback(
     async (provider: Provider) => {
       if (!terminals) return;
@@ -53,7 +41,8 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
         const info = await terminals.launch(provider);
         if (!info) return; // canceló el selector de carpeta
         store.getState().setTerminals(await terminals.list());
-        store.getState().openTerminal(info.id);
+        // Oficina primero: el mundo la enfoca y la selecciona en cuanto aparece (≤ 3 s).
+        store.getState().setPendingLaunch(info.pid);
       } catch (e) {
         console.error(`No se pudo lanzar ${provider}: ${JSON.stringify(e)}`);
       }

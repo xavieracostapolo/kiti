@@ -20,7 +20,10 @@ export type KitiState = {
   /** Terminales de los agentes lanzados desde Kiti, por pid (ADR 0007). */
   terminals: ReadonlyMap<number, TerminalInfo>;
   openTerminalId: string | undefined;
+  /** PID de un agente recién lanzado: al aparecer su oficina se enfoca y se selecciona. */
+  pendingLaunchPid: number | undefined;
   hover: Hover | undefined;
+  setPendingLaunch(pid: number | undefined): void;
   setTerminals(list: readonly TerminalInfo[]): void;
   terminalFor(pid: number): TerminalInfo | undefined;
   openTerminal(id: string): void;
@@ -51,7 +54,11 @@ export function createKitiStore() {
     agents: EMPTY_AGENTS,
     terminals: new Map(),
     openTerminalId: undefined,
+    pendingLaunchPid: undefined,
     hover: undefined,
+    setPendingLaunch(pid) {
+      set({ pendingLaunchPid: pid });
+    },
     view: { lod: "far" },
     setTerminals(list) {
       set({ terminals: new Map(list.map((t) => [t.pid, t])) });
