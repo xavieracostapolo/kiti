@@ -1,0 +1,29 @@
+# Hooks de git (ADR 0004 §4). Rápidos en pre-commit; lo caro va en pre-push y en CI.
+# lefthook fijado en 2.2.1: la 2.2.2 se publicó sin provenance y pnpm (trustPolicy) la bloquea.
+pre-commit:
+  parallel: true
+  commands:
+    rustfmt:
+      glob: "*.rs"
+      run: cargo fmt --all --check
+    biome:
+      root: "ui/"
+      glob: "*.{ts,tsx,js,mjs,json,css}"
+      run: mise exec -- pnpm exec biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+
+commit-msg:
+  commands:
+    commitlint:
+      run: mise exec -- pnpm exec commitlint --edit {1}
+
+pre-push:
+  parallel: true
+  commands:
+    clippy:
+      run: cargo clippy --workspace --all-targets -- -D warnings
+    typecheck:
+      run: mise exec -- pnpm -C ui typecheck
+    unit:
+      run: mise exec -- pnpm -C ui test
+    rust-tests:
+      run: cargo test --workspace

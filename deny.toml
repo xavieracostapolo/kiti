@@ -1,0 +1,36 @@
+# cargo-deny (ADR 0004 §2, supply chain). Se ejecuta con `mise run deny` y en CI.
+
+[graph]
+all-features = true
+
+[advisories]
+# Cualquier advisory de RustSec (vulnerabilidad, unmaintained, yanked) falla el check.
+yanked = "deny"
+ignore = []
+
+[licenses]
+confidence-threshold = 0.9
+# Lista permitida para dependencias futuras (Tauri, axum…); no avisar si alguna aún no aparece.
+unused-allowed-license = "allow"
+# Los crates propios no se publican (publish = false) y el proyecto aún no tiene licencia elegida.
+private = { ignore = true }
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Zlib",
+]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

@@ -6,3 +6,4 @@ trustPolicy: no-downgrade
 allowBuilds:
   "@biomejs/biome": true
   esbuild: true
+  lefthook: true
