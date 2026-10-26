@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 16 en `main`. El último, "Pixel art con Kenney", está en el [ADR 0013](docs/decisiones/0013-pixel-art-kenney/README.md).
+- **Fase:** Hitos 1 a 17 en `main`. El último, "Antigravity CLI", está en el [ADR 0014](docs/decisiones/0014-antigravity/README.md).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -42,6 +42,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0011](docs/decisiones/0011-filtro-y-vista-lejana/README.md) | Cartel con el título en la vista lejana; contadores y buscador que filtran (lo demás se atenúa) |
 | [0012](docs/decisiones/0012-ir-a-la-terminal/README.md) | «Ir a su terminal» para agentes abiertos fuera de Kiti: pestaña exacta en Ghostty y Terminal.app; otras apps, al frente |
 | [0013](docs/decisiones/0013-pixel-art-kenney/README.md) | Oficinas con tiles de Kenney (CC0): RPG Pack (sala), Indoors (muebles) y Urban (personas); lo funcional sigue por código |
+| [0014](docs/decisiones/0014-antigravity/README.md) | Antigravity CLI (`agy`, sucesor de Gemini CLI) como proveedor: hooks por comando, amarillo desde su base de datos, retomar con `--conversation` |
 
 ## Decisiones tomadas (no repetir)
 
@@ -137,6 +138,7 @@ Verificado en el [ADR 0005](docs/decisiones/0005-integracion-clis-agentes/README
 |---|---|---|---|
 | Claude Code | Binario nativo (también en npm). sysinfo ve el symlink `~/.local/bin/claude`; `lsof` muestra `~/.local/share/claude/versions/<semver>`. Excluir `Claude.app` | Tipo `http` nativo. Kiti se suscribe a `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied`, `Notification`, `Stop`, `StopFailure` y `SessionEnd`. `Stop` **no** llega si el usuario interrumpe con Esc | `~/.claude/sessions/<pid>.json` (pid ↔ sesión, `busy`/`idle`) y `~/.claude/projects/<cwd>/<session>.jsonl` |
 | Codex CLI | Binario Rust. Con npm hay **2 procesos** (`node` lanzador y el binario hijo, que es el agente) | **No hay `http`**: `command` vía forwarder en `~/.codex/hooks.json`. El usuario debe **confiar** en el hook en `/hooks`. No hay `Notification`; sí `PermissionRequest` e `Interrupt` | `~/.codex/sessions/AAAA/MM/DD/rollout-*.jsonl` (no es interfaz estable; migra a SQLite) |
+| Antigravity CLI | Binario Go `antigravity` del cask, lanzado como `agy` (sysinfo ve el symlink `/opt/homebrew/bin/agy`). Un proceso. Excluir `Antigravity IDE.app` y los subcomandos (`models`, `mcp`, `plugin`…) | `command` vía forwarder en `~/.gemini/config/hooks.json` (`kiti-hook antigravity <Evento>`): `SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`. Sin evento de permiso: se lee `status = 9` en su base de pasos | `~/.gemini/antigravity-cli/conversation_summaries.db` (título, carpeta) y `conversations/<id>.db` (pasos) |
 | Gemini CLI | **`node`** en todas las instalaciones, con **2 procesos** por sesión (el agente es el hijo relanzado). Excluir `Gemini.app` | Solo `command` y síncronos, vía forwarder, que debe imprimir `{}`. Eventos `BeforeAgent`, `BeforeTool`, `AfterTool`, `AfterAgent`, `Notification`, `SessionStart` y `SessionEnd` | `~/.gemini/tmp/<slug>/chats/session-*.jsonl` |
 
 - **Detecta por `exe` y `argv`, nunca por el nombre del proceso.** Hay un único `classify` en el core, que distingue el agente del lanzador.
@@ -182,6 +184,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **14. Ir a la terminal:** botón para mostrar la pestaña de Ghostty o Terminal.app de un agente abierto fuera de Kiti.
 - [x] **15. Arreglos:** un agente que ya trabajaba al arrancar Kiti sale en verde; el clic en un aviso abre Kiti y enfoca la oficina.
 - [x] **16. Pixel art con Kenney:** sala de tiles (madera, muebles), una persona por agente y alfombra del color del proveedor.
+- [x] **17. Antigravity CLI:** cuarto proveedor (`agy`), con semáforo, permiso, título, último pedido, lanzar y retomar conversaciones.
 - [ ] **Después:** soporte para Windows.
 
 ## Pendientes de verificar
@@ -227,6 +230,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run hooks:status  # estado de los hooks de Kiti en Claude, Codex y Gemini
   mise run hooks:install-codex  # solo si usas Codex CLI (luego /hooks en Codex)
   mise run hooks:install-gemini # solo si usas Gemini CLI
+  mise run hooks:install-antigravity # Antigravity CLI (agy), ADR 0014
   mise run hooks:uninstall # quita los hooks de Kiti de ~/.claude/settings.json (los tuyos quedan)
   mise run app:build     # release sin empaquetar: target/release/kiti-app
   mise run app:bundle    # Kiti.app y copia en el Escritorio (cierra Kiti antes)

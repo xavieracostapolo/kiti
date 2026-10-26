@@ -40,6 +40,8 @@ export const RUG: Record<Provider, readonly [number, number]> = {
   claude: [10, 19],
   codex: [10, 16],
   gemini: [10, 22],
+  // Los dos de Google comparten la turquesa (ADR 0014).
+  antigravity: [10, 22],
 };
 
 /** Personas del RPG Urban Pack, vistas de espaldas (columna 25): primera fila de cada una. */

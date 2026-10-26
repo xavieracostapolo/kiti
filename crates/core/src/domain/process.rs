@@ -29,6 +29,22 @@ pub enum Role {
 }
 
 /// Subcomandos de Codex que no son una sesión de agente.
+/// Subcomandos de `agy` que no abren una sesión de agente (ADR 0014).
+const ANTIGRAVITY_NOT_AGENT: [&str; 12] = [
+    "agent",
+    "agents",
+    "changelog",
+    "help",
+    "install",
+    "mcp",
+    "mic-serve",
+    "models",
+    "plugin",
+    "plugins",
+    "remote-control",
+    "update",
+];
+
 const CODEX_NOT_AGENT: [&str; 6] = [
     "app-server",
     "mcp-server",
@@ -62,6 +78,8 @@ pub fn is_candidate_exe(exe: &str) -> bool {
     let name = basename(exe);
     name == "claude"
         || name == "codex"
+        || name == "antigravity"
+        || name == "agy"
         || name.starts_with("node")
         || exe.contains("/.local/share/claude/versions/")
         || exe.ends_with("/claude.exe")
@@ -80,7 +98,22 @@ pub fn classify(p: &ProcessSnapshot) -> Option<(Provider, Role)> {
         || exe.contains("/.local/share/claude/versions/")
         || exe.ends_with("/@anthropic-ai/claude-code/bin/claude.exe")
     {
-        return Some((Provider::Claude, Role::Agent));
+        // El mismo binario hace de `ugrep` y `rg` para sus herramientas de búsqueda: se
+        // distinguen por argv[0]. Sin argv legible se asume agente.
+        let helper = p
+            .argv
+            .first()
+            .is_some_and(|a0| !basename(a0).starts_with("claude"));
+        return (!helper).then_some((Provider::Claude, Role::Agent));
+    }
+    // Antigravity CLI: el binario del cask se llama `antigravity`; sysinfo puede dar el symlink
+    // con el que se lanzó (`/opt/homebrew/bin/agy`).
+    if name == "antigravity" || name == "agy" {
+        let sub = p.argv.get(1).map(String::as_str);
+        return match sub {
+            Some(s) if ANTIGRAVITY_NOT_AGENT.contains(&s) => None,
+            _ => Some((Provider::Antigravity, Role::Agent)),
+        };
     }
     if name == "codex" {
         let sub = p.argv.get(1).map(String::as_str);
@@ -191,6 +224,60 @@ mod tests {
 
     fn class(s: &ProcessSnapshot) -> Option<(Provider, Role)> {
         classify(s)
+    }
+
+    #[test]
+    fn las_herramientas_internas_de_claude_no_son_agentes() {
+        // Claude Code ejecuta ugrep y ripgrep con su propio binario (multi-call): mismo exe,
+        // otro argv[0]. No son agentes (y morían a los segundos, como "caídas").
+        let exe = format!("{HOME}/.local/share/claude/versions/2.1.310");
+        assert_eq!(class(&snap(20, 1, &exe, &["ugrep", "-G", "x"])), None);
+        assert_eq!(class(&snap(21, 1, &exe, &["rg", "x"])), None);
+        assert_eq!(
+            class(&snap(22, 1, &exe, &["claude", "--continue"])),
+            Some((Provider::Claude, Role::Agent))
+        );
+        // Sin argv legible (otro usuario, permisos): se mantiene como agente.
+        assert_eq!(
+            class(&snap(23, 1, &exe, &[])),
+            Some((Provider::Claude, Role::Agent))
+        );
+    }
+
+    #[test]
+    fn antigravity_cli_es_agente_salvo_sus_subcomandos_y_el_ide() {
+        // Ruta real del cask (ADR 0014); se lanza como `agy`.
+        let exe = "/opt/homebrew/Caskroom/antigravity-cli/1.4.7,5900205422411776/antigravity";
+        assert!(is_candidate_exe(exe));
+        assert!(is_candidate_exe("/opt/homebrew/bin/agy"));
+        assert_eq!(
+            class(&snap(9, 1, "/opt/homebrew/bin/agy", &["agy"])),
+            Some((Provider::Antigravity, Role::Agent))
+        );
+        assert_eq!(
+            class(&snap(10, 1, exe, &["agy"])),
+            Some((Provider::Antigravity, Role::Agent))
+        );
+        assert_eq!(
+            class(&snap(11, 1, exe, &["agy", "--conversation", "c-1"])),
+            Some((Provider::Antigravity, Role::Agent))
+        );
+        for sub in [
+            "models",
+            "mcp",
+            "plugin",
+            "remote-control",
+            "mic-serve",
+            "update",
+        ] {
+            assert_eq!(class(&snap(12, 1, exe, &["agy", sub])), None, "{sub}");
+        }
+        // Antigravity IDE es una app de escritorio: no cuenta.
+        let ide = "/Applications/Antigravity IDE.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm";
+        assert_eq!(
+            class(&snap(13, 1, ide, &["language_server_macos_arm"])),
+            None
+        );
     }
 
     #[test]

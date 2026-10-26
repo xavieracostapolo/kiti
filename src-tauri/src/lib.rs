@@ -5,13 +5,14 @@
 
 use std::time::Duration;
 
+use kiti_core::adapters::antigravity::{AgyConversation, AntigravityStore};
 use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
 use kiti_core::adapters::conversations::{ConversationIndex, HiddenConversations};
 use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pump, serve_hooks};
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
 use kiti_core::adapters::{GitProjects, SysinfoScanner, SystemClock, UnixKiller};
-use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, alert_text, run_scanner};
+use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, alert_text, run_scanner_with};
 use kiti_core::domain::{AgentId, Timestamp};
 use kiti_core::ingestion::claude::{has_conversations, is_session_id};
 use kiti_core::ports::{
@@ -66,6 +67,39 @@ pub struct Conversations {
     projects: Mutex<GitProjects>,
     /// Las que el usuario archivó: no vuelven a salir.
     hidden: Mutex<HiddenConversations>,
+    /// Antigravity CLI (ADR 0014): `~/.gemini/antigravity-cli`.
+    agy: AntigravityStore,
+    /// Las de Antigravity de la última lista (para retomar) y su último pedido por id y fecha.
+    agy_last: Mutex<Vec<AgyConversation>>,
+    agy_prompts: Mutex<HashMap<String, (u64, Option<String>)>>,
+}
+
+impl Conversations {
+    /// Conversaciones cerradas de Antigravity: sin las que siguen en curso.
+    fn antigravity(&self) -> Vec<AgyConversation> {
+        let list: Vec<AgyConversation> = self
+            .agy
+            .conversations(CONVERSATIONS_DAYS as u32)
+            .into_iter()
+            .filter(|c| !c.running && c.cwd.is_some())
+            .collect();
+        *self.agy_last.lock().expect("lock") = list.clone();
+        list
+    }
+
+    /// Último pedido, leído una vez por versión de la conversación.
+    fn agy_prompt(&self, c: &AgyConversation) -> Option<String> {
+        let mut cache = self.agy_prompts.lock().expect("lock");
+        let key = c.session.as_str().to_owned();
+        if let Some((at, prompt)) = cache.get(&key)
+            && *at == c.updated_at
+        {
+            return prompt.clone();
+        }
+        let prompt = self.agy.last_prompt(&c.session);
+        cache.insert(key, (c.updated_at, prompt.clone()));
+        prompt
+    }
 }
 
 /// Las conversaciones cerradas que se ofrecen para retomar (ADR 0009).
@@ -144,6 +178,7 @@ fn provider_from_str(s: &str) -> Option<kiti_protocol::Provider> {
         "claude" => Some(kiti_protocol::Provider::Claude),
         "codex" => Some(kiti_protocol::Provider::Codex),
         "gemini" => Some(kiti_protocol::Provider::Gemini),
+        "agy" | "antigravity" => Some(kiti_protocol::Provider::Antigravity),
         _ => None,
     }
 }
@@ -175,6 +210,7 @@ fn cli_binary(provider: kiti_protocol::Provider) -> &'static str {
         kiti_protocol::Provider::Claude => "claude",
         kiti_protocol::Provider::Codex => "codex",
         kiti_protocol::Provider::Gemini => "gemini",
+        kiti_protocol::Provider::Antigravity => "agy",
     }
 }
 
@@ -272,6 +308,25 @@ async fn launch_agent(
     {
         command = format!("exec {bin} --continue");
     }
+    // Antigravity: su `--continue` no se limita a la carpeta; se retoma la última de esta por id.
+    if provider == kiti_protocol::Provider::Antigravity
+        && let Some(conv) = state.conversations.as_ref()
+        && let Some(last) = conv
+            .agy
+            .conversations(CONVERSATIONS_DAYS as u32)
+            .into_iter()
+            .find(|c| c.cwd.as_deref().is_some_and(|d| same_dir(d, &cwd)))
+        && ask(
+            &app,
+            "Conversaciones anteriores",
+            format!("«{folder_name}» tiene conversaciones de Antigravity.\n¿Continuar la última o empezar una nueva?"),
+            "Continuar la última",
+            "Nueva",
+        )
+        .await
+    {
+        command = format!("exec {bin} --conversation {}", last.session.as_str());
+    }
 
     spawn_cli(&terminals, provider, &cwd, &command)
         .await
@@ -367,22 +422,35 @@ async fn list_conversations(state: State<'_, AppState>) -> Result<Vec<Conversati
         let since =
             std::time::SystemTime::now() - Duration::from_secs(CONVERSATIONS_DAYS * 24 * 3600);
         let found = conv.index.lock().expect("lock").list(&conv.dir, since);
+        let agy = conv.antigravity();
         let hidden = conv.hidden.lock().expect("lock");
         let mut projects = conv.projects.lock().expect("lock");
-        found
-            .into_iter()
-            .filter(|c| !hidden.contains(c.session.as_str()))
-            .take(CONVERSATIONS_MAX)
-            .map(|c| ConversationInfo {
+        let claude = found.into_iter().map(|c| ConversationInfo {
+            session_id: c.session.as_str().to_owned(),
+            provider: kiti_protocol::Provider::Claude,
+            project: projects.project_of(&c.cwd),
+            cwd: c.cwd,
+            title: c.title,
+            last_prompt: c.prompt,
+            updated_at: c.updated_at,
+        });
+        let mut all: Vec<ConversationInfo> = claude.collect();
+        for c in &agy {
+            let cwd = c.cwd.clone().unwrap_or_default();
+            all.push(ConversationInfo {
                 session_id: c.session.as_str().to_owned(),
-                provider: kiti_protocol::Provider::Claude,
-                project: projects.project_of(&c.cwd),
-                cwd: c.cwd,
-                title: c.title,
-                last_prompt: c.prompt,
+                provider: kiti_protocol::Provider::Antigravity,
+                project: projects.project_of(&cwd),
+                cwd,
+                title: c.title.clone(),
+                last_prompt: conv.agy_prompt(c),
                 updated_at: c.updated_at,
-            })
-            .collect::<Vec<_>>()
+            });
+        }
+        all.retain(|c| !hidden.contains(&c.session_id));
+        all.sort_by_key(|c| std::cmp::Reverse(c.updated_at));
+        all.truncate(CONVERSATIONS_MAX);
+        all
     })
     .await
     .map_err(|e| IpcError {
@@ -460,21 +528,42 @@ async fn resume_conversation(
     if !is_session_id(&session_id) {
         return Err(not_found());
     }
-    let cwd = conv
+    // Claude (`claude --resume`) o Antigravity (`agy --conversation`), según de qué lista sea.
+    let claude = conv
         .index
         .lock()
         .expect("lock")
         .find(&session_id)
-        .map(|c| std::path::PathBuf::from(&c.cwd))
-        .ok_or_else(not_found)?;
+        .map(|c| c.cwd.clone());
+    let agy = || {
+        conv.agy_last
+            .lock()
+            .expect("lock")
+            .iter()
+            .find(|c| c.session.as_str() == session_id)
+            .and_then(|c| c.cwd.clone())
+    };
+    let (provider, cwd, command) = match (claude, agy()) {
+        (Some(cwd), _) => (
+            kiti_protocol::Provider::Claude,
+            cwd,
+            format!("exec claude --resume {session_id}"),
+        ),
+        (None, Some(cwd)) => (
+            kiti_protocol::Provider::Antigravity,
+            cwd,
+            format!("exec agy --conversation {session_id}"),
+        ),
+        (None, None) => return Err(not_found()),
+    };
+    let cwd = std::path::PathBuf::from(cwd);
     if !cwd.is_dir() {
         return Err(IpcError {
             code: "FOLDER".into(),
             message: format!("La carpeta {} ya no existe", cwd.display()),
         });
     }
-    let command = format!("exec claude --resume {session_id}");
-    let info = spawn_cli(&terminals, kiti_protocol::Provider::Claude, &cwd, &command).await?;
+    let info = spawn_cli(&terminals, provider, &cwd, &command).await?;
     info!(event = "conversation.resumed", pid = info.pid);
     Ok(info)
 }
@@ -833,9 +922,10 @@ pub fn run() {
                     on_alert_click(app.handle(), handle.clone());
                     tauri::async_runtime::spawn(runtime.run());
                     let home = app.path().home_dir().ok();
-                    tauri::async_runtime::spawn(run_scanner(
+                    tauri::async_runtime::spawn(run_scanner_with(
                         SysinfoScanner::new(),
                         home.as_ref().map(|h| h.join(".claude/sessions")),
+                        home.as_ref().map(|h| h.join(".gemini/antigravity-cli")),
                         handle.clone(),
                         SystemClock,
                         scan_interval(),
@@ -871,6 +961,9 @@ pub fn run() {
                         index: Mutex::default(),
                         projects: Mutex::default(),
                         hidden: Mutex::new(HiddenConversations::load(hidden)),
+                        agy: AntigravityStore::new(home.join(".gemini/antigravity-cli")),
+                        agy_last: Mutex::default(),
+                        agy_prompts: Mutex::default(),
                     })
                 });
             app.manage(AppState {

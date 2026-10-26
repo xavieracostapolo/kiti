@@ -12,6 +12,6 @@ pub mod telemetry;
 
 pub use alerts::alert_text;
 pub use runtime::{AgentBrief, Runtime, RuntimeHandle};
-pub use scanner::run_scanner;
+pub use scanner::{run_scanner, run_scanner_with};
 pub use summary::Summary;
 pub use telemetry::Telemetry;

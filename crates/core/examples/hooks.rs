@@ -7,13 +7,15 @@
 //! - `install-codex` / `install-gemini <ruta de kiti-hook>`: copia el forwarder a
 //!   `~/.kiti/bin/kiti-hook` (ruta estable: Codex confía en el hook por su hash) y añade los hooks.
 //! - `uninstall-codex` / `uninstall-gemini`.
+//! - `install-antigravity <ruta de kiti-hook>` / `uninstall-antigravity`: `~/.gemini/config/hooks.json`
+//!   (ADR 0014).
 //!
 //! Codex y Gemini no se instalan solos: solo con esta orden explícita del usuario.
 
 use std::path::{Path, PathBuf};
 
 use kiti_core::adapters::claude_settings::{self, EVENTS, is_kiti_group};
-use kiti_core::adapters::cli_hooks::{self, Cli};
+use kiti_core::adapters::cli_hooks::{self, Cli, antigravity};
 use serde_json::Value;
 
 fn read(path: &Path) -> Value {
@@ -36,6 +38,7 @@ fn main() {
     let claude = home.join(".claude/settings.json");
     let codex = home.join(".codex/hooks.json");
     let gemini = home.join(".gemini/settings.json");
+    let agy = home.join(".gemini/config/hooks.json");
     let forwarder = home.join(".kiti/bin/kiti-hook");
     let fwd = forwarder.to_string_lossy().into_owned();
     let mut args = std::env::args().skip(1);
@@ -57,6 +60,12 @@ fn main() {
             cli_hooks::install_file(Cli::Gemini, &gemini, &fwd.to_string_lossy()).expect("Gemini");
             println!("Hooks de Kiti en {}", gemini.display());
         }
+        Some("install-antigravity") => {
+            let fwd = stable_forwarder(&home, args.next());
+            antigravity::install_file(&agy, &fwd.to_string_lossy()).expect("Antigravity");
+            println!("Hooks de Kiti en {}", agy.display());
+        }
+        Some("uninstall-antigravity") => antigravity::uninstall_file(&agy).expect("Antigravity"),
         Some("uninstall-codex") => cli_hooks::uninstall_file(Cli::Codex, &codex).expect("Codex"),
         Some("uninstall-gemini") => {
             cli_hooks::uninstall_file(Cli::Gemini, &gemini).expect("Gemini")
@@ -86,6 +95,12 @@ fn main() {
                 };
                 println!("{name}: {state} ({})", path.display());
             }
+            let state = if antigravity::is_installed(&read(&agy), &fwd) {
+                "instalados"
+            } else {
+                "no instalados"
+            };
+            println!("Antigravity: {state} ({})", agy.display());
         }
     }
 }

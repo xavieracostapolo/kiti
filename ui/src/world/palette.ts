@@ -14,9 +14,15 @@ export const PROVIDER_COLOR: Record<Provider, number> = {
   claude: 0xd97757,
   codex: 0x10a37f,
   gemini: 0x4285f4,
+  antigravity: 0x8b5cf6,
 };
 
-export const PROVIDER_LETTER: Record<Provider, string> = { claude: "C", codex: "X", gemini: "G" };
+export const PROVIDER_LETTER: Record<Provider, string> = {
+  claude: "C",
+  codex: "X",
+  gemini: "G",
+  antigravity: "A",
+};
 
 export const PAL = {
   background: 0x1a1d29,

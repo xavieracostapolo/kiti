@@ -297,6 +297,36 @@ impl AgentRegistry {
         }
     }
 
+    /// Antigravity (ADR 0014): su base de datos dice el título y si algún paso espera el
+    /// permiso del usuario, cosa que sus hooks no avisan. Solo para sesiones ya enlazadas.
+    pub fn antigravity_live(
+        &mut self,
+        session: &SessionId,
+        title: Option<&str>,
+        waiting: bool,
+        now: Timestamp,
+    ) -> Events {
+        let Some(id) = self.sessions.get(session).copied() else {
+            return Events::new();
+        };
+        let mut events = Events::new();
+        if let Some(title) = title {
+            let info = AgentInfo {
+                title: Some(title.to_owned()),
+                ..AgentInfo::default()
+            };
+            events.extend(self.apply(&id, &AgentInput::Info(info), now));
+        }
+        let already = self
+            .agents
+            .get(&id)
+            .is_some_and(|a| a.status().kind == super::status::StatusKind::Waiting);
+        if waiting && !already {
+            events.extend(self.apply(&id, &AgentInput::Signal(Signal::AwaitingInput), now));
+        }
+        events
+    }
+
     /// Título y último pedido del transcript de una sesión ya enlazada (ADR 0009).
     pub fn transcript_info(
         &mut self,
@@ -641,6 +671,36 @@ mod tests {
         let idle = Some((SessionActivity::Idle, Timestamp(12)));
         reg.session_file(Provider::Claude, Pid(1), &sid("s"), idle, Timestamp(12));
         assert_eq!(kind_of(&reg, &a), Some(StatusKind::Idle));
+    }
+
+    #[test]
+    fn antigravity_esperando_permiso_pone_amarillo_y_da_titulo() {
+        let mut reg = AgentRegistry::new();
+        let a = DetectedAgent {
+            provider: Provider::Antigravity,
+            ..claude_at(1, "/w/x")
+        };
+        reg.reconcile(std::slice::from_ref(&a), Timestamp(10));
+        reg.hook(
+            Provider::Antigravity,
+            &sid("c-1"),
+            "/w/x",
+            &Signal::PromptSubmit,
+            Timestamp(11),
+        );
+        reg.antigravity_live(&sid("c-1"), Some("Migrar datos"), true, Timestamp(12));
+        let agent = reg.get(&id_of(&a)).unwrap();
+        assert_eq!(agent.status().kind, StatusKind::Waiting);
+        assert_eq!(agent.title(), Some("Migrar datos"));
+        // Repetirlo no cambia nada; sin enlazar se ignora.
+        assert!(
+            reg.antigravity_live(&sid("c-1"), Some("Migrar datos"), true, Timestamp(13))
+                .is_empty()
+        );
+        assert!(
+            reg.antigravity_live(&sid("otra"), Some("x"), true, Timestamp(13))
+                .is_empty()
+        );
     }
 
     #[test]
