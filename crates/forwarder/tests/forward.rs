@@ -71,10 +71,11 @@ fn token_file() -> std::path::PathBuf {
     path
 }
 
-fn run(provider: &str, port: u16, token: &std::path::Path, stdin: &[u8]) -> (Output, Duration) {
+/// `args`: el proveedor y, para Antigravity, el evento (`"antigravity PreToolUse"`).
+fn run(args: &str, port: u16, token: &std::path::Path, stdin: &[u8]) -> (Output, Duration) {
     let start = Instant::now();
     let mut child = Command::new(env!("CARGO_BIN_EXE_kiti-hook"))
-        .arg(provider)
+        .args(args.split(' '))
         .env("KITI_HOOK_PORT", port.to_string())
         .env("KITI_TOKEN_FILE", token)
         .stdin(Stdio::piped())
@@ -148,4 +149,45 @@ fn sin_token_ni_proveedor_valido_tampoco_rompe_al_agente() {
         rx.recv_timeout(Duration::from_millis(300)).is_err(),
         "no envía nada"
     );
+}
+
+#[test]
+fn antigravity_manda_el_evento_y_responde_lo_neutro() {
+    // Su JSON no dice qué evento es: va en X-Kiti-Event (ADR 0014).
+    let (port, rx) = server();
+    let body = br#"{"conversationId":"c-1","toolCall":{"name":"run_command","args":{}}}"#;
+    let (out, _) = run("antigravity PreToolUse", port, &token_file(), body);
+    assert!(out.status.success());
+    // PreToolUse exige una decisión: "allow" delega en la política normal (Kiti no decide).
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap(),
+        r#"{"decision":"allow"}"#
+    );
+    let req = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert_eq!(req.request_line, "POST /v1/hooks/antigravity HTTP/1.1");
+    assert_eq!(req.header("x-kiti-event"), Some("PreToolUse"));
+    assert_eq!(req.body, body);
+}
+
+#[test]
+fn antigravity_responde_igual_con_kiti_cerrada() {
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    for (event, expected) in [
+        ("PreToolUse", r#"{"decision":"allow"}"#),
+        ("Stop", r#"{"decision":"allow"}"#),
+        ("PostToolUse", "{}"),
+        ("SessionStart", "{}"),
+    ] {
+        let (out, _) = run(&format!("antigravity {event}"), port, &token_file(), b"{}");
+        assert!(out.status.success());
+        assert_eq!(String::from_utf8(out.stdout).unwrap(), expected, "{event}");
+        assert!(out.stderr.is_empty());
+    }
+    // Un evento con caracteres raros no se reenvía, pero sigue respondiendo.
+    let (out, _) = run("antigravity Pre;rm", port, &token_file(), b"{}");
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), "{}");
 }

@@ -15,7 +15,8 @@ const ORDER: StatusKind[] = ["working", "waiting", "idle", "error", "dead"];
 const CLIS: { provider: Provider; label: string }[] = [
   { provider: "claude", label: "Claude Code" },
   { provider: "codex", label: "Codex CLI" },
-  { provider: "gemini", label: "Gemini CLI" },
+  // Gemini CLI se retiró para las cuentas gratuitas: su sucesor es Antigravity CLI (ADR 0014).
+  { provider: "antigravity", label: "Antigravity CLI" },
 ];
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;

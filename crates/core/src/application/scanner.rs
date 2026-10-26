@@ -84,6 +84,45 @@ impl TranscriptTracker {
 }
 use crate::ports::{Clock, ProcessScanner};
 
+/// Antigravity: solo si hay algún `agy` vivo, sus conversaciones recientes con título y espera
+/// de permiso. `None` si no hay nada que mirar.
+#[cfg(target_os = "macos")]
+fn antigravity_live(
+    root: Option<&Path>,
+    snapshots: Option<&Vec<crate::domain::ProcessSnapshot>>,
+) -> Option<Vec<(SessionId, Option<String>, bool)>> {
+    use crate::domain::{Provider, classify};
+    let root = root?;
+    let any = snapshots?
+        .iter()
+        .any(|s| matches!(classify(s), Some((Provider::Antigravity, _))));
+    if !any {
+        return None;
+    }
+    let started = Instant::now();
+    let store = crate::adapters::antigravity::AntigravityStore::new(root.to_owned());
+    let live: Vec<_> = store
+        .live()
+        .into_iter()
+        .map(|l| (l.session, l.title, l.waiting))
+        .collect();
+    debug!(
+        event = "antigravity.poll",
+        duration_ms = started.elapsed().as_millis() as u64,
+        conversations = live.len(),
+        waiting = live.iter().filter(|l| l.2).count()
+    );
+    Some(live)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn antigravity_live(
+    _root: Option<&Path>,
+    _snapshots: Option<&Vec<crate::domain::ProcessSnapshot>>,
+) -> Option<Vec<(SessionId, Option<String>, bool)>> {
+    None
+}
+
 /// Lee `~/.claude/sessions/*.json`. Un directorio ausente o un archivo ilegible no son errores:
 /// Claude puede no estar instalado o estar escribiendo el archivo en ese momento.
 pub fn read_session_dir(dir: &Path) -> Vec<SessionFile> {
@@ -101,8 +140,21 @@ pub fn read_session_dir(dir: &Path) -> Vec<SessionFile> {
 /// Escanea cada `every`, clasifica y envía el resultado al runtime con `Reconcile`, junto con
 /// los archivos de sesión de Claude si se pasa su directorio. Termina si el runtime se cierra.
 pub async fn run_scanner<S: ProcessScanner, C: Clock>(
+    scanner: S,
+    sessions_dir: Option<PathBuf>,
+    runtime: RuntimeHandle,
+    clock: C,
+    every: Duration,
+) {
+    run_scanner_with(scanner, sessions_dir, None, runtime, clock, every).await;
+}
+
+/// Como `run_scanner` y, si hay agentes de Antigravity vivos, lee de `agy_root`
+/// (`~/.gemini/antigravity-cli`) su título y si esperan permiso (ADR 0014).
+pub async fn run_scanner_with<S: ProcessScanner, C: Clock>(
     mut scanner: S,
     sessions_dir: Option<PathBuf>,
+    agy_root: Option<PathBuf>,
     runtime: RuntimeHandle,
     clock: C,
     every: Duration,
@@ -114,17 +166,20 @@ pub async fn run_scanner<S: ProcessScanner, C: Clock>(
         ticker.tick().await;
         let started = Instant::now();
         let dir = sessions_dir.clone();
+        let agy = agy_root.clone();
         let mut tracker = std::mem::take(&mut transcripts);
-        let Ok((back, result, sessions, tracker, tools)) = tokio::task::spawn_blocking(move || {
-            let result = scanner.scan();
-            let sessions = dir.as_deref().map(read_session_dir).unwrap_or_default();
-            let tools = match dir.as_deref().and_then(Path::parent) {
-                Some(claude) => tracker.poll(&claude.join("projects"), &sessions),
-                None => Vec::new(),
-            };
-            (scanner, result, sessions, tracker, tools)
-        })
-        .await
+        let Ok((back, result, sessions, tracker, tools, live)) =
+            tokio::task::spawn_blocking(move || {
+                let result = scanner.scan();
+                let sessions = dir.as_deref().map(read_session_dir).unwrap_or_default();
+                let tools = match dir.as_deref().and_then(Path::parent) {
+                    Some(claude) => tracker.poll(&claude.join("projects"), &sessions),
+                    None => Vec::new(),
+                };
+                let live = antigravity_live(agy.as_deref(), result.as_ref().ok());
+                (scanner, result, sessions, tracker, tools, live)
+            })
+            .await
         else {
             warn!(event = "scan", "la tarea de escaneo terminó con pánico");
             return;
@@ -146,6 +201,9 @@ pub async fn run_scanner<S: ProcessScanner, C: Clock>(
                 runtime
                     .reconcile(detected, sessions, tools, clock.now())
                     .await;
+                if let Some(live) = live {
+                    runtime.antigravity_live(live, clock.now()).await;
+                }
             }
             Err(e) => warn!(event = "scan", error = %e),
         }

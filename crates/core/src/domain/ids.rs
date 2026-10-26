@@ -9,16 +9,24 @@ pub enum Provider {
     Claude,
     Codex,
     Gemini,
+    /// Antigravity CLI (`agy`), el sucesor de Gemini CLI (ADR 0014).
+    Antigravity,
 }
 
 impl Provider {
-    pub const ALL: [Provider; 3] = [Provider::Claude, Provider::Codex, Provider::Gemini];
+    pub const ALL: [Provider; 4] = [
+        Provider::Claude,
+        Provider::Codex,
+        Provider::Gemini,
+        Provider::Antigravity,
+    ];
 
     pub fn as_str(self) -> &'static str {
         match self {
             Provider::Claude => "claude",
             Provider::Codex => "codex",
             Provider::Gemini => "gemini",
+            Provider::Antigravity => "antigravity",
         }
     }
 }

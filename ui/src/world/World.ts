@@ -177,6 +177,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
         claude: templateFor("claude"),
         codex: templateFor("codex"),
         gemini: templateFor("gemini"),
+        antigravity: templateFor("antigravity"),
       },
       people: PEOPLE_ROWS.map((row) => tileTexture(sheets, "urban", PEOPLE_BACK_COLUMN, row)),
     };

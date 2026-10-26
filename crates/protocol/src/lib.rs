@@ -21,6 +21,8 @@ pub enum Provider {
     Claude,
     Codex,
     Gemini,
+    /// Antigravity CLI (`agy`), ADR 0014.
+    Antigravity,
 }
 
 /// Color del semáforo: working = verde, waiting = amarillo, idle = gris, error/dead = rojo.

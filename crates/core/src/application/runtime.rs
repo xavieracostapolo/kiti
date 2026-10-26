@@ -14,8 +14,8 @@ use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, AlertPolicy, DetectedAgent, DomainEvent, Pid, Provider,
-    StalePolicy, Timestamp,
+    AgentId, AgentInput, AgentRegistry, AlertPolicy, DetectedAgent, DomainEvent, Events, Pid,
+    Provider, SessionId, StalePolicy, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
@@ -48,6 +48,11 @@ pub enum RuntimeCommand {
         sessions: Vec<SessionFile>,
         /// Lo nuevo de cada transcript.
         transcripts: Vec<TranscriptUpdate>,
+        now: Timestamp,
+    },
+    /// Antigravity (ADR 0014): título y espera de permiso leídos de su base de datos.
+    AntigravityLive {
+        updates: Vec<(SessionId, Option<String>, bool)>,
         now: Timestamp,
     },
     /// Un hook ya traducido por la ACL de su CLI.
@@ -122,6 +127,18 @@ impl RuntimeHandle {
                 transcripts,
                 now,
             })
+            .await;
+    }
+
+    /// `(sesión, título, esperando permiso)` de las conversaciones recientes de Antigravity.
+    pub async fn antigravity_live(
+        &self,
+        updates: Vec<(SessionId, Option<String>, bool)>,
+        now: Timestamp,
+    ) {
+        let _ = self
+            .tx
+            .send(RuntimeCommand::AntigravityLive { updates, now })
             .await;
     }
 
@@ -438,6 +455,19 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 self.notify(&events, now);
                 self.telemetry.record_event();
                 self.oldest_unpublished_hook.get_or_insert(received);
+            }
+            RuntimeCommand::AntigravityLive { updates, now } => {
+                let mut events = Events::new();
+                for (session, title, waiting) in &updates {
+                    events.extend(self.registry.antigravity_live(
+                        session,
+                        title.as_deref(),
+                        *waiting,
+                        now,
+                    ));
+                }
+                log_status_changes(&events);
+                self.notify(&events, now);
             }
             RuntimeCommand::Describe { id, reply } => {
                 let _ = reply.send(self.registry.get(&id).map(|a| AgentBrief {

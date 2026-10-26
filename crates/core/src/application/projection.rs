@@ -26,6 +26,7 @@ pub fn project_provider(p: Provider) -> proto::Provider {
         Provider::Claude => proto::Provider::Claude,
         Provider::Codex => proto::Provider::Codex,
         Provider::Gemini => proto::Provider::Gemini,
+        Provider::Antigravity => proto::Provider::Antigravity,
     }
 }
 

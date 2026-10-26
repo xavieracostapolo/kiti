@@ -1,6 +1,7 @@
 //! Capa anticorrupción (ADR 0002 §1, Ingestion): traduce los payloads de cada CLI a `Signal`.
 //! Lee de forma tolerante solo los campos que usa; el resto (prompts, salidas) se descarta.
 
+pub mod antigravity;
 pub mod claude;
 pub mod codex;
 pub mod gemini;

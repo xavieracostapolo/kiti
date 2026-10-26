@@ -29,6 +29,8 @@ pub struct HookRequest {
     pub provider: Provider,
     /// `X-Kiti-Ppid` del forwarder (Codex y Gemini): punto de partida para buscar el agente.
     pub ppid: Option<u32>,
+    /// `X-Kiti-Event` del forwarder (Antigravity): su JSON no dice qué evento es (ADR 0014).
+    pub event: Option<String>,
     pub body: Bytes,
 }
 
@@ -76,12 +78,17 @@ async fn handle(
     };
     let ppid =
         header_str(header::HeaderName::from_static("x-kiti-ppid")).and_then(|v| v.parse().ok());
+    // Solo un nombre de evento: letras, hasta 32.
+    let event = header_str(header::HeaderName::from_static("x-kiti-event"))
+        .filter(|v| !v.is_empty() && v.len() <= 32 && v.chars().all(|c| c.is_ascii_alphabetic()))
+        .map(str::to_owned);
     debug!(event = "hook.accepted", provider = %provider, bytes = body.len());
     if ctx
         .tx
         .try_send(HookRequest {
             provider,
             ppid,
+            event,
             body,
         })
         .is_err()
@@ -167,12 +174,13 @@ pub async fn run_hook_pump<C: crate::ports::Clock>(
     runtime: crate::application::RuntimeHandle,
     clock: C,
 ) {
-    use crate::ingestion::{claude, codex, gemini};
+    use crate::ingestion::{antigravity, claude, codex, gemini};
     while let Some(req) = rx.recv().await {
         let parsed = match req.provider {
             Provider::Claude => claude::parse_hook(&req.body),
             Provider::Codex => codex::parse_hook(&req.body),
             Provider::Gemini => gemini::parse_hook(&req.body),
+            Provider::Antigravity => antigravity::parse_hook(&req.body, req.event.as_deref()),
         };
         let event = match parsed {
             Ok(event) => event,

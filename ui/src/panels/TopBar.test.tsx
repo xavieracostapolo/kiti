@@ -25,8 +25,10 @@ describe("TopBar", () => {
     const launched: string[] = [];
     render(<TopBar store={store} onLaunch={(p) => launched.push(p)} />);
     await userEvent.click(screen.getByRole("button", { name: /nuevo agente/i }));
-    await userEvent.click(await screen.findByRole("menuitem", { name: "Claude Code" }));
-    expect(launched).toEqual(["claude"]);
+    // Gemini CLI se retiró para cuentas gratuitas: se ofrece su sucesor (ADR 0014).
+    expect(screen.queryByRole("menuitem", { name: "Gemini CLI" })).toBeNull();
+    await userEvent.click(await screen.findByRole("menuitem", { name: "Antigravity CLI" }));
+    expect(launched).toEqual(["antigravity"]);
   });
 
   it("sin terminales (simulador) no hay botón de lanzar", () => {

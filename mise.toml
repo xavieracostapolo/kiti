@@ -52,6 +52,10 @@ run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core -
 description = "Instala los hooks de Kiti en ~/.gemini/settings.json (solo si usas Gemini CLI)"
 run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core --example hooks -- install-gemini target/release/kiti-hook"
 
+[tasks."hooks:install-antigravity"]
+description = "Instala los hooks de Kiti en ~/.gemini/config/hooks.json (Antigravity CLI, ADR 0014)"
+run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core --example hooks -- install-antigravity target/release/kiti-hook"
+
 [tasks."hooks:uninstall"]
 description = "Quita los hooks de Kiti de ~/.claude/settings.json (deja los tuyos intactos)"
 run = "cargo run -q -p kiti-core --example hooks -- uninstall"

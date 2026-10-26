@@ -116,6 +116,76 @@ pub fn uninstall_file(cli: Cli, path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Antigravity CLI (ADR 0014): `~/.gemini/config/hooks.json` tiene una clave por hook y, dentro,
+/// los eventos. Kiti usa la clave `kiti` y pasa el evento como argumento (su JSON no lo dice).
+pub mod antigravity {
+    use std::path::Path;
+
+    use serde_json::{Map, Value, json};
+    use tracing::info;
+
+    use super::super::hook_config::edit_file;
+
+    const KEY: &str = "kiti";
+    /// Los de herramienta llevan matcher; el resto, la lista de handlers directamente.
+    pub const EVENTS: [&str; 5] = [
+        "SessionStart",
+        "PreInvocation",
+        "PreToolUse",
+        "PostToolUse",
+        "Stop",
+    ];
+
+    fn handler(forwarder: &str, event: &str) -> Value {
+        // Timeout en segundos; el forwarder ya corta a los 150 ms.
+        json!({ "type": "command", "command": format!("{forwarder} antigravity {event}"), "timeout": 2 })
+    }
+
+    pub fn install(hooks: &mut Value, forwarder: &str) {
+        let mut entry = Map::new();
+        for event in EVENTS {
+            let h = handler(forwarder, event);
+            let value = if event.ends_with("ToolUse") {
+                json!([{ "matcher": "*", "hooks": [h] }])
+            } else {
+                json!([h])
+            };
+            entry.insert(event.to_owned(), value);
+        }
+        if !hooks.is_object() {
+            *hooks = json!({});
+        }
+        hooks[KEY] = Value::Object(entry);
+    }
+
+    pub fn uninstall(hooks: &mut Value) {
+        if let Some(obj) = hooks.as_object_mut() {
+            obj.shift_remove(KEY);
+        }
+    }
+
+    pub fn is_installed(hooks: &Value, forwarder: &str) -> bool {
+        let pre = &hooks[KEY]["PreToolUse"][0]["hooks"][0]["command"];
+        pre.as_str() == Some(format!("{forwarder} antigravity PreToolUse").as_str())
+            && EVENTS.iter().all(|e| hooks[KEY][*e].is_array())
+    }
+
+    pub fn install_file(path: &Path, forwarder: &str) -> std::io::Result<()> {
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        edit_file(path, |v| install(v, forwarder))?;
+        info!(event = "hooks.installed", cli = "antigravity", path = %path.display());
+        Ok(())
+    }
+
+    pub fn uninstall_file(path: &Path) -> std::io::Result<()> {
+        edit_file(path, uninstall)?;
+        info!(event = "hooks.uninstalled", cli = "antigravity", path = %path.display());
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,5 +260,33 @@ mod tests {
         let v: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         assert_eq!(v, json!({}));
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn antigravity_usa_su_clave_y_respeta_los_hooks_ajenos() {
+        let mut v = json!({
+            "linter": { "PostToolUse": [ { "matcher": "write_file", "hooks": [ { "command": "lint" } ] } ] }
+        });
+        antigravity::install(&mut v, FWD);
+        assert!(antigravity::is_installed(&v, FWD));
+        assert_eq!(v["linter"]["PostToolUse"][0]["hooks"][0]["command"], "lint");
+        assert_eq!(
+            v["kiti"]["PreToolUse"][0],
+            json!({ "matcher": "*", "hooks": [ { "type": "command", "command": format!("{FWD} antigravity PreToolUse"), "timeout": 2 } ] })
+        );
+        assert_eq!(
+            v["kiti"]["Stop"][0]["command"],
+            format!("{FWD} antigravity Stop")
+        );
+        // Reinstalar no duplica; desinstalar deja lo ajeno.
+        antigravity::install(&mut v, FWD);
+        assert_eq!(v.as_object().unwrap().len(), 2);
+        antigravity::uninstall(&mut v);
+        assert!(!antigravity::is_installed(&v, FWD));
+        assert!(v.get("linter").is_some());
+        // Sobre un archivo vacío o ausente también funciona.
+        let mut empty = Value::Null;
+        antigravity::install(&mut empty, FWD);
+        assert!(antigravity::is_installed(&empty, FWD));
     }
 }
