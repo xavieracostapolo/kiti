@@ -3,6 +3,18 @@
 
 use std::path::Path;
 
+/// Estado de git de un proyecto (ADR 0016): lo lee un adapter; aquí solo el valor.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GitStatus {
+    /// Rama actual; `None` con HEAD separado.
+    pub branch: Option<String>,
+    /// Commits por subir y por bajar respecto a su upstream (0 sin upstream).
+    pub ahead: u32,
+    pub behind: u32,
+    /// Archivos con cambios (staged, sin stage o sin seguimiento).
+    pub changed: u32,
+}
+
 /// Sube desde `cwd` hasta encontrar un directorio con `.git` (carpeta, o archivo en los
 /// worktrees). Sin repositorio, el proyecto es el propio `cwd`.
 pub fn project_root(cwd: &str, has_git: impl Fn(&Path) -> bool) -> String {

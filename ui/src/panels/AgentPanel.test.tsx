@@ -37,6 +37,7 @@ const base: AgentState = {
   status: { kind: "working", reason: "hook", since: NOW - 90_000 },
   lastTool: "Edit",
   lastEventAt: NOW - 4_000,
+  history: [],
 };
 
 describe("AgentPanel", () => {

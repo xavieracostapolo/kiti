@@ -58,6 +58,8 @@ export type WorldOptions = {
   zoom: Zoom;
   focus?: string;
   layout?: LayoutOpts;
+  /** Reloj para la línea de tiempo del tablero (el del simulador en modo sim). */
+  now?: () => number;
 };
 
 export type BenchResult = {
@@ -84,6 +86,8 @@ export type WorldHandle = {
   zones(): { name: string; count: number }[];
   /** Ids de las oficinas atenuadas por el filtro (tests E2E). */
   dimmed(): string[];
+  /** Texto del tablero de una oficina si se ve (tests E2E, ADR 0016). */
+  board(id: string): string | undefined;
   dispose(): void;
 };
 
@@ -94,7 +98,7 @@ const FOCUS_PADDING = 24;
 const EMPTY = new Map<AgentId, AgentState>();
 const NO_ROOMS = new Map<string, ConversationInfo>();
 /** Caracteres de la fuente bitmap: los títulos y pedidos llegan en español (ADR 0009). */
-const FONT_CHARS = " -_.:!/()[]#·…?¿¡,;'\"<>«»=+*&%$@áéíóúüñÁÉÍÓÚÜÑ";
+const FONT_CHARS = " -_.:!/()[]#·…?¿¡,;'\"<>«»=+*&%$@áéíóúüñÁÉÍÓÚÜÑ↑↓";
 
 export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOptions): WorldHandle {
   const layout = opts.layout ?? DEFAULT_LAYOUT;
@@ -263,6 +267,14 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
         }
         // Al cambiar el filtro, la cámara encuadra lo que coincide (o todo, si se quita).
         if (s.filter !== prev.filter) setCamera(filterCamera(), true);
+        // Git del proyecto de cada oficina (ADR 0016).
+        if (s.git !== prev.git) {
+          for (const [id, view] of views) {
+            const agent = s.agents.agents.get(id);
+            if (agent) view.setGit(s.git.get(agent.project));
+          }
+          scheduler?.request();
+        }
         if (s.view.selectedId !== prev.view.selectedId) {
           if (prev.view.selectedId) views.get(prev.view.selectedId)?.setSelected(false);
           if (s.view.selectedId) views.get(s.view.selectedId)?.setSelected(true);
@@ -322,7 +334,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   }
 
   function newView(id: string): OfficeView {
-    const view = new OfficeView(art as OfficeArt, room);
+    const view = new OfficeView(art as OfficeArt, room, opts.now ?? Date.now);
     view.setLod(lod);
     view.setTextScale(cam.k);
     view.setSelected(store.getState().view.selectedId === id);
@@ -350,6 +362,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       }
       const view = views.get(op.agent.id) ?? newView(op.agent.id);
       view.update(op.agent);
+      view.setGit(store.getState().git.get(op.agent.project));
       // Las terminales pueden haber llegado antes de que existiera la oficina.
       view.setHasTerminal(terminals.has(op.agent.pid));
     }
@@ -581,6 +594,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     scale: () => cam.k,
     zones: () => zones.map((z) => ({ name: z.name, count: z.count })),
     dimmed: () => [...views].filter(([, v]) => v.root.alpha < 1).map(([id]) => id),
+    board: (id) => views.get(id)?.boardShown(),
     async bench(durationMs = 10_000) {
       await ready;
       const s = scheduler;

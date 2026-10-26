@@ -638,3 +638,54 @@ async fn la_cuota_se_publica_y_se_reenvia_tras_el_snapshot() {
     assert!(matches!(list[0], ServerMsg::Snapshot { .. }));
     assert_eq!(list[1], expected);
 }
+
+#[tokio::test(start_paused = true)]
+async fn git_solo_se_publica_si_cambia_y_se_reenvia_tras_el_snapshot() {
+    let handle = spawn(TestKiller, ManualClock::new(1000));
+    handle
+        .register_agent(sample_agent(77), Timestamp(1000))
+        .await;
+    assert_eq!(
+        handle.live_projects().await,
+        vec!["/Users/dev/app".to_owned()]
+    );
+    let first = TestPublisher::new();
+    let msgs = first.messages.clone();
+    handle.subscribe(first).await.expect("subscribe ok");
+    let status = kiti_core::domain::GitStatus {
+        branch: Some("main".into()),
+        ahead: 1,
+        behind: 0,
+        changed: 3,
+    };
+    let update = vec![("/Users/dev/app".to_owned(), Some(status))];
+    handle.git(update.clone()).await;
+    handle.git(update).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let git_msgs = |list: &[ServerMsg]| {
+        list.iter()
+            .filter(|m| matches!(m, ServerMsg::Git { .. }))
+            .count()
+    };
+    assert_eq!(
+        git_msgs(&msgs.lock().unwrap()),
+        1,
+        "el mismo estado no se repite"
+    );
+    let later = TestPublisher::new();
+    let later_msgs = later.messages.clone();
+    handle.subscribe(later).await.expect("subscribe ok");
+    let list = later_msgs.lock().unwrap();
+    assert_eq!(
+        list[1],
+        ServerMsg::Git {
+            project: "/Users/dev/app".into(),
+            git: Some(kiti_protocol::GitInfo {
+                branch: Some("main".into()),
+                ahead: 1,
+                behind: 0,
+                changed: 3,
+            }),
+        }
+    );
+}

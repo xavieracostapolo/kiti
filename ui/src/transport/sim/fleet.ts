@@ -93,11 +93,16 @@ export class SimFleet {
       startedAt,
       status: { kind: status.kind, reason: status.reason, since: status.since },
       lastEventAt: startedAt,
+      history: [{ kind: status.kind, since: status.since }],
       project: cwd,
     };
     // Solo Claude da título, actividad y último pedido (ADR 0009). Sin rng: no cambia la flota.
     if (spec.provider === "claude") {
       state.title = config.titles[(index * 3) % config.titles.length] as string;
+      // Tablero de la oficina (ADR 0016): modelo, contexto y coste, como la status line.
+      state.model = index % 3 === 0 ? "Sonnet 5.5" : "Opus 5.5";
+      state.contextPct = ((index * 23) % 90) + 5;
+      state.costCents = 30 + ((index * 47) % 400);
     }
     return {
       state,
@@ -215,7 +220,13 @@ function withInfo(s: AgentState, a: SimAgent, signal: Signal): AgentState {
     case "PromptSubmitted": {
       a.turns++;
       const prompt = config.prompts[(a.index + a.turns) % config.prompts.length] as string;
-      return { ...s, lastPrompt: prompt };
+      // Cada turno llena algo de contexto y cuesta algo (sin rng: no cambia la flota).
+      return {
+        ...s,
+        lastPrompt: prompt,
+        contextPct: Math.min(99, (s.contextPct ?? 0) + 3),
+        costCents: (s.costCents ?? 0) + 12,
+      };
     }
     case "ToolStarted":
       return { ...s, activity: config.activities[signal.tool] ?? signal.tool };
@@ -240,6 +251,11 @@ function withStatus(s: AgentState, st: AgentStatus, now: number): AgentState {
     ...s,
     status: { kind: st.kind, reason: st.reason, since: st.since },
     lastEventAt: now,
+    // Como el core (ADR 0016): un cambio de estado se apunta en la historia (hasta 32).
+    history:
+      st.kind === s.status.kind
+        ? s.history
+        : [...s.history, { kind: st.kind, since: st.since }].slice(-32),
   };
   if (st.lastTool !== undefined) next.lastTool = st.lastTool;
   return next;

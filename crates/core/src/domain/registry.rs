@@ -327,6 +327,19 @@ impl AgentRegistry {
         events
     }
 
+    /// Modelo, contexto y coste de una sesión ya enlazada (ADR 0016).
+    pub fn session_stats(
+        &mut self,
+        session: &SessionId,
+        stats: &super::agent::AgentStats,
+        now: Timestamp,
+    ) -> Events {
+        match self.sessions.get(session).copied() {
+            Some(id) => self.apply(&id, &AgentInput::Stats(stats.clone()), now),
+            None => Events::new(),
+        }
+    }
+
     /// Título y último pedido del transcript de una sesión ya enlazada (ADR 0009).
     pub fn transcript_info(
         &mut self,

@@ -14,8 +14,8 @@ use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, AlertPolicy, DetectedAgent, DomainEvent, Events, Pid,
-    Provider, QuotaPolicy, QuotaWindow, SessionId, StalePolicy, Timestamp,
+    AgentId, AgentInput, AgentRegistry, AgentStats, AlertPolicy, DetectedAgent, DomainEvent,
+    Events, GitStatus, Pid, Provider, QuotaPolicy, QuotaWindow, SessionId, StalePolicy, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
@@ -48,6 +48,16 @@ pub enum RuntimeCommand {
         sessions: Vec<SessionFile>,
         /// Lo nuevo de cada transcript.
         transcripts: Vec<TranscriptUpdate>,
+        now: Timestamp,
+    },
+    /// Proyectos (raíz git o carpeta) con algún agente vivo, para consultar su git (ADR 0016).
+    LiveProjects(oneshot::Sender<Vec<String>>),
+    /// Estado de git de esos proyectos (`None`: no es un repositorio).
+    Git(Vec<(String, Option<GitStatus>)>),
+    /// Modelo, contexto y coste de una sesión (ADR 0016).
+    SessionStats {
+        session: SessionId,
+        stats: AgentStats,
         now: Timestamp,
     },
     /// Cuota de uso de un proveedor (ADR 0015).
@@ -130,6 +140,37 @@ impl RuntimeHandle {
                 detected,
                 sessions,
                 transcripts,
+                now,
+            })
+            .await;
+    }
+
+    /// Proyectos con algún agente vivo (ADR 0016).
+    pub async fn live_projects(&self) -> Vec<String> {
+        let (reply, rx) = oneshot::channel();
+        if self
+            .tx
+            .send(RuntimeCommand::LiveProjects(reply))
+            .await
+            .is_err()
+        {
+            return Vec::new();
+        }
+        rx.await.unwrap_or_default()
+    }
+
+    /// Nuevo estado de git de cada proyecto (ADR 0016).
+    pub async fn git(&self, statuses: Vec<(String, Option<GitStatus>)>) {
+        let _ = self.tx.send(RuntimeCommand::Git(statuses)).await;
+    }
+
+    /// Modelo, contexto y coste de una sesión de Claude (ADR 0016).
+    pub async fn session_stats(&self, session: SessionId, stats: AgentStats, now: Timestamp) {
+        let _ = self
+            .tx
+            .send(RuntimeCommand::SessionStats {
+                session,
+                stats,
                 now,
             })
             .await;
@@ -238,6 +279,18 @@ impl RuntimeHandle {
     }
 }
 
+fn git_msg(project: &str, status: Option<&GitStatus>) -> ServerMsg {
+    ServerMsg::Git {
+        project: project.to_owned(),
+        git: status.map(|s| kiti_protocol::GitInfo {
+            branch: s.branch.clone(),
+            ahead: s.ahead,
+            behind: s.behind,
+            changed: s.changed,
+        }),
+    }
+}
+
 fn quota_msg(provider: Provider, windows: &[QuotaWindow]) -> ServerMsg {
     ServerMsg::Quota {
         provider: project_provider(provider),
@@ -300,6 +353,8 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     pending_focus: Option<AgentId>,
     /// Última cuota de cada proveedor (ADR 0015): se reenvía tras cada Snapshot.
     quotas: std::collections::BTreeMap<Provider, Vec<QuotaWindow>>,
+    /// Último estado de git de cada proyecto (ADR 0016): se reenvía tras cada Snapshot.
+    git: std::collections::BTreeMap<String, Option<GitStatus>>,
     quota_policy: QuotaPolicy,
 }
 
@@ -334,6 +389,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             alerts: None,
             pending_focus: None,
             quotas: std::collections::BTreeMap::new(),
+            git: std::collections::BTreeMap::new(),
             quota_policy: QuotaPolicy::default(),
         };
         (runtime, RuntimeHandle { tx, telemetry })
@@ -489,6 +545,41 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 self.telemetry.record_event();
                 self.oldest_unpublished_hook.get_or_insert(received);
             }
+            RuntimeCommand::LiveProjects(reply) => {
+                let mut projects: Vec<String> = self
+                    .registry
+                    .agents()
+                    .filter(|a| !a.is_dead())
+                    .map(|a| a.cwd().as_str().to_owned())
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .map(|cwd| self.projects.project_of(&cwd))
+                    .collect();
+                projects.sort();
+                projects.dedup();
+                let _ = reply.send(projects);
+            }
+            RuntimeCommand::Git(statuses) => {
+                for (project, status) in statuses {
+                    if self.git.get(&project) == Some(&status) {
+                        continue;
+                    }
+                    let msg = git_msg(&project, status.as_ref());
+                    self.git.insert(project, status);
+                    if let Some(p) = self.publisher.as_mut()
+                        && !p.publish(msg)
+                    {
+                        self.drop_publisher();
+                    }
+                }
+            }
+            RuntimeCommand::SessionStats {
+                session,
+                stats,
+                now,
+            } => {
+                self.registry.session_stats(&session, &stats, now);
+            }
             RuntimeCommand::Quota { provider, windows } => {
                 debug!(event = "quota.updated", provider = %provider, windows = windows.len());
                 let alerts = self.quota_policy.observe(provider, &windows);
@@ -538,6 +629,9 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 )) {
                     for (provider, windows) in &self.quotas {
                         publisher.publish(quota_msg(*provider, windows));
+                    }
+                    for (project, status) in &self.git {
+                        publisher.publish(git_msg(project, status.as_ref()));
                     }
                     if let Some(id) = self.pending_focus.take() {
                         publisher.publish(ServerMsg::Focus {

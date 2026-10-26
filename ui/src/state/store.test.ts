@@ -12,6 +12,7 @@ const a: AgentState = {
   startedAt: 0,
   status: { kind: "idle", reason: "hook", since: 0 },
   lastEventAt: 0,
+  history: [],
 };
 
 describe("store", () => {

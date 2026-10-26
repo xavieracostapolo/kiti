@@ -11,6 +11,7 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
   startedAt: 0,
   status: { kind: "waiting", reason: "hook", since: 0 },
   lastEventAt: 0,
+  history: [],
   title: "Revisar vulnerabilidades",
   ...over,
 });
