@@ -8,7 +8,7 @@ const HOUR = 3_600_000;
 
 /** Dos en el proyecto de `first` y dos en uno que no tiene agentes encendidos. */
 export function fakeConversations(project: string, now: number): ConversationInfo[] {
-  const other = "/Users/dev/thoth-assets";
+  const other = "/Users/dev/tienda-web";
   const conv = (
     n: number,
     where: string,

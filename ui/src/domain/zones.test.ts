@@ -10,23 +10,23 @@ describe("layoutZones", () => {
   it("agrupa por proyecto y ordena las zonas por nombre", () => {
     const l = layoutZones(
       new Map(),
-      entries(["a", "/w/thoth-assets"], ["b", "/w/kiti"], ["c", "/w/thoth-assets"]),
+      entries(["a", "/w/tienda-web"], ["b", "/w/kiti"], ["c", "/w/tienda-web"]),
       DEFAULT_LAYOUT,
     );
     expect(l.zones.map((z) => [z.name, z.count])).toEqual([
       ["kiti", 1],
-      ["thoth-assets", 2],
+      ["tienda-web", 2],
     ]);
     // Cada oficina queda dentro de su zona, bajo el rótulo.
-    const thoth = l.zones[1];
+    const tienda = l.zones[1];
     for (const id of ["a", "c"]) {
       const r = l.rooms.get(id);
       expect(r).toBeDefined();
-      if (!r || !thoth) continue;
-      expect(r.x).toBeGreaterThanOrEqual(thoth.x);
-      expect(r.x + r.w).toBeLessThanOrEqual(thoth.x + thoth.w);
-      expect(r.y).toBeGreaterThanOrEqual(thoth.y + 2 * T);
-      expect(r.y + r.h).toBeLessThanOrEqual(thoth.y + thoth.h);
+      if (!r || !tienda) continue;
+      expect(r.x).toBeGreaterThanOrEqual(tienda.x);
+      expect(r.x + r.w).toBeLessThanOrEqual(tienda.x + tienda.w);
+      expect(r.y).toBeGreaterThanOrEqual(tienda.y + 2 * T);
+      expect(r.y + r.h).toBeLessThanOrEqual(tienda.y + tienda.h);
     }
   });
 
@@ -87,8 +87,8 @@ describe("layoutZones", () => {
 
 describe("projectName", () => {
   it("es la última carpeta", () => {
-    expect(projectName("/Users/dev/thoth-assets")).toBe("thoth-assets");
-    expect(projectName("/Users/dev/thoth-assets/")).toBe("thoth-assets");
+    expect(projectName("/Users/dev/tienda-web")).toBe("tienda-web");
+    expect(projectName("/Users/dev/tienda-web/")).toBe("tienda-web");
     expect(projectName("/")).toBe("/");
   });
 });

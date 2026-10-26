@@ -150,7 +150,7 @@ mod tests {
     /// Con la forma de las capturas reales (ADR 0014), con datos inventados.
     fn body(extra: &str) -> String {
         format!(
-            r#"{{"conversationId":"c-1","workspacePaths":["/w/thoth"],"transcriptPath":"/t.jsonl","artifactDirectoryPath":"/a","modelName":"m","lastUserInput":"migra la tabla"{extra}}}"#
+            r#"{{"conversationId":"c-1","workspacePaths":["/w/tienda"],"transcriptPath":"/t.jsonl","artifactDirectoryPath":"/a","modelName":"m","lastUserInput":"migra la tabla"{extra}}}"#
         )
     }
 
@@ -162,7 +162,7 @@ mod tests {
     fn sesion_carpeta_y_turno() {
         let e = parse("SessionStart", "");
         assert_eq!(e.session.as_str(), "c-1");
-        assert_eq!(e.cwd, "/w/thoth");
+        assert_eq!(e.cwd, "/w/tienda");
         assert_eq!(e.signal, Signal::SessionStart);
         assert_eq!(e.info.prompt.as_deref(), Some("migra la tabla"));
         let first = parse("PreInvocation", r#","invocationNum":0,"initialNumSteps":1"#);
@@ -193,7 +193,7 @@ mod tests {
         assert!(!format!("{pre:?}").contains("secreto"));
         let write = parse(
             "PreToolUse",
-            r#","stepIdx":3,"toolCall":{"name":"write_file","args":{"Path":"/w/thoth/db/schema.sql","Content":"x","Overwrite":true}}"#,
+            r#","stepIdx":3,"toolCall":{"name":"write_file","args":{"Path":"/w/tienda/db/schema.sql","Content":"x","Overwrite":true}}"#,
         );
         assert_eq!(write.info.activity.as_deref(), Some("Editando schema.sql"));
         let ok = parse(

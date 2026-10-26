@@ -478,8 +478,8 @@ mod tests {
     fn carpeta_de_proyecto_como_la_codifica_claude() {
         // Nombres reales vistos en ~/.claude/projects.
         assert_eq!(
-            project_dir_name("/Users/xavieracosta/Documents/source/kiti"),
-            "-Users-xavieracosta-Documents-source-kiti"
+            project_dir_name("/Users/dev/Documents/source/kiti"),
+            "-Users-dev-Documents-source-kiti"
         );
         assert_eq!(
             project_dir_name("/private/tmp/claude-501/-Users-x/scratchpad/hooktest-repo"),
@@ -523,7 +523,7 @@ mod tests {
         assert_eq!(
             activity(
                 "PreToolUse",
-                r#","tool_name":"Edit","tool_use_id":"t","tool_input":{"file_path":"/Users/dev/thoth/src/db/migrate.ts","old_string":"x"}"#
+                r#","tool_name":"Edit","tool_use_id":"t","tool_input":{"file_path":"/Users/dev/tienda/src/db/migrate.ts","old_string":"x"}"#
             ),
             Some("Editando migrate.ts".into())
         );
@@ -633,7 +633,7 @@ mod tests {
         let lines: Vec<Vec<u8>> = [
             r#"{"type":"user","cwd":"/w/viejo","message":{"content":"hola"}}"#,
             r#"{"type":"ai-title","aiTitle":"Migrar datos","sessionId":"s1"}"#,
-            r#"{"type":"user","cwd":"/w/thoth","message":{"content":"x"}}"#,
+            r#"{"type":"user","cwd":"/w/tienda","message":{"content":"x"}}"#,
             r#"{"type":"last-prompt","lastPrompt":"pasa la tabla","sessionId":"s1"}"#,
             r#"{"type":"assistant","message":{"content":[]}}"#,
         ]
@@ -643,7 +643,7 @@ mod tests {
         assert_eq!(
             conversation_meta(&lines),
             ConversationMeta {
-                cwd: Some("/w/thoth".into()),
+                cwd: Some("/w/tienda".into()),
                 title: Some("Migrar datos".into()),
                 prompt: Some("pasa la tabla".into()),
             }

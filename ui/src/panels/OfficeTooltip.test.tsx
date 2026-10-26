@@ -64,8 +64,8 @@ describe("OfficeTooltip", () => {
         {
           sessionId: "s1",
           provider: "claude",
-          cwd: "/Users/dev/thoth-assets",
-          project: "/Users/dev/thoth-assets",
+          cwd: "/Users/dev/tienda-web",
+          project: "/Users/dev/tienda-web",
           title: "Migración de datos",
           updatedAt: HOUR,
         },
@@ -74,7 +74,7 @@ describe("OfficeTooltip", () => {
     });
     const tip = screen.getByRole("tooltip").textContent;
     expect(tip).toContain("Migración de datos");
-    expect(tip).toContain("thoth-assets · cerrada hace 2 h");
+    expect(tip).toContain("tienda-web · cerrada hace 2 h");
     expect(tip).toContain("retomarla");
     // Al seleccionarla, su panel ya lo dice: el tooltip se quita.
     act(() => store.getState().select(dormantId("s1")));

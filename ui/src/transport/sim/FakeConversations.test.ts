@@ -6,7 +6,7 @@ describe("FakeConversations", () => {
   it("da cuatro conversaciones cerradas, dos en un proyecto sin agentes", () => {
     const list = fakeConversations("/Users/dev/kiti", 10 * 3_600_000);
     expect(list).toHaveLength(4);
-    expect(list.filter((c) => c.project === "/Users/dev/thoth-assets")).toHaveLength(2);
+    expect(list.filter((c) => c.project === "/Users/dev/tienda-web")).toHaveLength(2);
     expect(list.every((c) => c.updatedAt < 10 * 3_600_000)).toBe(true);
   });
 

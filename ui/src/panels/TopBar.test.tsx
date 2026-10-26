@@ -71,8 +71,8 @@ describe("TopBar", () => {
     await userEvent.keyboard("/");
     const search = screen.getByRole("searchbox", { name: "Buscar oficinas" });
     expect(document.activeElement).toBe(search);
-    await userEvent.keyboard("thoth");
-    expect(store.getState().filter.text).toBe("thoth");
+    await userEvent.keyboard("tienda");
+    expect(store.getState().filter.text).toBe("tienda");
     await userEvent.keyboard("{Escape}");
     expect(store.getState().filter.text).toBe("");
     expect(document.activeElement).not.toBe(search);

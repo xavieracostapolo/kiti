@@ -54,7 +54,7 @@ mod tests {
                 start_time: ProcessStartTime(1),
             },
             provider: Provider::Codex,
-            project: "/w/thoth-assets".into(),
+            project: "/w/tienda-web".into(),
             cwd: cwd.into(),
             title: title.map(Into::into),
         }
@@ -64,26 +64,26 @@ mod tests {
     fn titulo_y_cuerpo_de_cada_aviso() {
         let n = notice(
             AlertKind::Finished,
-            "/w/thoth-assets",
+            "/w/tienda-web",
             Some("Migración de datos"),
         );
         assert_eq!(
             alert_text(&n),
             (
                 "Codex terminó".into(),
-                "thoth-assets · Migración de datos".into()
+                "tienda-web · Migración de datos".into()
             )
         );
-        let n = notice(AlertKind::Crashed, "/w/thoth-assets/api", None);
+        let n = notice(AlertKind::Crashed, "/w/tienda-web/api", None);
         assert_eq!(
             alert_text(&n),
             (
                 "Codex se cerró de forma inesperada".into(),
-                "thoth-assets/api".into()
+                "tienda-web/api".into()
             )
         );
         assert_eq!(
-            alert_text(&notice(AlertKind::Failed, "/w/thoth-assets", None)).0,
+            alert_text(&notice(AlertKind::Failed, "/w/tienda-web", None)).0,
             "Codex falló"
         );
     }

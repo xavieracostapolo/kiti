@@ -54,14 +54,14 @@ async fn un_permiso_llega_al_sink_con_proyecto_y_titulo() {
             uid: 501,
             cmd_fingerprint: 1,
         },
-        cwd: WorkingDir::new("/Users/dev/thoth-assets"),
+        cwd: WorkingDir::new("/Users/dev/tienda-web"),
     };
     handle
         .reconcile(vec![agent], vec![], vec![], Timestamp(0))
         .await;
     let event = |signal, info| HookEvent {
         session: SessionId::new("s1"),
-        cwd: "/Users/dev/thoth-assets".into(),
+        cwd: "/Users/dev/tienda-web".into(),
         name: "test".into(),
         signal,
         info,
@@ -98,5 +98,5 @@ async fn un_permiso_llega_al_sink_con_proyecto_y_titulo() {
     assert_eq!(n.kind, AlertKind::Permission);
     let (head, body) = alert_text(n);
     assert_eq!(head, "Claude pide permiso");
-    assert_eq!(body, "thoth-assets · Revisar vulnerabilidades");
+    assert_eq!(body, "tienda-web · Revisar vulnerabilidades");
 }

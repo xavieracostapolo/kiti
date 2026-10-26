@@ -1157,18 +1157,18 @@ mod tests {
     #[test]
     fn solo_se_reutiliza_una_sesion_del_mismo_agente_en_la_carpeta() {
         let sessions = vec![
-            session("kiti-1", Provider::Claude, "/w/thoth"),
+            session("kiti-1", Provider::Claude, "/w/tienda"),
             session("kiti-2", Provider::Antigravity, "/w/otra"),
         ];
-        let in_thoth = |d: &str| d == "/w/thoth";
-        // Antigravity en thoth: la de Claude no cuenta.
+        let in_tienda = |d: &str| d == "/w/tienda";
+        // Antigravity en tienda: la de Claude no cuenta.
         assert_eq!(
-            session_to_reuse(sessions.clone(), Provider::Antigravity, in_thoth),
+            session_to_reuse(sessions.clone(), Provider::Antigravity, in_tienda),
             None
         );
-        // Claude en thoth: esa sí.
+        // Claude en tienda: esa sí.
         assert_eq!(
-            session_to_reuse(sessions.clone(), Provider::Claude, in_thoth).map(|t| t.id),
+            session_to_reuse(sessions.clone(), Provider::Claude, in_tienda).map(|t| t.id),
             Some("kiti-1".to_owned())
         );
         // Antigravity en otra: la suya.

@@ -9,8 +9,8 @@ test("las oficinas se agrupan en zonas por proyecto", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => window.__kiti?.dormant().length)).toBe(4);
   const zones = await page.evaluate(() => window.__kiti?.zones() ?? []);
   // 20 agentes en 10 proyectos y una zona más solo con conversaciones cerradas.
-  expect(zones.map((z) => z.name)).toContain("thoth-assets");
-  expect(zones.find((z) => z.name === "thoth-assets")?.count).toBe(2);
+  expect(zones.map((z) => z.name)).toContain("tienda-web");
+  expect(zones.find((z) => z.name === "tienda-web")?.count).toBe(2);
   expect(zones.reduce((n, z) => n + z.count, 0)).toBe(24);
 });
 

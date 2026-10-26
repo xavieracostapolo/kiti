@@ -9,8 +9,8 @@ import { ConversationPanel } from "./ConversationPanel";
 const conv: ConversationInfo = {
   sessionId: "s1",
   provider: "claude",
-  cwd: "/Users/dev/thoth-assets/api",
-  project: "/Users/dev/thoth-assets",
+  cwd: "/Users/dev/tienda-web/api",
+  project: "/Users/dev/tienda-web",
   title: "Revisar vulnerabilidades",
   lastPrompt: "parchea los CVE",
   updatedAt: 0,
@@ -41,7 +41,7 @@ describe("ConversationPanel", () => {
     const onResume = vi.fn(async () => {});
     setup(onResume);
     expect(screen.getByText("Revisar vulnerabilidades")).toBeTruthy();
-    expect(screen.getByText("thoth-assets")).toBeTruthy();
+    expect(screen.getByText("tienda-web")).toBeTruthy();
     expect(screen.getByText("parchea los CVE")).toBeTruthy();
     expect(screen.getByText("hace 2 min")).toBeTruthy();
     await userEvent.click(screen.getByRole("button", { name: "Retomar" }));
