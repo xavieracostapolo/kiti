@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Kiti · Your coding agents, as an office</title>
-  <meta name="description" content="A pixel-art virtual office for macOS where every room is a running coding agent: Claude Code, Codex CLI and Gemini CLI, with a traffic light per agent.">
+  <meta name="description" content="A pixel-art virtual office for macOS where every room is a running coding agent: Claude Code, Codex CLI, Antigravity CLI and Gemini CLI, with a traffic light per agent.">
   <meta property="og:title" content="Kiti · Your coding agents, as an office">
-  <meta property="og:description" content="Every running Claude Code, Codex and Gemini agent is a room on one pixel-art map, with a traffic light that tells you who needs you.">
+  <meta property="og:description" content="Every running Claude Code, Codex, Antigravity and Gemini agent is a room on one pixel-art map, with a traffic light that tells you who needs you.">
   <meta property="og:image" content="https://xavieracostapolo.github.io/kiti/img/map.png">
   <meta property="og:url" content="https://xavieracostapolo.github.io/kiti/">
   <meta name="twitter:card" content="summary_large_image">
@@ -35,6 +35,7 @@
       --claude: #d97757;
       --codex: #10a37f;
       --gemini: #4285f4;
+      --antigravity: #8b5cf6;
       --floor-a: #c9a47c;
       --floor-b: #bd976f;
       --pixel: "Silkscreen", ui-monospace, Menlo, monospace;
@@ -332,12 +333,12 @@
       <img class="cat" src="img/icon.png" alt="Kiti, a pixel-art orange cat" width="96" height="96">
       <div class="tag">OPEN SOURCE · macOS</div>
       <h1>Your coding agents, <span class="hl">as an office.</span></h1>
-      <p class="lede">Every running Claude Code, Codex CLI and Gemini CLI agent becomes a room on one pixel-art map. A traffic light on each door tells you who is working, who is done and who needs you.</p>
+      <p class="lede">Every running Claude Code, Codex CLI, Antigravity CLI and Gemini CLI agent becomes a room on one pixel-art map. A traffic light on each door tells you who is working, who is done and who needs you.</p>
       <div class="ctas">
-        <a class="btn" href="demo/?sim=20&amp;seed=42&amp;conversations=1">▶ Try the live demo</a>
-        <a class="btn alt" href="https://github.com/xavieracostapolo/kiti">★ View on GitHub</a>
+        <a class="btn" href="https://github.com/xavieracostapolo/kiti/releases/latest">⬇ Download for macOS</a>
+        <a class="btn alt" href="demo/?sim=20&amp;seed=42&amp;conversations=1">▶ Try the live demo</a>
       </div>
-      <p class="note">The demo runs in your browser with 20 simulated agents. Nothing is installed.</p>
+      <p class="note">Universal build for Apple Silicon and Intel, ad-hoc signed (see <a href="#start">install notes</a>). The demo runs in your browser with 20 simulated agents.</p>
 
       <div class="frame stage" id="stage">
         <img src="img/map.png" alt="Kiti map with 20 simulated agents grouped by project, each office with its title and a coloured traffic light" width="1440" height="900">
@@ -385,6 +386,7 @@
         <div class="agents">
           <span class="chip"><b style="background: var(--claude)">C</b>Claude Code</span>
           <span class="chip"><b style="background: var(--codex)">X</b>Codex CLI</span>
+          <span class="chip"><b style="background: var(--antigravity)">A</b>Antigravity CLI</span>
           <span class="chip"><b style="background: var(--gemini)">G</b>Gemini CLI</span>
         </div>
         <div class="grid">
@@ -451,7 +453,7 @@
             <h3>Signals</h3>
             <ul>
               <li>Claude: native HTTP hooks</li>
-              <li>Codex, Gemini: <code>kiti-hook</code> forwarder</li>
+              <li>Codex, Antigravity, Gemini: <code>kiti-hook</code> forwarder</li>
               <li>Processes via <code>sysinfo</code></li>
               <li>Session files and transcripts</li>
             </ul>
@@ -500,8 +502,8 @@
     <section id="start">
       <div class="wrap">
         <div class="kicker">GET STARTED</div>
-        <h2>Build it in a few minutes.</h2>
-        <p class="sub">Kiti runs on macOS and builds from source for now. Windows support is planned.</p>
+        <h2>Download it, or build it.</h2>
+        <p class="sub">Get the universal DMG from the <a href="https://github.com/xavieracostapolo/kiti/releases/latest">latest release</a> and drag Kiti to Applications. The build has an ad-hoc signature, not an Apple Developer ID, so macOS blocks it the first time: open it once and click <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security, or run <code>xattr -dr com.apple.quarantine /Applications/Kiti.app</code>. To build it yourself:</p>
         <div class="frame code">
           <button class="copy" type="button" data-copy="code-start">COPY</button>
 <pre id="code-start"><span class="c"># tools (tmux is optional, for persistent sessions)</span>
@@ -518,7 +520,7 @@ mise run app:dev
 <span class="c"># or build Kiti.app</span>
 mise run app:bundle</pre>
         </div>
-        <p class="note" style="text-align: left">Claude Code hooks are added on first start and removed with <code>mise run hooks:uninstall</code>. Codex and Gemini are opt-in: <code>mise run hooks:install-codex</code> or <code>hooks:install-gemini</code>. Full guide in the <a href="https://github.com/xavieracostapolo/kiti#readme">README</a>.</p>
+        <p class="note" style="text-align: left">Claude Code hooks are added on first start and removed with <code>mise run hooks:uninstall</code>. Codex, Antigravity and Gemini are opt-in, from a clone: <code>mise run hooks:install-codex</code>, <code>hooks:install-antigravity</code> or <code>hooks:install-gemini</code>. Full guide in the <a href="https://github.com/xavieracostapolo/kiti#readme">README</a>.</p>
       </div>
     </section>
   </main>
