@@ -201,6 +201,51 @@ impl AntigravityStore {
     }
 }
 
+/// Dónde está `agy`: una app abierta desde el Finder no tiene `/opt/homebrew/bin` en el `PATH`.
+pub fn find_agy() -> Option<PathBuf> {
+    let from_path = std::env::var_os("PATH")
+        .into_iter()
+        .flat_map(|p| std::env::split_paths(&p).collect::<Vec<_>>())
+        .map(|d| d.join("agy"));
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let known = ["/opt/homebrew/bin/agy", "/usr/local/bin/agy"]
+        .into_iter()
+        .map(PathBuf::from)
+        .chain(home.map(|h| h.join(".local/bin/agy")));
+    from_path.chain(known).find(|p| p.is_file())
+}
+
+/// `agy -p /usage --output-format json` (ADR 0015): no gasta tokens. Se corta a los `timeout`.
+pub fn usage_json(agy: &Path, timeout: std::time::Duration) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut child = Command::new(agy)
+        .args(["-p", "/usage", "--output-format", "json"])
+        .current_dir(std::env::temp_dir())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(Some(_)) => return None,
+            Ok(None) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    let mut out = Vec::new();
+    child.stdout.take()?.read_to_end(&mut out).ok()?;
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

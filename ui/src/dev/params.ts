@@ -17,6 +17,8 @@ export type Params = {
   terminals: boolean;
   /** Conversaciones cerradas falsas en el modo sim (ADR 0009). */
   conversations: boolean;
+  /** Cuota de uso falsa de Claude y Antigravity en el modo sim (ADR 0015). */
+  quota: boolean;
 };
 
 const MAX_AGENTS = 200;
@@ -38,6 +40,7 @@ export function parseParams(search: string): Params {
     zoom: zoom === "mid" || zoom === "near" ? zoom : "far",
     terminals: q.get("terminals") === "1",
     conversations: q.get("conversations") === "1",
+    quota: q.get("quota") === "1",
   };
   const focus = q.get("focus");
   if (focus) params.focus = focus;

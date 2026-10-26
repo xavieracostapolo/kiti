@@ -191,3 +191,56 @@ fn antigravity_responde_igual_con_kiti_cerrada() {
     let (out, _) = run("antigravity Pre;rm", port, &token_file(), b"{}");
     assert_eq!(String::from_utf8(out.stdout).unwrap(), "{}");
 }
+
+/// `kiti-hook statusline '<comando>'` con el comando como un único argumento.
+fn run_statusline(cmd: Option<&str>, port: u16, stdin: &[u8]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_kiti-hook"));
+    command.arg("statusline");
+    if let Some(cmd) = cmd {
+        command.arg(cmd);
+    }
+    let mut child = command
+        .env("KITI_HOOK_PORT", port.to_string())
+        .env("KITI_TOKEN_FILE", token_file())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn statusline_ejecuta_el_script_del_usuario_y_reenvia_el_json() {
+    // ADR 0015: la status line del usuario se ve igual; Kiti recibe el JSON aparte.
+    let (port, rx) = server();
+    let body = br#"{"rate_limits":{"five_hour":{"used_percentage":10}}}"#;
+    // El script recibe el mismo stdin: aquí lo cuenta y saca un texto.
+    let out = run_statusline(Some("printf 'mi status '; wc -c | tr -d ' '"), port, body);
+    assert!(out.status.success());
+    assert_eq!(
+        String::from_utf8(out.stdout).unwrap().trim_end(),
+        format!("mi status {}", body.len())
+    );
+    let req = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+    assert_eq!(req.request_line, "POST /v1/hooks/statusline HTTP/1.1");
+    assert_eq!(req.body, body);
+}
+
+#[test]
+fn statusline_sin_kiti_ni_script_no_rompe_nada() {
+    let port = TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
+    let out = run_statusline(Some("echo hola"), port, b"{}");
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), "hola\n");
+    assert!(out.stderr.is_empty());
+    // Sin script (no había status line): no imprime nada.
+    let out = run_statusline(None, port, b"{}");
+    assert!(out.status.success());
+    assert!(out.stdout.is_empty());
+}

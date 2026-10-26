@@ -605,3 +605,36 @@ async fn el_foco_pedido_sin_ventana_llega_tras_el_snapshot() {
     handle.subscribe(again).await.expect("subscribe ok");
     assert_eq!(again_msgs.lock().unwrap().len(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn la_cuota_se_publica_y_se_reenvia_tras_el_snapshot() {
+    let handle = spawn(TestKiller, ManualClock::new(1000));
+    let first = TestPublisher::new();
+    let first_msgs = first.messages.clone();
+    handle.subscribe(first).await.expect("subscribe ok");
+    let window = kiti_core::domain::QuotaWindow {
+        label: "semana".into(),
+        weekly: true,
+        remaining: 0.395,
+        resets_at: 1_793_572_705_000,
+    };
+    handle.quota(Provider::Claude, vec![window]).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let expected = ServerMsg::Quota {
+        provider: kiti_protocol::Provider::Claude,
+        windows: vec![kiti_protocol::QuotaWindow {
+            label: "semana".into(),
+            weekly: true,
+            remaining_pct: 40,
+            resets_at: 1_793_572_705_000,
+        }],
+    };
+    assert!(first_msgs.lock().unwrap().contains(&expected));
+    // Una ventana que se conecta después la recibe justo tras el Snapshot.
+    let later = TestPublisher::new();
+    let later_msgs = later.messages.clone();
+    handle.subscribe(later).await.expect("subscribe ok");
+    let list = later_msgs.lock().unwrap();
+    assert!(matches!(list[0], ServerMsg::Snapshot { .. }));
+    assert_eq!(list[1], expected);
+}

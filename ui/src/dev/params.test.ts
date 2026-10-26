@@ -12,6 +12,7 @@ describe("parseParams", () => {
       zoom: "far",
       terminals: false,
       conversations: false,
+      quota: false,
     });
   });
 
@@ -29,6 +30,7 @@ describe("parseParams", () => {
       bench: "pan",
       terminals: false,
       conversations: false,
+      quota: false,
     });
   });
 

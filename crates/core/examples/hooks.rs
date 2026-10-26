@@ -9,6 +9,8 @@
 //! - `uninstall-codex` / `uninstall-gemini`.
 //! - `install-antigravity <ruta de kiti-hook>` / `uninstall-antigravity`: `~/.gemini/config/hooks.json`
 //!   (ADR 0014).
+//! - `install-statusline <ruta de kiti-hook>` / `uninstall-statusline`: la `statusLine` de Claude
+//!   pasa por Kiti para leer la cuota (ADR 0015); desinstalar deja la original.
 //!
 //! Codex y Gemini no se instalan solos: solo con esta orden explícita del usuario.
 
@@ -16,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use kiti_core::adapters::claude_settings::{self, EVENTS, is_kiti_group};
 use kiti_core::adapters::cli_hooks::{self, Cli, antigravity};
+use kiti_core::adapters::statusline;
 use serde_json::Value;
 
 fn read(path: &Path) -> Value {
@@ -65,6 +68,18 @@ fn main() {
             antigravity::install_file(&agy, &fwd.to_string_lossy()).expect("Antigravity");
             println!("Hooks de Kiti en {}", agy.display());
         }
+        Some("install-statusline") => {
+            let fwd = stable_forwarder(&home, args.next());
+            statusline::install_file(&claude, &fwd.to_string_lossy()).expect("status line");
+            println!(
+                "La status line de Claude pasa por Kiti ({})",
+                claude.display()
+            );
+        }
+        Some("uninstall-statusline") => {
+            statusline::uninstall_file(&claude).expect("status line");
+            println!("Status line de Claude restaurada ({})", claude.display());
+        }
         Some("uninstall-antigravity") => antigravity::uninstall_file(&agy).expect("Antigravity"),
         Some("uninstall-codex") => cli_hooks::uninstall_file(Cli::Codex, &codex).expect("Codex"),
         Some("uninstall-gemini") => {
@@ -101,6 +116,12 @@ fn main() {
                 "no instalados"
             };
             println!("Antigravity: {state} ({})", agy.display());
+            let state = if statusline::is_installed(&read(&claude)) {
+                "pasa por Kiti"
+            } else {
+                "sin Kiti"
+            };
+            println!("Status line de Claude (cuota): {state}");
         }
     }
 }

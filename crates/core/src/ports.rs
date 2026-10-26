@@ -21,6 +21,8 @@ pub struct AlertNotice {
 /// ejemplo si la ventana ya está al frente.
 pub trait AlertSink: Send + 'static {
     fn alert(&mut self, notice: AlertNotice);
+    /// Queda poca cuota semanal de un proveedor (ADR 0015).
+    fn quota_low(&mut self, _alert: crate::domain::QuotaAlert) {}
 }
 
 /// Proyecto (raíz git o carpeta) de un `cwd` (ADR 0009). Puede consultar el disco y guardar

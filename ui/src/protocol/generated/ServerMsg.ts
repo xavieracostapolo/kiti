@@ -2,8 +2,10 @@
 import type { AgentId } from "./AgentId";
 import type { AgentState } from "./AgentState";
 import type { CoreMetrics } from "./CoreMetrics";
+import type { Provider } from "./Provider";
+import type { QuotaWindow } from "./QuotaWindow";
 
 /**
  * Stream core -> UI. El primer mensaje es siempre `Snapshot`; `seq` es monotónico.
  */
-export type ServerMsg = { "type": "Snapshot", seq: number, agents: Array<AgentState>, } | { "type": "Diff", seq: number, ingestMs: number, upserts: Array<AgentState>, removed: Array<AgentId>, } | { "type": "Metrics" } & CoreMetrics | { "type": "Focus", id: AgentId, };
+export type ServerMsg = { "type": "Snapshot", seq: number, agents: Array<AgentState>, } | { "type": "Diff", seq: number, ingestMs: number, upserts: Array<AgentState>, removed: Array<AgentId>, } | { "type": "Metrics" } & CoreMetrics | { "type": "Quota", provider: Provider, windows: Array<QuotaWindow>, } | { "type": "Focus", id: AgentId, };

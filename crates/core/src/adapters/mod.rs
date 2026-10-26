@@ -21,6 +21,7 @@ mod projects;
 pub mod pty;
 #[cfg(feature = "scanner")]
 mod scanner;
+pub mod statusline;
 pub mod tail;
 #[cfg(feature = "pty")]
 pub mod tmux;
