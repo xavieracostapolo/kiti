@@ -6,7 +6,7 @@
 import { BitmapText, Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
 import type { Lod } from "../domain/lod";
 import { displayName } from "../domain/names";
-import { personFor } from "../domain/people";
+import { decorFor, personFor } from "../domain/people";
 import { charsIn, fitLines, fitWords, fontFor, LINE_H } from "../domain/text";
 import type { AgentState, ConversationInfo, Provider, StatusKind } from "../protocol";
 import { anchors, type RoomSize } from "./officeTemplate";
@@ -14,19 +14,19 @@ import { PAL, PROVIDER_COLOR, PROVIDER_LETTER, STATUS_COLOR } from "./palette";
 
 export const FONT = "kiti-pixel";
 
-/** Lo que comparten todas las oficinas: la sala de cada proveedor (cambia la alfombra) y las personas. */
+/** Lo que comparten todas las oficinas: variantes de sala por proveedor y los frames de cada persona. */
 export type OfficeArt = {
-  templates: Record<Provider, Texture>;
-  people: readonly Texture[];
+  templates: Record<Provider, readonly Texture[]>;
+  people: readonly (readonly Texture[])[];
 };
 /**
  * Texto que se adapta al zoom: mide más o menos lo mismo en pantalla, así al acercarse caben más
- * caracteres y más líneas. Título en la pared (entre el borde y la ventana) y nota abajo.
+ * caracteres y más líneas. Título en la pared (sobre placa oscura junto a la insignia) y nota abajo.
  */
-const LABEL = { screenPx: 13, min: 4, max: 9, width: 106, height: 24, maxLines: 3 };
+const LABEL = { screenPx: 13, min: 4, max: 9, width: 96, height: 22, maxLines: 3 };
 const NOTE = { screenPx: 11, min: 3, max: 7, height: 40, maxLines: 4 };
-/** Cartel de la vista lejana: el título en grande en el centro de la sala. */
-const CARD = { screenPx: 12, min: 9, max: 28, maxLines: 3, pad: 6 };
+/** Cartel de la vista lejana: en la parte baja de la sala para no tapar a la persona ni el escritorio. */
+const CARD = { screenPx: 12, min: 9, max: 24, maxLines: 3, pad: 8 };
 /** Nombres de carpeta enteros: el corte lo hace `fitLines`. */
 const FULL = 200;
 
@@ -43,6 +43,7 @@ export class OfficeView {
   private readonly border = new Graphics();
   private readonly light = new Graphics();
   private readonly screen = new Graphics();
+  private readonly labelPlate = new Graphics();
   private readonly label: BitmapText;
   private readonly near = new Container();
   private readonly badge = new Graphics();
@@ -50,9 +51,12 @@ export class OfficeView {
   private readonly background: Sprite;
   /** Quien trabaja en la oficina: siempre la misma persona para el mismo agente. */
   private readonly person = new Sprite();
+  private personFrames: readonly Texture[] = [];
+  private animPhase = 0;
   private readonly bubble = new Graphics();
   private readonly bubbleText: BitmapText;
   private readonly deadShade = new Graphics();
+  private readonly hoverRing = new Graphics();
   private readonly selection = new Graphics();
   /** Insignia `>_`: la oficina tiene una terminal de Kiti (ADR 0007). */
   private readonly terminalBadge = new Container();
@@ -80,7 +84,7 @@ export class OfficeView {
     private readonly art: OfficeArt,
     private readonly size: RoomSize,
   ) {
-    this.background = new Sprite(art.templates.claude);
+    this.background = new Sprite(art.templates.claude[0]);
     const a = anchors(size);
     this.root.cullable = true;
     this.root.cullArea = new Rectangle(-4, -4, size.w + 8, size.h + 8);
@@ -88,7 +92,7 @@ export class OfficeView {
     this.label = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 9 } });
     this.label.position.set(a.label.x, a.label.y);
     this.badgeText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 8 } });
-    this.badgeText.position.set(a.badge.x + 3, a.badge.y + 1);
+    this.badgeText.position.set(a.badge.x + 3.5, a.badge.y + 1.5);
     this.bubbleText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 7 } });
     this.bubbleText.tint = PAL.bubbleText; // las fuentes bitmap se colorean con tint, no con fill
     this.bubbleText.position.set(a.bubble.x + 4, a.bubble.y + 3);
@@ -104,7 +108,7 @@ export class OfficeView {
     this.person.position.set(a.person.x, a.person.y);
     this.person.visible = false;
 
-    this.near.addChild(this.badge, this.badgeText, this.bubble, this.bubbleText);
+    this.near.addChild(this.bubble, this.bubbleText);
     const badgeBg = new Graphics()
       .roundRect(0, 0, 22, 14, 3)
       .fill(PAL.housing)
@@ -112,8 +116,8 @@ export class OfficeView {
     const badgeLabel = new BitmapText({ text: ">_", style: { fontFamily: FONT, fontSize: 9 } });
     badgeLabel.position.set(4, 1);
     this.terminalBadge.addChild(badgeBg, badgeLabel);
-    // Junto al semáforo: es lo primero que se mira y se ve en cualquier zoom.
-    this.terminalBadge.position.set(size.w - 52, 7);
+    // Debajo de la insignia del proveedor (izquierda), sin tapar el cuadro ni el título.
+    this.terminalBadge.position.set(6, size.tile * 2 + 4);
     this.terminalBadge.visible = false;
     this.root.addChild(
       this.background,
@@ -123,10 +127,14 @@ export class OfficeView {
       this.deadShade,
       this.border,
       this.light,
+      this.labelPlate,
       this.label,
+      this.badge,
+      this.badgeText,
       this.note,
       this.card,
       this.terminalBadge,
+      this.hoverRing,
       this.selection,
     );
   }
@@ -135,16 +143,46 @@ export class OfficeView {
     const prev = this.agent;
     this.agent = agent;
     const kind = agent.status.kind;
-    if (prev?.status.kind !== kind) this.drawStatus(kind);
+    if (prev?.status.kind !== kind) {
+      this.drawStatus(kind);
+      if (this.far) this.renderCard();
+    }
     if (prev?.cwd !== agent.cwd || prev?.title !== agent.title) {
       this.setLabel(agent.title ?? displayName(agent.cwd, FULL));
     }
-    if (prev?.provider !== agent.provider) this.drawProvider(agent);
+    if (prev?.provider !== agent.provider || prev?.id !== agent.id) this.drawProvider(agent);
     if (prev?.lastTool !== agent.lastTool || prev?.status.kind !== kind) this.drawBubble(agent);
     if (prev?.activity !== agent.activity || prev?.lastPrompt !== agent.lastPrompt) {
       // Trabajando: qué hace. Si no: lo último que se le pidió.
       this.drawNote(agent.activity ?? (agent.lastPrompt ? `> ${agent.lastPrompt}` : ""));
     }
+    // Animación por eventos (0 frames en reposo): cuando está trabajando y llega un evento nuevo,
+    // el personaje alterna de postura y la pantalla muestra actividad de código.
+    if (kind === "working" && prev !== undefined && prev.lastEventAt !== agent.lastEventAt) {
+      this.stepWorkingAnimation();
+    } else if (kind !== "working" && this.animPhase !== 0) {
+      this.resetWorkingAnimation(kind);
+    }
+  }
+
+  /** Avanza un paso de animación del personaje y el monitor al recibir actividad real/simulada. */
+  private stepWorkingAnimation(): void {
+    this.animPhase = (this.animPhase + 1) % 3;
+    const a = anchors(this.size);
+    if (this.personFrames.length > 0) {
+      const f = this.personFrames[this.animPhase % this.personFrames.length];
+      if (f) this.person.texture = f;
+    }
+    this.person.position.set(a.person.x, a.person.y - (this.animPhase % 2));
+    this.drawMonitorScreen("working", this.animPhase);
+  }
+
+  private resetWorkingAnimation(kind: StatusKind): void {
+    this.animPhase = 0;
+    const a = anchors(this.size);
+    if (this.personFrames[0]) this.person.texture = this.personFrames[0];
+    this.person.position.set(a.person.x, a.person.y);
+    this.drawMonitorScreen(kind, 0);
   }
 
   /** Oficina apagada: una conversación cerrada. Sin semáforo ni avatar; clic para retomarla. */
@@ -198,6 +236,7 @@ export class OfficeView {
   setLod(lod: Lod): void {
     this.far = lod === "far";
     this.card.visible = this.far;
+    this.labelPlate.visible = !this.far;
     this.label.visible = !this.far;
     this.note.visible = !this.far;
     this.near.visible = lod === "near";
@@ -210,12 +249,21 @@ export class OfficeView {
     this.terminalBadge.visible = has;
   }
 
+  setHovered(hovered: boolean): void {
+    this.hoverRing.clear();
+    if (hovered) {
+      this.hoverRing
+        .roundRect(-5, -5, this.size.w + 10, this.size.h + 10, 3)
+        .stroke({ color: PAL.selection, width: 1.5, alpha: 0.55 });
+    }
+  }
+
   setSelected(selected: boolean): void {
     this.selection.clear();
     if (selected) {
       this.selection
-        .rect(-6, -6, this.size.w + 12, this.size.h + 12)
-        .stroke({ color: PAL.selection, width: 2, alpha: 0.9 });
+        .roundRect(-7, -7, this.size.w + 14, this.size.h + 14, 4)
+        .stroke({ color: PAL.selection, width: 2.5, alpha: 0.95 });
     }
   }
 
@@ -235,18 +283,31 @@ export class OfficeView {
     if (text === "") return;
     const lines = text.split("\n").length;
     const height = Math.ceil(lines * size * LINE_H) + 8;
-    const top = Math.round((this.size.h - height) / 2) + 8;
+    // En la mitad inferior de la sala para dejar visible al personaje y su escritorio desde lejos.
+    const top = Math.max(Math.round(this.size.h * 0.52), this.size.h - height - 6);
     this.cardText.position.set(CARD.pad + 4, top + 4);
+    const strokeColor = this.agent ? STATUS_COLOR[this.agent.status.kind] : PAL.dormant;
     this.cardBg
-      .rect(CARD.pad, top, this.size.w - 2 * CARD.pad, height)
-      .fill({ color: PAL.housing, alpha: 0.8 });
+      .roundRect(CARD.pad, top, this.size.w - 2 * CARD.pad, height, 4)
+      .fill({ color: PAL.housing, alpha: 0.88 })
+      .stroke({ color: strokeColor, width: 1, alpha: 0.65 });
   }
 
   private renderLabel(): void {
     const size = this.labelSize;
     const lines = Math.min(LABEL.maxLines, Math.max(1, Math.floor(LABEL.height / (size * LINE_H))));
+    const text = fitLines(this.labelRaw, charsIn(LABEL.width, size), lines);
     this.label.style.fontSize = size;
-    this.label.text = fitLines(this.labelRaw, charsIn(LABEL.width, size), lines);
+    this.label.text = text;
+    this.labelPlate.clear();
+    if (text === "") return;
+    const a = anchors(this.size);
+    const lineCount = text.split("\n").length;
+    const h = Math.ceil(lineCount * size * LINE_H) + 4;
+    const w = Math.min(LABEL.width + 6, Math.max(36, Math.ceil(this.label.width) + 8));
+    this.labelPlate
+      .roundRect(a.label.x - 3, a.label.y - 2, w, h, 3)
+      .fill({ color: PAL.housing, alpha: 0.78 });
   }
 
   private drawNote(text: string): void {
@@ -269,7 +330,9 @@ export class OfficeView {
     const height = Math.ceil(lines * size * LINE_H) + 4;
     const top = this.size.h - 3 - height;
     this.noteText.position.set(6, top + 2);
-    this.noteBg.rect(3, top, this.size.w - 6, height).fill({ color: PAL.housing, alpha: 0.82 });
+    this.noteBg
+      .roundRect(3, top, this.size.w - 6, height, 3)
+      .fill({ color: PAL.housing, alpha: 0.86 });
   }
 
   private drawDormant(c: ConversationInfo): void {
@@ -284,15 +347,38 @@ export class OfficeView {
     // Luz apagada: la sala en penumbra, sin nadie en la silla.
     this.deadShade.clear().rect(0, 0, w, h).fill({ color: 0x000000, alpha: 0.5 });
     const a = anchors(this.size);
-    this.badge.clear().roundRect(a.badge.x, a.badge.y, 12, 11, 2).fill(PROVIDER_COLOR[c.provider]);
+    this.badge
+      .clear()
+      .roundRect(a.badge.x, a.badge.y, 13, 12, 2)
+      .fill(PROVIDER_COLOR[c.provider])
+      .stroke({ color: PAL.housing, width: 1 });
     this.badgeText.text = PROVIDER_LETTER[c.provider];
-    this.background.texture = this.art.templates[c.provider];
+    const templates = this.art.templates[c.provider];
+    this.background.texture = templates[decorFor(c.sessionId, templates.length)] as Texture;
     this.person.visible = false;
     this.bubbleText.text = "zZ";
     this.bubble
       .clear()
       .roundRect(a.bubble.x, a.bubble.y, 20, 13, 3)
       .fill({ color: PAL.bubble, alpha: 0.6 });
+  }
+
+  private drawMonitorScreen(kind: StatusKind, phase: number): void {
+    const color = STATUS_COLOR[kind];
+    this.screen
+      .clear()
+      .rect(0, 0, this.size.tile, 7)
+      .fill(kind === "dead" ? PAL.monitor : color);
+    if (kind === "working") {
+      // Líneas de código simuladas que avanzan con cada evento del agente.
+      const w1 = phase === 0 ? 10 : phase === 1 ? 6 : 12;
+      const w2 = phase === 0 ? 6 : phase === 1 ? 11 : 8;
+      this.screen
+        .rect(2, 1.5, w1, 1.5)
+        .fill({ color: PAL.housing, alpha: 0.55 })
+        .rect(2, 4, w2, 1.5)
+        .fill({ color: PAL.housing, alpha: 0.55 });
+    }
   }
 
   private drawStatus(kind: StatusKind): void {
@@ -315,10 +401,7 @@ export class OfficeView {
     });
 
     // Pantalla del monitor con el color del estado.
-    this.screen
-      .clear()
-      .rect(0, 0, this.size.tile, 7)
-      .fill(kind === "dead" ? PAL.monitor : color);
+    this.drawMonitorScreen(kind, this.animPhase);
 
     this.deadShade.clear();
     if (kind === "dead") {
@@ -335,13 +418,16 @@ export class OfficeView {
     const a = anchors(this.size);
     this.badge
       .clear()
-      .roundRect(a.badge.x, a.badge.y, 12, 11, 2)
-      .fill(PROVIDER_COLOR[agent.provider]);
+      .roundRect(a.badge.x, a.badge.y, 13, 12, 2)
+      .fill(PROVIDER_COLOR[agent.provider])
+      .stroke({ color: PAL.housing, width: 1 });
     this.badgeText.text = PROVIDER_LETTER[agent.provider];
-    // La alfombra lleva el color del proveedor; la persona se elige por el id del agente.
-    this.background.texture = this.art.templates[agent.provider];
+    // La alfombra y la variante de muebles se eligen por proveedor e id del agente.
+    const templates = this.art.templates[agent.provider];
+    this.background.texture = templates[decorFor(agent.id, templates.length)] as Texture;
     const people = this.art.people;
-    this.person.texture = people[personFor(agent.id, people.length)] as Texture;
+    this.personFrames = people[personFor(agent.id, people.length)] ?? [];
+    if (this.personFrames[0]) this.person.texture = this.personFrames[0];
     this.person.visible = true;
   }
 

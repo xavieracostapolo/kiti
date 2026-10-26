@@ -41,6 +41,7 @@ export function TopBar({ store, onLaunch }: Props) {
   );
   const dormant = useStore(store, (st) => st.dormant.size);
   const filter = useStore(store, (st) => st.filter);
+  const layoutMode = useStore(store, (st) => st.layoutMode);
   const simulated = useStore(store, (st) => st.source === "sim");
   const search = useRef<HTMLInputElement>(null);
   const total = ORDER.reduce((sum, k) => sum + counts[k], 0);
@@ -84,6 +85,23 @@ export function TopBar({ store, onLaunch }: Props) {
         {dormant > 0 && chip("dormant", dormant, PAL.dormant, "apagadas")}
       </span>
       <span className={s.spacer} />
+      <div className={s.layoutGroup} role="radiogroup" aria-label="Modo de distribución">
+        {(["dynamic", "horizontal", "vertical"] as const).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            className={`${s.layoutBtn} ${layoutMode === mode ? s.layoutActive : ""}`}
+            title={`Distribución: ${mode}`}
+            onClick={() => store.getState().setLayoutMode(mode)}
+          >
+            {mode === "dynamic"
+              ? "⊞ Dinámico"
+              : mode === "horizontal"
+                ? "⊟ Horizontal"
+                : "☷ Vertical"}
+          </button>
+        ))}
+      </div>
       <input
         ref={search}
         type="search"

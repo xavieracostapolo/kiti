@@ -3,6 +3,7 @@
 
 import { createStore } from "zustand/vanilla";
 import type { Lod } from "../domain/lod";
+import type { LayoutMode } from "../domain/zones";
 import type {
   AgentId,
   ConversationInfo,
@@ -37,6 +38,9 @@ export type KitiState = {
   toggleFilterKind(kind: FilterKind): void;
   setFilterText(text: string): void;
   clearFilter(): void;
+  /** Modo de distribución del mapa de zonas (`dynamic`, `horizontal`, `vertical`). */
+  layoutMode: LayoutMode;
+  setLayoutMode(mode: LayoutMode): void;
   /** Terminales de los agentes lanzados desde Kiti, por pid (ADR 0007). */
   terminals: ReadonlyMap<number, TerminalInfo>;
   openTerminalId: string | undefined;
@@ -88,6 +92,10 @@ export function createKitiStore() {
     },
     clearFilter() {
       if (get().filter !== EMPTY_FILTER) set({ filter: EMPTY_FILTER });
+    },
+    layoutMode: "dynamic",
+    setLayoutMode(layoutMode) {
+      if (get().layoutMode !== layoutMode) set({ layoutMode });
     },
     setConversations(list) {
       const { agents, dormant: prev, view } = get();

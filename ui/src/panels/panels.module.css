@@ -153,6 +153,37 @@
   flex: 1;
 }
 
+.layoutGroup {
+  display: flex;
+  background: var(--panel-2);
+  border: 2px solid var(--edge);
+  box-shadow: 2px 2px 0 var(--shadow);
+}
+
+.layoutBtn {
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+
+.layoutBtn:hover {
+  color: var(--text);
+  background: var(--panel-3);
+}
+
+.layoutActive {
+  background: var(--panel-3);
+  color: var(--text);
+  font-weight: bold;
+}
+
 .agentPanel {
   position: absolute;
   right: 12px;
@@ -166,6 +197,83 @@
   font-size: 12px;
   color: var(--text);
   pointer-events: auto;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.closeBtn:hover {
+  color: var(--text);
+}
+
+.mapControls {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
+}
+
+.ctrlBtn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
+  border: 2px solid var(--edge);
+  color: var(--text);
+  box-shadow: 2px 2px 0 var(--shadow);
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.ctrlBtn:hover {
+  background: var(--panel-3);
+}
+
+.ctrlBtn:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--shadow);
+}
+
+.emptyState {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  box-shadow: 6px 6px 0 var(--shadow);
+  padding: 24px 32px;
+  text-align: center;
+  pointer-events: auto;
+  font-family: var(--font);
+}
+
+.emptyTitle {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--text);
+}
+
+.emptyText {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
 }
 
 .agentTitle {

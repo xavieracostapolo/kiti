@@ -9,7 +9,6 @@ import {
   Container,
   Culler,
   Graphics,
-  type Texture,
   TextureStyle,
   Ticker,
   TilingSprite,
@@ -38,7 +37,7 @@ import {
 } from "../domain/layout";
 import { LOD_SCALE, type Lod, lodFor } from "../domain/lod";
 import { fontFor } from "../domain/text";
-import { layoutZones, type Zone, type ZoneSlots } from "../domain/zones";
+import { DEFAULT_ZONES, layoutZones, type Zone, type ZoneSlots } from "../domain/zones";
 import type { AgentId, AgentState, ConversationInfo, Provider } from "../protocol";
 import { planScene } from "../state/agents";
 import { isActive, matchesAgent, matchesConversation } from "../state/filter";
@@ -46,9 +45,15 @@ import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
 import { attachCameraInput } from "./camera/CameraInput";
-import { loadSheets, PEOPLE_BACK_COLUMN, PEOPLE_ROWS, tileTexture } from "./kenney";
+import {
+  loadSheets,
+  PEOPLE_ANIM_FRAMES,
+  PEOPLE_BACK_COLUMN,
+  PEOPLE_ROWS,
+  tileTexture,
+} from "./kenney";
 import { FONT, type OfficeArt, OfficeView } from "./OfficeView";
-import { drawOfficeTemplate } from "./officeTemplate";
+import { DECOR_VARIANTS, drawOfficeTemplate } from "./officeTemplate";
 import { PAL } from "./palette";
 import { RenderScheduler } from "./RenderScheduler";
 
@@ -74,6 +79,7 @@ export type WorldHandle = {
   focus(idOrIndex: string): void;
   fitAll(): void;
   setZoom(zoom: Zoom): void;
+  zoomStep(factor: number): void;
   bench(durationMs?: number): Promise<BenchResult>;
   frames(): number;
   /** Centro de la oficina en px de pantalla (tests E2E). */
@@ -164,22 +170,26 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       textureStyle: { scaleMode: "linear" },
     });
 
-    // Tiles de Kenney (ADR 0013): una sala rasterizada por proveedor, compartida por sus oficinas.
+    // Tiles de Kenney (ADR 0013): variantes de sala rasterizadas por proveedor, compartidas por sus oficinas.
     const sheets = await loadSheets();
     if (disposed) return;
-    const templateFor = (provider: Provider) =>
-      app.renderer.generateTexture({
-        target: drawOfficeTemplate(room, sheets, provider),
-        resolution: 1,
-      });
+    const templatesFor = (provider: Provider) =>
+      Array.from({ length: DECOR_VARIANTS }, (_, variant) =>
+        app.renderer.generateTexture({
+          target: drawOfficeTemplate(room, sheets, provider, variant),
+          resolution: 1,
+        }),
+      );
     art = {
       templates: {
-        claude: templateFor("claude"),
-        codex: templateFor("codex"),
-        gemini: templateFor("gemini"),
-        antigravity: templateFor("antigravity"),
+        claude: templatesFor("claude"),
+        codex: templatesFor("codex"),
+        gemini: templatesFor("gemini"),
+        antigravity: templatesFor("antigravity"),
       },
-      people: PEOPLE_ROWS.map((row) => tileTexture(sheets, "urban", PEOPLE_BACK_COLUMN, row)),
+      people: PEOPLE_ROWS.map((row) =>
+        PEOPLE_ANIM_FRAMES.map((df) => tileTexture(sheets, "urban", PEOPLE_BACK_COLUMN, row + df)),
+      ),
     };
     const tile = new Graphics()
       .rect(0, 0, layout.tile, layout.tile)
@@ -268,6 +278,16 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           if (s.view.selectedId) views.get(s.view.selectedId)?.setSelected(true);
           scheduler?.request();
         }
+        if (s.layoutMode !== prev.layoutMode) {
+          sync(EMPTY, NO_ROOMS);
+          setCamera(fitAllCamera(), true);
+        }
+        if (s.hover?.id !== prev.hover?.id) {
+          if (prev.hover?.id) views.get(prev.hover.id)?.setHovered(false);
+          if (s.hover?.id) views.get(s.hover.id)?.setHovered(true);
+          app.canvas.style.cursor = s.hover?.id ? "pointer" : "default";
+          scheduler?.request();
+        }
       }),
     );
 
@@ -339,7 +359,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   /** Aplica a la escena lo que cambió en agentes y conversaciones cerradas, y recoloca todo. */
   function sync(prev: ReadonlyMap<AgentId, AgentState>, prevDormant: ReadonlyMap<string, unknown>) {
     if (!art) return;
-    const { agents: state, dormant, terminals } = store.getState();
+    const { agents: state, dormant, terminals, layoutMode } = store.getState();
     const next = state.agents;
     const ops = planScene(prev, next);
     if (ops.length === 0 && dormant === prevDormant) return;
@@ -357,7 +377,11 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       for (const id of prevDormant.keys()) if (!dormant.has(id)) dropView(id);
       for (const [id, c] of dormant) (views.get(id) ?? newView(id)).showConversation(c);
     }
-    const l = layoutZones(zoneSlots, roomEntries(next, dormant), layout);
+    const l = layoutZones(zoneSlots, roomEntries(next, dormant), layout, {
+      ...DEFAULT_ZONES,
+      mode: layoutMode,
+      aspect: vp.w / Math.max(1, vp.h - TOP_INSET),
+    });
     zoneSlots = l.slots;
     rooms = l.rooms;
     bounds = l.bounds;
@@ -571,6 +595,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     },
     fitAll: () => setCamera(fitAllCamera(), true),
     setZoom: (zoom) => setCamera(zoomCamera(zoom), true),
+    zoomStep: (factor) =>
+      setCamera(zoomAt(cam, vp, { x: vp.w / 2, y: vp.h / 2 }, factor, DEFAULT_LIMITS), true),
     frames: () => scheduler?.frames ?? 0,
     screenCenter(idOrIndex) {
       const id = resolveId(idOrIndex);

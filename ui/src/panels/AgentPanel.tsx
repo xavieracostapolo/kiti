@@ -52,10 +52,20 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
   if (!agent || terminalOpen) return null;
   return (
     <aside className={s.agentPanel} aria-label="Agente seleccionado">
-      <h2 className={s.agentTitle}>
-        <span className={s.dot} style={{ background: hex(STATUS_COLOR[agent.status.kind]) }} />
-        {agent.title ?? displayName(agent.cwd)}
-      </h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <h2 className={s.agentTitle} style={{ margin: 0 }}>
+          <span className={s.dot} style={{ background: hex(STATUS_COLOR[agent.status.kind]) }} />
+          {agent.title ?? displayName(agent.cwd)}
+        </h2>
+        <button
+          type="button"
+          className={s.closeBtn}
+          title="Cerrar panel"
+          onClick={() => store.getState().select(undefined)}
+        >
+          ✕
+        </button>
+      </div>
       <dl className={s.fields}>
         {agent.project && agent.project !== agent.cwd && (
           <>

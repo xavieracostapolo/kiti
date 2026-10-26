@@ -11,6 +11,7 @@ import { ConversationPanel } from "./ConversationPanel";
 import { DebugPanel } from "./DebugPanel";
 import { NativeCloseOffice } from "./NativeCloseOffice";
 import { OfficeTooltip } from "./OfficeTooltip";
+import s from "./panels.module.css";
 import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { WorldHost } from "./WorldHost";
@@ -81,6 +82,32 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
     <Profiler id="panels" onRender={() => metrics.reactCommit()}>
       <WorldHost store={store} metrics={metrics} params={params} onWorld={handleWorld} />
       <TopBar store={store} {...(terminals ? { onLaunch: launch } : {})} />
+      <div className={s.mapControls}>
+        <button
+          type="button"
+          className={s.ctrlBtn}
+          title="Acercar (+)"
+          onClick={() => world.current?.zoomStep(1.25)}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className={s.ctrlBtn}
+          title="Alejar (-)"
+          onClick={() => world.current?.zoomStep(0.8)}
+        >
+          -
+        </button>
+        <button
+          type="button"
+          className={s.ctrlBtn}
+          title="Encuadrar todo (0)"
+          onClick={() => world.current?.fitAll()}
+        >
+          ⊡
+        </button>
+      </div>
       <AgentPanel
         store={store}
         world={() => world.current}
