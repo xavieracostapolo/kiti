@@ -234,6 +234,18 @@ async fn ask(app: &AppHandle, title: &str, message: String, yes: &str, no: &str)
     rx.await.unwrap_or(false)
 }
 
+/// La sesión de Kiti que conviene reutilizar al lanzar `provider` en una carpeta: la primera del
+/// mismo agente en esa carpeta (`in_folder`).
+fn session_to_reuse(
+    sessions: Vec<TerminalInfo>,
+    provider: kiti_protocol::Provider,
+    in_folder: impl Fn(&str) -> bool,
+) -> Option<TerminalInfo> {
+    sessions
+        .into_iter()
+        .find(|t| t.provider == provider && in_folder(&t.cwd))
+}
+
 fn same_dir(a: &str, b: &std::path::Path) -> bool {
     let canon = |p: &std::path::Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned());
     canon(std::path::Path::new(a)) == canon(b)
@@ -269,11 +281,9 @@ async fn launch_agent(
         |n| n.to_string_lossy().into_owned(),
     );
 
-    // 1. ¿Ya hay una sesión de Kiti en esa carpeta? Mejor retomarla que crear otra.
-    if let Some(existing) = terminals
-        .list()
-        .into_iter()
-        .find(|t| same_dir(&t.cwd, &cwd))
+    // 1. ¿Ya hay una sesión de Kiti de este mismo agente en esa carpeta? Mejor retomarla que
+    //    crear otra. La de otro agente no cuenta: si pides Antigravity, no te ofrece la de Claude.
+    if let Some(existing) = session_to_reuse(terminals.list(), provider, |dir| same_dir(dir, &cwd))
     {
         let reuse = ask(
             &app,
@@ -1127,4 +1137,44 @@ fn start_tray(app: &AppHandle, runtime: RuntimeHandle) -> tauri::Result<()> {
         }
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kiti_protocol::Provider;
+
+    fn session(id: &str, provider: Provider, cwd: &str) -> TerminalInfo {
+        TerminalInfo {
+            id: id.into(),
+            pid: 1,
+            provider,
+            cwd: cwd.into(),
+            running: true,
+        }
+    }
+
+    #[test]
+    fn solo_se_reutiliza_una_sesion_del_mismo_agente_en_la_carpeta() {
+        let sessions = vec![
+            session("kiti-1", Provider::Claude, "/w/thoth"),
+            session("kiti-2", Provider::Antigravity, "/w/otra"),
+        ];
+        let in_thoth = |d: &str| d == "/w/thoth";
+        // Antigravity en thoth: la de Claude no cuenta.
+        assert_eq!(
+            session_to_reuse(sessions.clone(), Provider::Antigravity, in_thoth),
+            None
+        );
+        // Claude en thoth: esa sí.
+        assert_eq!(
+            session_to_reuse(sessions.clone(), Provider::Claude, in_thoth).map(|t| t.id),
+            Some("kiti-1".to_owned())
+        );
+        // Antigravity en otra: la suya.
+        assert_eq!(
+            session_to_reuse(sessions, Provider::Antigravity, |d| d == "/w/otra").map(|t| t.id),
+            Some("kiti-2".to_owned())
+        );
+    }
 }
