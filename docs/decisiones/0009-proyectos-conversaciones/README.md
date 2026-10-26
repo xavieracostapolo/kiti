@@ -6,7 +6,7 @@
 
 ## Contexto
 
-El usuario trabaja con varias sesiones por proyecto (por ejemplo, en thoth-assets, una de vulnerabilidades y otra de migración de datos), las cierra y quiere retomarlas. También quiere ver agrupado en qué trabaja en cada proyecto y qué hace cada agente sin abrir su terminal. El problema se planteó sin solución previa y las decisiones se tomaron con él.
+El usuario trabaja con varias sesiones por proyecto (por ejemplo, en un mismo repositorio, una de vulnerabilidades y otra de migración de datos), las cierra y quiere retomarlas. También quiere ver agrupado en qué trabaja en cada proyecto y qué hace cada agente sin abrir su terminal. El problema se planteó sin solución previa y las decisiones se tomaron con él.
 
 **Conceptos:**
 
@@ -18,7 +18,7 @@ Cuando el contexto se llena, Claude **compacta** y sigue en la misma conversaci�
 
 **Datos observados en local** (solo la estructura, sin leer el contenido):
 
-- thoth-assets tiene 5 conversaciones guardadas.
+- El proyecto del caso de uso tiene 5 conversaciones guardadas.
 - Tres de ellas tienen registros `ai-title` con `aiTitle`.
 - Todas tienen registros `last-prompt` con `lastPrompt`.
 
@@ -60,7 +60,7 @@ Todo queda **en la máquina**: viaja solo del core a la UI por IPC, **nunca se e
 
 ## Resultados del Hito 11
 
-- **Datos reales** (conteos, sin leer contenido): 7 conversaciones en los últimos 7 días, en 5 carpetas. Incluye thoth-assets. La primera lectura tarda 24 ms y las siguientes, 0,4 ms (caché).
+- **Datos reales** (conteos, sin leer contenido): 7 conversaciones en los últimos 7 días, en 5 carpetas. Incluye el proyecto del caso de uso. La primera lectura tarda 24 ms y las siguientes, 0,4 ms (caché).
 - **Rendimiento:** con 50 agentes, el p95 de frame sigue en 2 ms y el delta de rAF en 17 ms (igual que antes).
 - **Bug corregido de paso:** `Culler.shared.cull` usaba por defecto las transformaciones del frame anterior. Tras un salto de cámara sin animación, las oficinas quedaban ocultas. Ahora se llama con `skipUpdateTransform = false`.
 - **Tests:** dominio de proyecto, enrutado de info retenida, meta de conversaciones e índice en disco (Rust); layout de zonas, salas apagadas, store, tooltip y panel (Vitest); E2E de zonas, tooltip y retomar con el simulador (`?conversations=1`). Las líneas base visuales se regeneraron con las zonas.

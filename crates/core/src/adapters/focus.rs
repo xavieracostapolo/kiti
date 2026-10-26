@@ -274,18 +274,18 @@ mod tests {
     fn ghostty_por_carpeta_y_si_hay_varias_por_titulo() {
         let terms = [
             term("a", "◑ Oficina virtual 2D para agentes", "/w/kiti"),
-            term("b", "…/source/thoth", "/w/thoth"),
-            term("c", "✳ Migración de datos", "/w/thoth/"),
+            term("b", "…/source/tienda", "/w/tienda"),
+            term("c", "✳ Migración de datos", "/w/tienda/"),
         ];
         // Una sola en la carpeta.
         assert_eq!(pick_ghostty(&terms, "/w/kiti", None), Some("a"));
         // Dos en la carpeta: decide el título.
         assert_eq!(
-            pick_ghostty(&terms, "/w/thoth", Some("Migración de datos")),
+            pick_ghostty(&terms, "/w/tienda", Some("Migración de datos")),
             Some("c")
         );
         // Dos y sin título que las distinga: ninguna (mejor no equivocarse).
-        assert_eq!(pick_ghostty(&terms, "/w/thoth", None), None);
+        assert_eq!(pick_ghostty(&terms, "/w/tienda", None), None);
         // Ninguna en la carpeta: por título en todas.
         assert_eq!(
             pick_ghostty(&terms, "/otra", Some("Oficina virtual")),

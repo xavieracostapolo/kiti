@@ -21,8 +21,8 @@ test("pulsar «esperando» atenúa el resto y acerca la cámara a esas oficinas"
 test("el buscador encuentra por proyecto, también las apagadas", async ({ page }) => {
   await openWorld(page, Q);
   await page.keyboard.press("/");
-  await page.keyboard.type("thoth");
-  // Solo quedan las dos conversaciones cerradas de thoth-assets.
+  await page.keyboard.type("tienda");
+  // Solo quedan las dos conversaciones cerradas de tienda-web.
   await expect.poll(() => page.evaluate(() => window.__kiti?.dimmed().length)).toBe(22);
   await page.keyboard.press("Escape");
   await expect.poll(() => page.evaluate(() => window.__kiti?.dimmed().length)).toBe(0);

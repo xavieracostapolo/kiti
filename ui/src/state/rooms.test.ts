@@ -14,7 +14,7 @@ const agent = (id: string, sessionId?: string): AgentState => ({
   ...(sessionId === undefined ? {} : { sessionId }),
 });
 
-const conv = (sessionId: string, project = "/w/thoth"): ConversationInfo => ({
+const conv = (sessionId: string, project = "/w/tienda"): ConversationInfo => ({
   sessionId,
   provider: "claude",
   cwd: project,
@@ -45,7 +45,7 @@ describe("roomEntries", () => {
     const dormant = dormantRooms(agents, [conv("s2")], new Map());
     expect(roomEntries(agents, dormant)).toEqual([
       { id: "a", project: "/w/kiti" },
-      { id: dormantId("s2"), project: "/w/thoth" },
+      { id: dormantId("s2"), project: "/w/tienda" },
     ]);
   });
 });

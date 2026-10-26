@@ -23,14 +23,14 @@ mod tests {
 
     #[test]
     fn un_subdirectorio_pertenece_a_su_repositorio() {
-        let has = repos(&["/Users/dev/thoth-assets"]);
+        let has = repos(&["/Users/dev/tienda-web"]);
         assert_eq!(
-            project_root("/Users/dev/thoth-assets/packages/api", &has),
-            "/Users/dev/thoth-assets"
+            project_root("/Users/dev/tienda-web/packages/api", &has),
+            "/Users/dev/tienda-web"
         );
         assert_eq!(
-            project_root("/Users/dev/thoth-assets", &has),
-            "/Users/dev/thoth-assets"
+            project_root("/Users/dev/tienda-web", &has),
+            "/Users/dev/tienda-web"
         );
     }
 

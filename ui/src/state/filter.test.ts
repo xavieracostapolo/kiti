@@ -6,8 +6,8 @@ const agent = (over: Partial<AgentState> = {}): AgentState => ({
   id: "a",
   provider: "claude",
   pid: 1,
-  cwd: "/w/thoth-assets/api",
-  project: "/w/thoth-assets",
+  cwd: "/w/tienda-web/api",
+  project: "/w/tienda-web",
   startedAt: 0,
   status: { kind: "waiting", reason: "hook", since: 0 },
   lastEventAt: 0,
@@ -48,7 +48,7 @@ describe("filtro de oficinas", () => {
   it("el texto busca en título, proyecto y carpeta, sin mayúsculas ni tildes", () => {
     const f = (text: string) => ({ ...EMPTY_FILTER, text });
     expect(matchesAgent(agent(), f("VULNERA"))).toBe(true);
-    expect(matchesAgent(agent(), f("thoth"))).toBe(true);
+    expect(matchesAgent(agent(), f("tienda"))).toBe(true);
     expect(matchesAgent(agent(), f("api"))).toBe(true);
     expect(matchesAgent(agent(), f("billing"))).toBe(false);
     expect(matchesConversation(conv, f("migracion"))).toBe(true);

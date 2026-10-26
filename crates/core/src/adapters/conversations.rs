@@ -176,19 +176,19 @@ mod tests {
     #[test]
     fn lista_las_recientes_con_titulo_y_las_recuerda() {
         let root = std::env::temp_dir().join(format!("kiti-conversations-{}", std::process::id()));
-        let dir = root.join("-w-thoth");
+        let dir = root.join("-w-tienda");
         std::fs::create_dir_all(dir.join("aaaaaaaa-1111/subagents")).unwrap();
         let line = |t: &str| format!("{t}\n");
         std::fs::write(
             dir.join("aaaaaaaa-1111.jsonl"),
-            line(r#"{"type":"user","cwd":"/w/thoth","message":{"content":"x"}}"#)
+            line(r#"{"type":"user","cwd":"/w/tienda","message":{"content":"x"}}"#)
                 + &line(r#"{"type":"ai-title","aiTitle":"Vulnerabilidades","sessionId":"aaaaaaaa-1111"}"#),
         )
         .unwrap();
         // Sin título ni pedido: no cuenta. Tampoco lo que no es un transcript.
         std::fs::write(
             dir.join("bbbbbbbb-2222.jsonl"),
-            line(r#"{"type":"user","cwd":"/w/thoth"}"#),
+            line(r#"{"type":"user","cwd":"/w/tienda"}"#),
         )
         .unwrap();
         std::fs::write(dir.join("notas.txt"), "x").unwrap();
@@ -198,7 +198,7 @@ mod tests {
         let found = index.list(&root, week_ago);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].session.as_str(), "aaaaaaaa-1111");
-        assert_eq!(found[0].cwd, "/w/thoth");
+        assert_eq!(found[0].cwd, "/w/tienda");
         assert_eq!(found[0].title.as_deref(), Some("Vulnerabilidades"));
         assert!(index.find("aaaaaaaa-1111").is_some());
 

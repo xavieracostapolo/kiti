@@ -24,7 +24,7 @@ Con varios agentes abiertos, el usuario quiere saber cuándo uno lo necesita sin
   - `AgentExited { expected: false }` → `Crashed`, solo si el agente llegó a trabajar (o a esperar, o a fallar) o llevaba vivo **60 s o más**. Cerrar una oficina o un `SessionEnd` no avisan.
   - **Antirrebote:** el mismo aviso para el mismo agente, como mucho uno cada 30 s.
 - **`ports::AlertSink`** recibe `AlertNotice`: tipo, agente, proveedor, proyecto, `cwd` y **título** de la conversación. Nunca recibe el pedido del usuario.
-- **`application::alert_text`** arma el texto. Título: «Claude pide permiso», «Claude terminó», «Claude falló» o «Claude se cerró de forma inesperada». Cuerpo: «thoth-assets · Revisar vulnerabilidades» y, en una subcarpeta, «thoth-assets/api».
+- **`application::alert_text`** arma el texto. Título: «Claude pide permiso», «Claude terminó», «Claude falló» o «Claude se cerró de forma inesperada». Cuerpo: «tienda-web · Revisar vulnerabilidades» y, en una subcarpeta, «tienda-web/api».
 - El runtime pasa por la política los eventos de reconciliación, hooks y ticks. Sin sink no hace nada: el modo simulado no lo instala, para no generar ruido.
 - **`NativeAlerts`** (src-tauri) comprueba si la ventana `main` tiene el foco. Si no lo tiene, muestra la notificación con `tauri-plugin-notification`.
 
