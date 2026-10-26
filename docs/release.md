@@ -6,11 +6,21 @@ El workflow [`release.yml`](../.github/workflows/release.yml) genera Kiti.app pa
 - Firmado con **Developer ID Application** y hardened runtime.
 - **Notarizado** por Apple, con el ticket grapado en la app y en el DMG.
 
-Un tag `vX.Y.Z` crea un **release en borrador** con el DMG, la app en `.zip` y `SHA256SUMS.txt`. Un PR que toque el workflow o la configuración del bundle solo compila sin firmar, para comprobar que el build funciona.
+Un tag `vX.Y.Z` crea un **release en borrador** con el DMG, la app en `.zip` y `SHA256SUMS.txt`. La firma depende de los secrets:
 
-## Secrets del repositorio (una vez)
+| Secrets | Firma | Qué ve el usuario |
+|---|---|---|
+| Los seis de Apple | Developer ID, notarizada y grapada | Abre con doble clic |
+| Ninguno | **Ad-hoc** (`APPLE_SIGNING_IDENTITY=-`) | macOS la bloquea la primera vez: «Abrir igualmente» en Privacidad y seguridad, o `xattr -dr com.apple.quarantine`. Las notas de [`release-notes-adhoc.md`](../.github/release-notes-adhoc.md) lo explican |
+| Solo algunos | — | El workflow falla, para no publicar sin firmar por error |
 
-Hace falta una cuenta del Apple Developer Program. Configura los secrets en *Settings → Secrets and variables → Actions* o con `gh secret set`:
+Un PR que toque el workflow o la configuración del bundle compila con firma ad-hoc y sube el resultado como artefacto, para comprobar que el build funciona.
+
+La v0.1.0 salió con firma ad-hoc: la cuenta no está en el Apple Developer Program.
+
+## Secrets del repositorio (para firmar con Developer ID)
+
+Hace falta una cuenta del Apple Developer Program (99 USD al año); un Apple ID gratuito no da certificados Developer ID ni notariza. Configura los secrets en *Settings → Secrets and variables → Actions* o con `gh secret set`:
 
 | Secret | Qué es |
 |---|---|

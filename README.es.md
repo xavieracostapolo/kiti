@@ -4,14 +4,14 @@
 
 **Una oficina virtual en pixel art donde cada sala es un agente de código que corre en tu Mac.**
 
-Claude Code, Codex CLI y Gemini CLI en un solo mapa, con un semáforo por agente.
+Claude Code, Codex CLI, Antigravity CLI y Gemini CLI en un solo mapa, con un semáforo por agente.
 
 [![CI](https://github.com/xavieracostapolo/kiti/actions/workflows/ci.yml/badge.svg)](https://github.com/xavieracostapolo/kiti/actions/workflows/ci.yml)
 [![Licencia: MIT](https://img.shields.io/badge/licencia-MIT-blue.svg)](LICENSE)
 ![Plataforma: macOS](https://img.shields.io/badge/plataforma-macOS-lightgrey.svg)
 ![Tauri v2](https://img.shields.io/badge/Tauri-v2-24c8db.svg)
 
-[**Prueba la demo**](https://xavieracostapolo.github.io/kiti/demo/) · [Web](https://xavieracostapolo.github.io/kiti/) · [Read in English](README.md)
+[**Descargar para macOS**](https://github.com/xavieracostapolo/kiti/releases/latest) · [**Prueba la demo**](https://xavieracostapolo.github.io/kiti/demo/) · [Web](https://xavieracostapolo.github.io/kiti/) · [Read in English](README.md)
 
 ![Kiti con 20 agentes simulados agrupados por proyecto, cada oficina con su título y su semáforo](site/img/map.png)
 
@@ -23,7 +23,7 @@ Cuando tienes varios agentes de código abiertos, les pierdes la pista. Uno espe
 
 ## Funciones
 
-- **Detección automática.** Kiti encuentra los procesos de Claude Code, Codex CLI y Gemini CLI. Los clasifica por ejecutable y `argv`, nunca por el nombre del proceso, e ignora los lanzadores y las apps de escritorio.
+- **Detección automática.** Kiti encuentra los procesos de Claude Code, Codex CLI, Antigravity CLI (`agy`) y Gemini CLI. Los clasifica por ejecutable y `argv`, nunca por el nombre del proceso, e ignora los lanzadores y las apps de escritorio.
 - **Semáforo por agente.** Verde es trabajando, amarillo es esperándote, gris es inactivo y rojo es error o caída. El estado sale de los hooks de los CLIs, no de adivinar. Un fallo de herramienta no es rojo.
 - **Zonas por proyecto.** Las oficinas se agrupan por raíz git (o carpeta): cada repositorio es un barrio.
 - **Cámara.** Pan, zoom, doble clic para enfocar una oficina y `0` para verlo todo. De lejos, cada oficina muestra su título en un cartel grande; de cerca ves el título, la herramienta actual y el último pedido.
@@ -65,13 +65,25 @@ Todo se queda en tu máquina. Kiti no tiene servidor ni telemetría.
 
 - El servidor de hooks escucha solo en `127.0.0.1` y exige un token por instalación. Comprueba `Host` y `Origin`, limita el tamaño del cuerpo y siempre responde `204`: Kiti nunca devuelve una decisión a un agente.
 - Los prompts, el código y las salidas de herramientas nunca se registran ni se guardan. El título y el último pedido solo viajan del core a la UI.
-- Al primer arranque, Kiti añade sus hooks HTTP a `~/.claude/settings.json` y deja intactos los tuyos. `mise run hooks:uninstall` los quita. Los hooks de Codex y Gemini son opcionales.
+- Al primer arranque, Kiti añade sus hooks HTTP a `~/.claude/settings.json` y deja intactos los tuyos. `mise run hooks:uninstall` los quita. Los hooks de Codex, Antigravity y Gemini son opcionales.
 
 Para reportar vulnerabilidades, sigue [SECURITY.md](SECURITY.md).
 
 ## Primeros pasos
 
-Kiti funciona en macOS. Windows está previsto; Linux no. Aún no hay una versión firmada, así que se compila desde el código.
+Kiti funciona en macOS. Windows está previsto; Linux no.
+
+### Descarga
+
+Descarga `Kiti_<versión>_universal.dmg` del [último release](https://github.com/xavieracostapolo/kiti/releases/latest). Funciona en Apple Silicon e Intel. Abre el DMG y arrastra Kiti a Aplicaciones.
+
+El release tiene **firma ad-hoc**: no está firmado con un Developer ID de Apple ni notarizado, así que macOS lo bloquea la primera vez. Abre Kiti una vez y pulsa **Abrir igualmente** en **Ajustes del Sistema → Privacidad y seguridad**. O ejecuta:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Kiti.app
+```
+
+macOS puede volver a pedir los permisos de Automatización y de notificaciones tras cada actualización. Si compilas desde el código no hace falta nada de esto.
 
 ### Pruébalo en el navegador
 
@@ -102,6 +114,7 @@ mise run app:bundle    # genera Kiti.app y la copia al Escritorio
 |---|---|---|
 | Claude Code | Hooks `http` nativos y `~/.claude/sessions/<pid>.json` | Automática al primer arranque |
 | Codex CLI | Hooks `command` a través del forwarder `kiti-hook` | `mise run hooks:install-codex` y luego confía en el hook en `/hooks` |
+| Antigravity CLI | Hooks `command` a través del forwarder `kiti-hook`, y su base SQLite local para los permisos y los títulos | `mise run hooks:install-antigravity` |
 | Gemini CLI | Hooks `command` a través del forwarder `kiti-hook` | `mise run hooks:install-gemini` |
 
 `mise run hooks:status` muestra qué está instalado. `mise run scan` muestra qué procesos ve Kiti como agentes y por qué. El forwarder falla en abierto: tiene un plazo de 150 ms, siempre sale con `0` y no hace nada si Kiti está cerrado.
@@ -112,6 +125,7 @@ mise run app:bundle    # genera Kiti.app y la copia al Escritorio
 [claude]  --hook http----------------> [core: HookServer, 127.0.0.1]
 [codex]   --hook command--> [kiti-hook] --> [core: HookServer]
 [gemini]  --hook command--> [kiti-hook] --> [core: HookServer]
+[agy]     --hook command--> [kiti-hook] --> [core: HookServer]
 [procesos] --sysinfo cada 2 s--------> [core: ProcessScanner]
 [~/.claude/sessions/*.json] --notify-> [core: ClaudeSessionsWatcher]
 [transcripts *.jsonl] --FSEvents-----> [core: TranscriptTailer]
@@ -127,7 +141,7 @@ mise run app:bundle    # genera Kiti.app y la copia al Escritorio
 |---|---|
 | `crates/protocol` | DTOs compartidos, exportados a TypeScript con `ts-rs` |
 | `crates/core` | Dominio, aplicación, ports y adapters en Rust puro. Sin Tauri |
-| `crates/forwarder` | `kiti-hook`, el forwarder de los hooks de Codex y Gemini |
+| `crates/forwarder` | `kiti-hook`, el forwarder de los hooks de Codex, Antigravity y Gemini |
 | `src-tauri` | Capa fina: commands, canal, capabilities y bandeja |
 | `ui` | Vite, TypeScript y PixiJS v8 con cámara propia; React solo para paneles |
 | `docs/decisiones` | Registros de decisiones de arquitectura |
@@ -138,11 +152,13 @@ El diseño está en ADRs, desde la [elección del stack](docs/decisiones/0001-st
 
 ## Roadmap
 
-- [x] Oficina simulada, shell nativo, procesos reales y hooks de los tres CLIs
+- [x] Oficina simulada, shell nativo, procesos reales y hooks de Claude Code, Codex y Gemini
 - [x] Tailer de transcripts, barra de menú, terminal embebida y sesiones persistentes en `tmux`
 - [x] Zonas por proyecto, conversaciones para retomar y avisos
 - [x] Vista lejana legible, filtro de oficinas e ir a la pestaña de terminal de un agente externo
 - [x] Pixel art con los tilesheets de [Kenney](https://kenney.nl)
+- [x] Antigravity CLI, el sucesor de Gemini CLI para cuentas gratuitas
+- [x] Build universal descargable (firma ad-hoc)
 - [ ] Soporte para Windows
 - [ ] Versiones firmadas y notarizadas
 
