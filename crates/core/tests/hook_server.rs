@@ -60,6 +60,23 @@ async fn un_hook_valido_responde_204_vacio_y_se_encola() {
 }
 
 #[tokio::test]
+async fn la_status_line_de_claude_entra_como_claude_con_su_evento() {
+    // ADR 0015: el forwarder reenvía el JSON de la status line a /v1/hooks/statusline.
+    let host = format!("127.0.0.1:{PORT}");
+    let req = Request::post("/v1/hooks/statusline")
+        .header("host", host.as_str())
+        .header("content-type", "application/json")
+        .header("authorization", format!("Bearer {TOKEN}"))
+        .body(Body::from(r#"{"rate_limits":{}}"#))
+        .unwrap();
+    let (status, _, mut rx) = send(req).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let got = rx.try_recv().unwrap();
+    assert_eq!(got.provider, Provider::Claude);
+    assert_eq!(got.event.as_deref(), Some("StatusLine"));
+}
+
+#[tokio::test]
 async fn rechaza_un_host_distinto_contra_dns_rebinding() {
     let req = with(&[("host", "evil.example:47821")])
         .body(Body::empty())

@@ -266,6 +266,63 @@ pub fn has_conversations(projects: &std::path::Path, cwd: &str) -> bool {
     })
 }
 
+#[derive(Deserialize)]
+struct RateLimit {
+    used_percentage: Option<f64>,
+    resets_at: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+struct RateLimits {
+    five_hour: Option<RateLimit>,
+    seven_day: Option<RateLimit>,
+}
+
+/// Lista blanca del JSON de la status line: solo `rate_limits` (ADR 0015).
+#[derive(Deserialize)]
+struct StatusLine {
+    rate_limits: Option<RateLimits>,
+}
+
+/// `resets_at`: segundos (o ms) desde epoch, o RFC 3339.
+fn reset_ms(v: &serde_json::Value) -> u64 {
+    match v {
+        serde_json::Value::Number(n) => n.as_f64().map_or(0, |s| {
+            if s > 1e12 {
+                s as u64
+            } else {
+                (s * 1000.0) as u64
+            }
+        }),
+        serde_json::Value::String(t) => super::rfc3339_ms(t).unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// Cuota de Claude desde el JSON de su status line. `None` si no trae `rate_limits` (sin
+/// suscripción, o antes de la primera respuesta de la sesión).
+pub fn parse_rate_limits(body: &[u8]) -> Option<Vec<crate::domain::QuotaWindow>> {
+    let s: StatusLine = serde_json::from_slice(body).ok()?;
+    let limits = s.rate_limits?;
+    let window = |label: &str, weekly: bool, r: Option<RateLimit>| {
+        let r = r?;
+        Some(crate::domain::QuotaWindow {
+            label: label.to_owned(),
+            weekly,
+            remaining: (1.0 - r.used_percentage? / 100.0).clamp(0.0, 1.0),
+            resets_at: r.resets_at.as_ref().map_or(0, reset_ms),
+        })
+    };
+    let windows: Vec<_> = [
+        window("5 h", false, limits.five_hour),
+        window("semana", true, limits.seven_day),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    (!windows.is_empty()).then_some(windows)
+}
+
 pub fn parse_hook(body: &[u8]) -> Result<HookEvent, AclError> {
     let p: Payload = serde_json::from_slice(body).map_err(|e| AclError::Json(e.to_string()))?;
     let session = p
@@ -658,5 +715,25 @@ mod tests {
         assert!(!is_session_id("a b c d e f"));
         assert!(!is_session_id("corto"));
         assert!(!is_session_id(&"a".repeat(65)));
+    }
+
+    #[test]
+    fn la_cuota_sale_de_rate_limits_y_nada_mas() {
+        let body = br#"{"session_id":"s","cwd":"/w/privado","model":{"id":"m"},"cost":{"total_cost_usd":3.2},
+          "rate_limits":{"five_hour":{"used_percentage":28,"resets_at":1793572705},
+                         "seven_day":{"used_percentage":60.5,"resets_at":"2026-11-01T22:38:25Z"}}}"#;
+        let w = parse_rate_limits(body).unwrap();
+        assert_eq!(w.len(), 2);
+        assert_eq!(w[0].label, "5 h");
+        assert!(!w[0].weekly);
+        assert!((w[0].remaining - 0.72).abs() < 1e-9);
+        assert_eq!(w[0].resets_at, 1_793_572_705_000);
+        assert!(w[1].weekly);
+        assert!((w[1].remaining - 0.395).abs() < 1e-9);
+        assert_eq!(w[1].resets_at, 1_793_572_705_000);
+        assert!(!format!("{w:?}").contains("privado"));
+        // Sin suscripción o antes de la primera respuesta: no hay cuota.
+        assert_eq!(parse_rate_limits(br#"{"session_id":"s"}"#), None);
+        assert_eq!(parse_rate_limits(b"no json"), None);
     }
 }

@@ -9,13 +9,13 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, interval};
 
-use crate::application::projection::{project_diff, project_snapshot};
+use crate::application::projection::{project_diff, project_provider, project_snapshot};
 use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
     AgentId, AgentInput, AgentRegistry, AlertPolicy, DetectedAgent, DomainEvent, Events, Pid,
-    Provider, SessionId, StalePolicy, Timestamp,
+    Provider, QuotaPolicy, QuotaWindow, SessionId, StalePolicy, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
@@ -49,6 +49,11 @@ pub enum RuntimeCommand {
         /// Lo nuevo de cada transcript.
         transcripts: Vec<TranscriptUpdate>,
         now: Timestamp,
+    },
+    /// Cuota de uso de un proveedor (ADR 0015).
+    Quota {
+        provider: Provider,
+        windows: Vec<QuotaWindow>,
     },
     /// Antigravity (ADR 0014): título y espera de permiso leídos de su base de datos.
     AntigravityLive {
@@ -127,6 +132,14 @@ impl RuntimeHandle {
                 transcripts,
                 now,
             })
+            .await;
+    }
+
+    /// Nueva lectura de la cuota de `provider` (ADR 0015).
+    pub async fn quota(&self, provider: Provider, windows: Vec<QuotaWindow>) {
+        let _ = self
+            .tx
+            .send(RuntimeCommand::Quota { provider, windows })
             .await;
     }
 
@@ -225,6 +238,21 @@ impl RuntimeHandle {
     }
 }
 
+fn quota_msg(provider: Provider, windows: &[QuotaWindow]) -> ServerMsg {
+    ServerMsg::Quota {
+        provider: project_provider(provider),
+        windows: windows
+            .iter()
+            .map(|w| kiti_protocol::QuotaWindow {
+                label: w.label.clone(),
+                weekly: w.weekly,
+                remaining_pct: (w.remaining * 100.0).round().clamp(0.0, 100.0) as u8,
+                resets_at: w.resets_at,
+            })
+            .collect(),
+    }
+}
+
 /// Lo justo de un agente para el shell: dónde trabaja y cómo se llama su conversación.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentBrief {
@@ -270,6 +298,9 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     alerts: Option<Box<dyn AlertSink>>,
     /// Foco pedido sin ventana conectada: se manda tras el siguiente Snapshot.
     pending_focus: Option<AgentId>,
+    /// Última cuota de cada proveedor (ADR 0015): se reenvía tras cada Snapshot.
+    quotas: std::collections::BTreeMap<Provider, Vec<QuotaWindow>>,
+    quota_policy: QuotaPolicy,
 }
 
 impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
@@ -302,6 +333,8 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             alert_policy: AlertPolicy::default(),
             alerts: None,
             pending_focus: None,
+            quotas: std::collections::BTreeMap::new(),
+            quota_policy: QuotaPolicy::default(),
         };
         (runtime, RuntimeHandle { tx, telemetry })
     }
@@ -456,6 +489,23 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 self.telemetry.record_event();
                 self.oldest_unpublished_hook.get_or_insert(received);
             }
+            RuntimeCommand::Quota { provider, windows } => {
+                debug!(event = "quota.updated", provider = %provider, windows = windows.len());
+                let alerts = self.quota_policy.observe(provider, &windows);
+                if let Some(sink) = self.alerts.as_mut() {
+                    for alert in alerts {
+                        info!(event = "alert.raised", provider = %provider, kind = "QuotaLow");
+                        sink.quota_low(alert);
+                    }
+                }
+                let msg = quota_msg(provider, &windows);
+                self.quotas.insert(provider, windows);
+                if let Some(p) = self.publisher.as_mut()
+                    && !p.publish(msg)
+                {
+                    self.drop_publisher();
+                }
+            }
             RuntimeCommand::AntigravityLive { updates, now } => {
                 let mut events = Events::new();
                 for (session, title, waiting) in &updates {
@@ -486,6 +536,9 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     &snapshot_agents,
                     self.projects.as_mut(),
                 )) {
+                    for (provider, windows) in &self.quotas {
+                        publisher.publish(quota_msg(*provider, windows));
+                    }
                     if let Some(id) = self.pending_focus.take() {
                         publisher.publish(ServerMsg::Focus {
                             id: kiti_protocol::AgentId(id.to_string()),

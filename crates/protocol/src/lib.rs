@@ -149,6 +149,11 @@ pub enum ServerMsg {
         removed: Vec<AgentId>,
     },
     Metrics(CoreMetrics),
+    /// Cuota de uso de un proveedor (ADR 0015). Se reenvía la última tras cada Snapshot.
+    Quota {
+        provider: Provider,
+        windows: Vec<QuotaWindow>,
+    },
     /// Enfocar y seleccionar esa oficina (clic en una notificación, ADR 0010).
     Focus {
         id: AgentId,
@@ -190,6 +195,19 @@ pub struct TerminalInfo {
     pub provider: Provider,
     pub cwd: String,
     pub running: bool,
+}
+
+/// Una ventana de límite de uso (ADR 0015): "5 h", "semana", "Gemini Models · semana"…
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct QuotaWindow {
+    pub label: String,
+    pub weekly: bool,
+    /// Lo que queda, en porcentaje (0-100).
+    pub remaining_pct: u8,
+    /// Cuándo se reinicia, en ms desde epoch (0 si no se sabe).
+    pub resets_at: u64,
 }
 
 /// Resultado de "Ir a su terminal" para un agente abierto fuera de Kiti (ADR 0012).

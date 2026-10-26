@@ -8,6 +8,7 @@ export type { Hello } from "./generated/Hello";
 export type { IpcError } from "./generated/IpcError";
 export type { KillResult } from "./generated/KillResult";
 export type { Provider } from "./generated/Provider";
+export type { QuotaWindow } from "./generated/QuotaWindow";
 export type { ServerMsg } from "./generated/ServerMsg";
 export type { Source } from "./generated/Source";
 export type { Status } from "./generated/Status";

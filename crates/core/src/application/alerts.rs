@@ -40,6 +40,36 @@ pub fn alert_text(n: &AlertNotice) -> (String, String) {
     (format!("{who} {what}"), body)
 }
 
+/// "en 3 d 4 h", "en 5 h", "en 20 min" hasta `at` (ms), o vacío si no se sabe.
+pub fn time_until(at: u64, now: u64) -> String {
+    if at == 0 {
+        return String::new();
+    }
+    let min = at.saturating_sub(now) / 60_000;
+    let (d, h, m) = (min / 1440, (min % 1440) / 60, min % 60);
+    match (d, h) {
+        (0, 0) => format!("en {m} min"),
+        (0, _) => format!("en {h} h"),
+        (_, 0) => format!("en {d} d"),
+        _ => format!("en {d} d {h} h"),
+    }
+}
+
+/// Aviso de cuota baja (ADR 0015): "Queda poca cuota de Claude" / "semana: 18 % · se reinicia en 2 d".
+pub fn quota_text(alert: &crate::domain::QuotaAlert, now: u64) -> (String, String) {
+    let w = &alert.window;
+    let pct = (w.remaining * 100.0).round() as u32;
+    let mut body = format!("{}: {pct} %", w.label);
+    let reset = time_until(w.resets_at, now);
+    if !reset.is_empty() {
+        body = format!("{body} · se reinicia {reset}");
+    }
+    (
+        format!("Queda poca cuota de {}", provider_name(alert.provider)),
+        body,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -86,5 +116,29 @@ mod tests {
             alert_text(&notice(AlertKind::Failed, "/w/tienda-web", None)).0,
             "Codex falló"
         );
+    }
+
+    #[test]
+    fn aviso_de_cuota_con_lo_que_queda_y_cuando_se_reinicia() {
+        let alert = crate::domain::QuotaAlert {
+            provider: Provider::Antigravity,
+            window: crate::domain::QuotaWindow {
+                label: "Claude and GPT models · semana".into(),
+                weekly: true,
+                remaining: 0.18,
+                resets_at: 3 * 86_400_000 + 4 * 3_600_000,
+            },
+        };
+        assert_eq!(
+            quota_text(&alert, 0),
+            (
+                "Queda poca cuota de Antigravity".into(),
+                "Claude and GPT models · semana: 18 % · se reinicia en 3 d 4 h".into()
+            )
+        );
+        assert_eq!(time_until(0, 5), "");
+        assert_eq!(time_until(20 * 60_000, 0), "en 20 min");
+        assert_eq!(time_until(5 * 3_600_000, 0), "en 5 h");
+        assert_eq!(time_until(2 * 86_400_000, 0), "en 2 d");
     }
 }
