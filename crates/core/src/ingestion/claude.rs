@@ -284,6 +284,53 @@ struct StatusLine {
     rate_limits: Option<RateLimits>,
 }
 
+#[derive(Deserialize)]
+struct StatusModel {
+    display_name: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct StatusCost {
+    total_cost_usd: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct StatusContext {
+    used_percentage: Option<f64>,
+}
+
+/// Lista blanca para el tablero (ADR 0016): sesión, modelo, coste y contexto. Nada más.
+#[derive(Deserialize)]
+struct SessionStatus {
+    session_id: Option<String>,
+    model: Option<StatusModel>,
+    cost: Option<StatusCost>,
+    context_window: Option<StatusContext>,
+}
+
+/// Modelo, contexto y coste de una sesión desde el JSON de la status line (ADR 0016).
+pub fn parse_session_stats(body: &[u8]) -> Option<(SessionId, crate::domain::AgentStats)> {
+    let s: SessionStatus = serde_json::from_slice(body).ok()?;
+    let session = SessionId::new(s.session_id?);
+    let stats = crate::domain::AgentStats {
+        model: s
+            .model
+            .and_then(|m| m.display_name)
+            .map(|m| clip(&m, 40))
+            .filter(|m| !m.is_empty()),
+        context_pct: s
+            .context_window
+            .and_then(|c| c.used_percentage)
+            .map(|p| p.round().clamp(0.0, 100.0) as u8),
+        cost_cents: s
+            .cost
+            .and_then(|c| c.total_cost_usd)
+            .filter(|c| c.is_finite() && *c >= 0.0)
+            .map(|c| (c * 100.0).round() as u32),
+    };
+    Some((session, stats))
+}
+
 /// `resets_at`: segundos (o ms) desde epoch, o RFC 3339.
 fn reset_ms(v: &serde_json::Value) -> u64 {
     match v {
@@ -735,5 +782,23 @@ mod tests {
         // Sin suscripción o antes de la primera respuesta: no hay cuota.
         assert_eq!(parse_rate_limits(br#"{"session_id":"s"}"#), None);
         assert_eq!(parse_rate_limits(b"no json"), None);
+    }
+
+    #[test]
+    fn estadisticas_de_la_sesion_desde_la_status_line() {
+        let body = br#"{"session_id":"s-1","cwd":"/w/privado","model":{"id":"claude-opus-5-5","display_name":"Opus 5.5"},
+          "cost":{"total_cost_usd":1.234,"total_lines_added":10},"context_window":{"used_percentage":61.6,"context_window_size":200000}}"#;
+        let (session, stats) = parse_session_stats(body).unwrap();
+        assert_eq!(session.as_str(), "s-1");
+        assert_eq!(stats.model.as_deref(), Some("Opus 5.5"));
+        assert_eq!(stats.context_pct, Some(62));
+        assert_eq!(stats.cost_cents, Some(123));
+        // Antes de la primera llamada no hay contexto ni coste: se omiten.
+        let (_, empty) = parse_session_stats(
+            br#"{"session_id":"s-2","context_window":{"used_percentage":null}}"#,
+        )
+        .unwrap();
+        assert_eq!(empty, crate::domain::AgentStats::default());
+        assert!(parse_session_stats(br#"{"cwd":"/x"}"#).is_none());
     }
 }

@@ -74,6 +74,17 @@ pub fn project_agent(a: &Agent, projects: &mut dyn ProjectResolver) -> proto::Ag
         title: a.title().map(truncate_str),
         activity: a.activity().map(truncate_str),
         last_prompt: a.last_prompt().map(truncate_str),
+        model: a.stats().model.clone(),
+        context_pct: a.stats().context_pct,
+        cost_cents: a.stats().cost_cents,
+        history: a
+            .history()
+            .iter()
+            .map(|(kind, since)| proto::StatusSpan {
+                kind: project_status_kind(*kind),
+                since: since.0,
+            })
+            .collect(),
     }
 }
 

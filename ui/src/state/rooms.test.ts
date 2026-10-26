@@ -11,6 +11,7 @@ const agent = (id: string, sessionId?: string): AgentState => ({
   startedAt: 0,
   status: { kind: "idle", reason: "hook", since: 0 },
   lastEventAt: 0,
+  history: [],
   ...(sessionId === undefined ? {} : { sessionId }),
 });
 

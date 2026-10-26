@@ -12,6 +12,7 @@ function agent(id: string, kind: StatusKind = "idle"): AgentState {
     startedAt: 0,
     status: { kind, reason: "hook", since: 0 },
     lastEventAt: 0,
+    history: [],
   };
 }
 

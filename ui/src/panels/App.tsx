@@ -79,7 +79,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
 
   return (
     <Profiler id="panels" onRender={() => metrics.reactCommit()}>
-      <WorldHost store={store} metrics={metrics} params={params} onWorld={handleWorld} />
+      <WorldHost store={store} metrics={metrics} params={params} onWorld={handleWorld} now={now} />
       <TopBar store={store} now={now} {...(terminals ? { onLaunch: launch } : {})} />
       <AgentPanel
         store={store}

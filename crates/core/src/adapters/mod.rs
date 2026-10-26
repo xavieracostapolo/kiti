@@ -9,6 +9,7 @@ mod clock;
 pub mod conversations;
 #[cfg(target_os = "macos")]
 pub mod focus;
+pub mod git_status;
 mod hook_config;
 #[cfg(feature = "hooks")]
 pub mod hooks;

@@ -7,6 +7,7 @@ import type {
   AgentId,
   ConversationInfo,
   CoreMetrics,
+  GitInfo,
   Provider,
   QuotaWindow,
   ServerMsg,
@@ -29,6 +30,8 @@ export type Hover = { id: AgentId; x: number; y: number };
 
 export type KitiState = {
   agents: AgentsState;
+  /** Estado de git de cada proyecto (ADR 0016); `null` si no es un repositorio. */
+  git: ReadonlyMap<string, GitInfo | null>;
   /** Última cuota de uso de cada proveedor (ADR 0015). */
   quotas: ReadonlyMap<Provider, readonly QuotaWindow[]>;
   /** Conversaciones de los últimos 7 días tal como llegan del core (ADR 0009). */
@@ -82,6 +85,7 @@ export function createKitiStore() {
   return createStore<KitiState>()((set, get) => ({
     agents: EMPTY_AGENTS,
     quotas: new Map(),
+    git: new Map(),
     conversations: [],
     dormant: new Map(),
     filter: EMPTY_FILTER,
@@ -137,6 +141,12 @@ export function createKitiStore() {
       if (msg.type === "Metrics") {
         const { type: _, ...coreMetrics } = msg;
         set({ coreMetrics });
+        return;
+      }
+      if (msg.type === "Git") {
+        const git = new Map(get().git);
+        git.set(msg.project, msg.git ?? null);
+        set({ git });
         return;
       }
       if (msg.type === "Quota") {

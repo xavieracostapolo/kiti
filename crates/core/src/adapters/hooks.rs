@@ -188,6 +188,10 @@ pub async fn run_hook_pump<C: crate::ports::Clock>(
             if let Some(windows) = claude::parse_rate_limits(&req.body) {
                 runtime.quota(Provider::Claude, windows).await;
             }
+            // Y el tablero de la oficina (ADR 0016).
+            if let Some((session, stats)) = claude::parse_session_stats(&req.body) {
+                runtime.session_stats(session, stats, clock.now()).await;
+            }
             continue;
         }
         let parsed = match req.provider {

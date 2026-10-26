@@ -27,6 +27,8 @@ export type KitiDev = {
   dormant(): string[];
   /** Ids de las oficinas atenuadas por el filtro. */
   dimmed(): string[];
+  /** Texto del tablero de una oficina si se ve (solo en el zoom cercano). */
+  board(id: string): string | null;
 };
 
 declare global {
@@ -63,6 +65,7 @@ export function installDevHooks(
     zones: () => getWorld()?.zones() ?? [],
     dormant: () => [...store.getState().dormant.keys()],
     dimmed: () => getWorld()?.dimmed() ?? [],
+    board: (id) => getWorld()?.board(id) ?? null,
     kill: (idOrIndex) => {
       const id = /^\d+$/.test(idOrIndex) ? ids()[Number(idOrIndex)] : idOrIndex;
       if (id) store.getState().requestKill(id);

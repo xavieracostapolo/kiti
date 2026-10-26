@@ -933,6 +933,7 @@ pub fn run() {
                         });
                     on_alert_click(app.handle(), handle.clone());
                     start_antigravity_quota(handle.clone());
+                    start_git_status(handle.clone());
                     tauri::async_runtime::spawn(runtime.run());
                     let home = app.path().home_dir().ok();
                     tauri::async_runtime::spawn(run_scanner_with(
@@ -1091,6 +1092,42 @@ impl AlertSink for NativeAlerts {
             Err(e) => warn!(event = "alert.error", error = %e),
         }
     }
+}
+
+/// Git de los proyectos con agentes vivos para el tablero de la oficina (ADR 0016), cada 15 s.
+fn start_git_status(runtime: RuntimeHandle) {
+    use kiti_core::adapters::git_status::status;
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(15));
+        loop {
+            ticker.tick().await;
+            if runtime.is_closed() {
+                return;
+            }
+            let projects = runtime.live_projects().await;
+            if projects.is_empty() {
+                continue;
+            }
+            let started = std::time::Instant::now();
+            let statuses = tauri::async_runtime::spawn_blocking(move || {
+                projects
+                    .into_iter()
+                    .map(|p| {
+                        let s = status(std::path::Path::new(&p));
+                        (p, s)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .unwrap_or_default();
+            debug!(
+                event = "git.updated",
+                projects = statuses.len(),
+                duration_ms = started.elapsed().as_millis() as u64
+            );
+            runtime.git(statuses).await;
+        }
+    });
 }
 
 /// Cuota de Antigravity (ADR 0015): `agy -p /usage` al arrancar y cada 5 minutos, si `agy` está

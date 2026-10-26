@@ -13,7 +13,9 @@ mod signal;
 mod stale;
 mod status;
 
-pub use agent::{Agent, AgentInput, DetectedAgent, Events, SessionActivity};
+pub use agent::{
+    Agent, AgentInput, AgentStats, DetectedAgent, Events, HISTORY_MAX, SessionActivity,
+};
 pub use alerts::{Alert, AlertKind, AlertPolicy};
 pub use events::DomainEvent;
 pub use ids::{
@@ -21,7 +23,7 @@ pub use ids::{
     Timestamp, ToolName, ToolUseKey, WorkingDir,
 };
 pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
-pub use project::project_root;
+pub use project::{GitStatus, project_root};
 pub use quota::{LOW as QUOTA_LOW, QuotaAlert, QuotaPolicy, QuotaWindow};
 pub use registry::{AgentRegistry, RegistryDiff};
 pub use signal::{AgentInfo, Signal, ToolOutcome};

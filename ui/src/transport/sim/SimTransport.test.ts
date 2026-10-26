@@ -37,7 +37,8 @@ describe("SimTransport", () => {
     const t = new SimTransport({ count: 20, seed: 42, schedule: timer.schedule });
     await t.connect((m) => msgs.push(m));
     timer.fire(100);
-    const seqs = msgs.map((m) => ("seq" in m ? m.seq : -1));
+    // Solo Snapshot y Diff llevan seq; Git y Quota van aparte (ADR 0015, 0016).
+    const seqs = msgs.flatMap((m) => ("seq" in m ? [m.seq] : []));
     expect(seqs).toEqual(seqs.map((_, i) => i));
   });
 
