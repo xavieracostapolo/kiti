@@ -6,7 +6,7 @@ El workflow [`release.yml`](../.github/workflows/release.yml) genera Kiti.app pa
 - Firmado con **Developer ID Application** y hardened runtime.
 - **Notarizado** por Apple, con el ticket grapado en la app y en el DMG.
 
-Un tag `vX.Y.Z` crea un **release en borrador** con el DMG, la app en `.zip` y `SHA256SUMS.txt`. La firma depende de los secrets:
+Un tag `vX.Y.Z` crea un **release en borrador** con el DMG (dos copias: `Kiti_X.Y.Z_universal.dmg` y `Kiti_universal.dmg`, el nombre fijo al que apunta el README con `releases/latest/download/`), la app en `.zip` y `SHA256SUMS.txt`. La firma depende de los secrets:
 
 | Secrets | Firma | Qué ve el usuario |
 |---|---|---|
