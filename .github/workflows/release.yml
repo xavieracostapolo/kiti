@@ -129,6 +129,8 @@ jobs:
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
           mkdir -p dist
           cp "$DMG" "dist/Kiti_${version}_universal.dmg"
+          # Nombre sin versión: releases/latest/download/Kiti_universal.dmg es el enlace fijo del README.
+          cp "$DMG" "dist/Kiti_universal.dmg"
           ditto -c -k --keepParent "$APP" "dist/Kiti_${version}_universal.app.zip"
           (cd dist && shasum -a 256 * > SHA256SUMS.txt && cat SHA256SUMS.txt)
 

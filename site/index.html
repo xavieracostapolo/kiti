@@ -335,7 +335,7 @@
       <h1>Your coding agents, <span class="hl">as an office.</span></h1>
       <p class="lede">Every running Claude Code, Codex CLI, Antigravity CLI and Gemini CLI agent becomes a room on one pixel-art map. A traffic light on each door tells you who is working, who is done and who needs you.</p>
       <div class="ctas">
-        <a class="btn" href="https://github.com/xavieracostapolo/kiti/releases/latest">⬇ Download for macOS</a>
+        <a class="btn" href="https://github.com/xavieracostapolo/kiti/releases/latest/download/Kiti_universal.dmg">⬇ Download for macOS</a>
         <a class="btn alt" href="demo/?sim=20&amp;seed=42&amp;conversations=1">▶ Try the live demo</a>
       </div>
       <p class="note">Universal build for Apple Silicon and Intel, ad-hoc signed (see <a href="#start">install notes</a>). The demo runs in your browser with 20 simulated agents.</p>
@@ -398,6 +398,9 @@
           <div class="card"><div class="icon" style="background: var(--codex)">↗</div><h3>Jump to its terminal</h3><p>For an agent started elsewhere, one click shows its exact tab in Ghostty or Terminal.app.</p></div>
           <div class="card"><div class="icon" style="background: var(--claude)">↺</div><h3>Resume conversations</h3><p>Closed Claude conversations from the last 7 days stay as dark offices. One click resumes them.</p></div>
           <div class="card"><div class="icon" style="background: var(--error)">!</div><h3>Notifications</h3><p>macOS tells you when an agent asks for permission, finishes a long turn, fails or crashes. Click it to land on that office.</p></div>
+          <div class="card"><div class="icon" style="background: var(--waiting)">%</div><h3>Usage quota</h3><p>How much of your Claude plan (5 h and weekly) and Antigravity quota is left, right in the top bar, with a warning at 20 %.</p></div>
+          <div class="card"><div class="icon" style="background: var(--working)">▥</div><h3>Office board</h3><p>Zoom all the way in for the model, context and session cost, the project's git status and the last hour of activity.</p></div>
+          <div class="card"><div class="icon" style="background: var(--dead); color: var(--text)">×</div><h3>Close safely</h3><p>Ends an agent after a confirmation, and checks pid, start time, user and command first, so it never hits a reused PID.</p></div>
           <div class="card"><div class="icon" style="background: var(--floor-a)">▤</div><h3>Pixel art by Kenney</h3><p>CC0 tiles for rooms, furniture and people. Each agent keeps its person; the rug shows its provider.</p></div>
         </div>
       </div>
@@ -414,8 +417,8 @@
             <figcaption>The «esperando» (waiting) counter is on: everything else is dimmed.</figcaption>
           </figure>
           <figure>
-            <div class="frame"><img src="img/focus.png" alt="Close-up of a Claude office: a person at the desk, a Grep speech bubble and a green light" loading="lazy" width="1440" height="900"></div>
-            <figcaption>A working Claude agent. The bubble shows the current tool.</figcaption>
+            <div class="frame"><img src="img/board.png" alt="Close-up of a Claude office with its board: model, context, session cost, git status and the last hour; the top bar shows the Claude and Antigravity quota" loading="lazy" width="1600" height="1000"></div>
+            <figcaption>The office board at the closest zoom, and the quota in the top bar.</figcaption>
           </figure>
           <figure>
             <div class="frame"><img src="img/external.png" alt="Side panel of an agent opened outside Kiti, with the button to go to its terminal" loading="lazy" width="1440" height="900"></div>
@@ -494,6 +497,7 @@
           <li><strong>Read-only towards agents.</strong> Every hook gets an empty 204. Kiti never approves or denies anything.</li>
           <li><strong>No prompts in logs.</strong> Prompts, code and tool output are never logged or saved.</li>
           <li><strong>Safe to close.</strong> Before each signal, Kiti verifies pid, start time, user and command, so it never kills a reused PID.</li>
+          <li><strong>Opt-in extras.</strong> The Claude quota and board read its status line only if you run <code>mise run statusline:install</code>; your status line looks the same, and one command restores it.</li>
           <li><strong>Fails open.</strong> The forwarder has a 150 ms budget and always exits 0. If Kiti is closed, your CLI does not notice.</li>
         </ul>
       </div>
@@ -503,7 +507,7 @@
       <div class="wrap">
         <div class="kicker">GET STARTED</div>
         <h2>Download it, or build it.</h2>
-        <p class="sub">Get the universal DMG from the <a href="https://github.com/xavieracostapolo/kiti/releases/latest">latest release</a> and drag Kiti to Applications. The build has an ad-hoc signature, not an Apple Developer ID, so macOS blocks it the first time: open it once and click <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security, or run <code>xattr -dr com.apple.quarantine /Applications/Kiti.app</code>. To build it yourself:</p>
+        <p class="sub"><a href="https://github.com/xavieracostapolo/kiti/releases/latest/download/Kiti_universal.dmg">Download the universal DMG</a> (or pick a version in <a href="https://github.com/xavieracostapolo/kiti/releases">Releases</a>) and drag Kiti to Applications. The build has an ad-hoc signature, not an Apple Developer ID, so macOS blocks it the first time: open it once and click <strong>Open Anyway</strong> in System Settings → Privacy &amp; Security, or run <code>xattr -dr com.apple.quarantine /Applications/Kiti.app</code>. To build it yourself:</p>
         <div class="frame code">
           <button class="copy" type="button" data-copy="code-start">COPY</button>
 <pre id="code-start"><span class="c"># tools (tmux is optional, for persistent sessions)</span>

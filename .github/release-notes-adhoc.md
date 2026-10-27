@@ -1,6 +1,6 @@
 ## Install
 
-Download `Kiti_<version>_universal.dmg` (Apple Silicon and Intel), open it and drag **Kiti** to **Applications**.
+**[⬇ Download Kiti for macOS](https://github.com/xavieracostapolo/kiti/releases/latest/download/Kiti_universal.dmg)** (`Kiti_universal.dmg`, Apple Silicon and Intel). The same file is attached below with the version in its name. Open it and drag **Kiti** to **Applications**.
 
 This build has an **ad-hoc signature**: it is not signed with an Apple Developer ID and not notarized. macOS blocks it the first time you open it. To allow it, use one of these options:
 
