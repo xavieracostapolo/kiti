@@ -1,7 +1,7 @@
 # ADR 0017: Mensajes entre agentes
 
 - **Fecha:** 2026-10-28
-- **Estado:** Propuesta (pendiente del visto bueno de la maqueta)
+- **Estado:** Aceptada (el usuario aprobó la maqueta con el modo automático por defecto)
 - **Decisión:** Kiti hace de **central de mensajes** entre los agentes que corren en la máquina, sean del proveedor que sean.
   - Kiti no tiene un modelo propio ni decide nada. El "orquestador" es cualquier agente que reparte trabajo con las mismas herramientas que los demás.
   - Los agentes hablan con Kiti por **MCP**: un servidor `kiti-mcp` por stdio, con las herramientas `kiti_agents`, `kiti_send` y `kiti_inbox`.
@@ -118,7 +118,7 @@ El usuario no quiere ser un cuello de botella leyendo y aprobando cada mensaje, 
 | ¿Llegan los envíos? | `mail.sent` (alias, longitud, hilo, estado) | Cada `kiti_send` válido produce uno; test de integración del HookServer |
 | ¿Se entregan? | `mail.delivered` y `mail.queued` con `wait_ms` | Entrega menos de 1 s después del envío (o de aprobarlo, en modo manual) si el destinatario está libre; prueba real con dos agentes |
 | ¿Se rechaza lo que debe? | `mail.rejected` con `reason` (`unknown_sender`, `rate`, `hops`, `self`, `too_long`) | Tests de dominio |
-| ¿Cuánto tráfico hay? | `mails_per_min` y `pending` en el panel de debug | Visible con `Cmd+Shift+D` |
+| ¿Cuánto tráfico hay? | `core.mails_total` y `core.mail_pending` en el panel de debug | Visible con `Cmd+Shift+D` |
 | ¿Cuesta en la UI? | El test de rendimiento (50 agentes) con 10 sobres en vuelo | Dentro del presupuesto, `mise run ui:perf` |
 
 ## Plan
@@ -129,3 +129,17 @@ El usuario no quiere ser un cuello de botella leyendo y aprobando cada mensaje, 
 4. Entrega por tmux, cola por turno y supervisión.
 5. UI: sobre, contador y panel, con soporte en el simulador (`?mail=1`).
 6. Prueba real corta con Claude y Antigravity, con permiso del usuario: un caso de revisión cruzada.
+
+## Resultados
+
+- **Prueba real** (2026-10-28), con un Claude Code y un Antigravity lanzados en sesiones tmux de Kiti dentro de una carpeta vacía:
+  1. Se le pidió a Antigravity que usara `kiti_agents` y preguntara a Claude cuánto es 17 por 3. Antigravity pidió permiso para cada herramienta MCP, y se le dio solo para esa conversación.
+  2. Kiti escribió el mensaje en la terminal de Claude 56 ms después del envío (`mail.delivered`, `via = terminal`). Claude respondió con `kiti_send`.
+  3. Antigravity estaba ocupado y recibió la respuesta en cuanto quedó libre, 1,6 s después del envío.
+  - Toda la ida y vuelta tardó unos 5 s.
+  - Los logs solo registran alias, longitudes, hilos y estados; el texto de los mensajes no aparece.
+- **El remitente lo pone Kiti:** `kiti-mcp` manda su PID padre y el core sube por los ancestros hasta el agente. Un proceso que no es un agente recibe `unknown_sender`.
+- **Instalación:** `mise run mcp:install` usa los propios CLIs (`claude mcp add -s user`, `agy mcp add`, `codex mcp add`) y copia el binario a `~/.kiti/bin` con un renombrado atómico, para no matar los `kiti-mcp` ya abiertos.
+- **Coste en la UI:** las rutas y los sobres son estáticos, se redibujan solo al cambiar el estado del correo, así que en reposo sigue sin haber frames. Las baselines visuales no cambian: sin `?mail=1` no hay correo en el simulador.
+- **Hallazgo de paso:** dentro de un hook de git, `GIT_DIR` exportado hacía que `git_status` leyera otro repositorio. Se corrigió quitando esas variables (PR #17).
+- **Pendiente:** `kiti_launch` (fase 2) y probar Codex cuando esté instalado.
