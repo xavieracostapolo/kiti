@@ -11,7 +11,7 @@ Claude Code, Codex CLI, Antigravity CLI and Gemini CLI in one map, with a traffi
 ![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey.svg)
 ![Tauri v2](https://img.shields.io/badge/Tauri-v2-24c8db.svg)
 
-[**Download for macOS**](https://github.com/xavieracostapolo/kiti/releases/latest) · [**Try the live demo**](https://xavieracostapolo.github.io/kiti/demo/) · [Website](https://xavieracostapolo.github.io/kiti/) · [Leer en español](README.es.md)
+[**Download for macOS**](https://github.com/xavieracostapolo/kiti/releases/latest/download/Kiti_universal.dmg) · [**Try the live demo**](https://xavieracostapolo.github.io/kiti/demo/) · [Website](https://xavieracostapolo.github.io/kiti/) · [Leer en español](README.es.md)
 
 ![Kiti showing 20 simulated agents grouped by project, each office with its title and a traffic light](site/img/map.png)
 
@@ -32,12 +32,14 @@ When you run several coding agents at once, you lose track of them. One waits fo
 - **Jump to its terminal.** For an agent started outside Kiti, «Ir a su terminal» shows its exact tab in Ghostty or Terminal.app. Other apps, such as VS Code, are brought to the front.
 - **Resume conversations.** Closed Claude conversations from the last 7 days stay as dark offices. One click runs `claude --resume` in a Kiti terminal.
 - **Menu bar and notifications.** The menu bar shows the counters. macOS notifies you when an agent asks for permission, finishes a long turn, fails or crashes, but only when Kiti is not in front. Click the notification to open Kiti on that office.
+- **Usage quota.** The top bar shows how much of your Claude plan (5-hour and weekly windows) and of your Antigravity quota is left, and Kiti notifies you once when a weekly limit drops to 20 % or less.
+- **Office board.** Zoom in on an office to see the model, context used and session cost (Claude), the project's git branch, changes and commits to push or pull, and a timeline of the last hour. It only appears at the closest zoom, so the overview stays clean.
 - **Pixel art.** Rooms, furniture and people come from [Kenney](https://kenney.nl)'s CC0 tilesheets. Each agent always gets the same person, and the rug takes the colour of its provider.
 - **Close an office.** Ends the agent process after a confirmation. Kiti checks `(pid, start_time, uid, cmd)` before each signal, so it never kills a reused PID.
 
 <table>
 <tr>
-<td><img src="site/img/focus.png" alt="Close-up of a working Claude office: a person at the desk, a Grep speech bubble and a green light"></td>
+<td><img src="site/img/board.png" alt="Close-up of a Claude office with its board: model, context, session cost, git status and the last hour; the top bar shows the Claude and Antigravity quota"></td>
 <td><img src="site/img/filter.png" alt="The waiting filter is on: the two yellow offices stand out and the others are dimmed"></td>
 </tr>
 <tr>
@@ -66,6 +68,9 @@ Everything stays on your machine. Kiti has no server and no telemetry.
 - The hook server listens on `127.0.0.1` only and needs a per-install token. It checks `Host` and `Origin`, limits the body size and always answers `204`: Kiti never sends a decision back to an agent.
 - Prompts, code and tool output are never logged or saved. The title and the last request travel from the core to the UI only.
 - On first start, Kiti adds its HTTP hooks to `~/.claude/settings.json` and leaves your own hooks untouched. `mise run hooks:uninstall` removes them. Hooks for Codex, Antigravity and Gemini are opt-in.
+- The quota and the office board for Claude need its status line to pass through Kiti. This is opt-in: `mise run statusline:install` puts `kiti-hook` in front of your own status line command, which still prints the same output, and `mise run statusline:uninstall` restores it. Kiti keeps only the rate limits, model, context and cost from that JSON.
+- If `agy` is installed, Kiti runs `agy -p /usage --output-format json` at start and every 5 minutes to read the Antigravity quota. The call uses no tokens.
+- Every 15 s, Kiti runs `git --no-optional-locks status` in the projects with live agents, so it never takes `index.lock` from them.
 
 Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
 
@@ -75,7 +80,7 @@ Kiti runs on macOS. Windows is planned; Linux is not.
 
 ### Download
 
-Get `Kiti_<version>_universal.dmg` from the [latest release](https://github.com/xavieracostapolo/kiti/releases/latest). It runs on Apple Silicon and Intel. Open the DMG and drag Kiti to Applications.
+[Download `Kiti_universal.dmg`](https://github.com/xavieracostapolo/kiti/releases/latest/download/Kiti_universal.dmg) (latest release), or pick a version in [Releases](https://github.com/xavieracostapolo/kiti/releases). It runs on Apple Silicon and Intel. Open the DMG and drag Kiti to Applications.
 
 The release has an **ad-hoc signature**: it is not signed with an Apple Developer ID and not notarized, so macOS blocks it the first time. Open Kiti once, then click **Open Anyway** in **System Settings → Privacy & Security**. Or run:
 
@@ -96,7 +101,7 @@ mise install && mise exec -- pnpm install
 mise run ui:dev                        # http://127.0.0.1:5173/?sim=20&seed=42
 ```
 
-Or open the [live demo](https://xavieracostapolo.github.io/kiti/demo/). URL parameters: `sim` (number of agents), `seed`, `conversations=1` (closed conversations), `terminals=1` (fake terminal).
+Or open the [live demo](https://xavieracostapolo.github.io/kiti/demo/). URL parameters: `sim` (number of agents), `seed`, `conversations=1` (closed conversations), `terminals=1` (fake terminal), `quota=1` (fake quota).
 
 ### Run the app
 
@@ -116,6 +121,8 @@ mise run app:bundle    # build Kiti.app and copy it to the Desktop
 | Codex CLI | `command` hooks through the `kiti-hook` forwarder | `mise run hooks:install-codex`, then trust the hook in `/hooks` |
 | Antigravity CLI | `command` hooks through the `kiti-hook` forwarder, plus its local SQLite store for permission prompts and titles | `mise run hooks:install-antigravity` |
 | Gemini CLI | `command` hooks through the `kiti-hook` forwarder | `mise run hooks:install-gemini` |
+
+For the Claude quota and the office board, also run `mise run statusline:install` (see [Privacy and security](#privacy-and-security)).
 
 `mise run hooks:status` shows what is installed. `mise run scan` shows which processes Kiti sees as agents, and why. The forwarder fails open: it has a 150 ms budget, always exits `0`, and does nothing when Kiti is closed.
 
@@ -159,6 +166,7 @@ The design is documented in ADRs (in Spanish), from the [stack choice](docs/deci
 - [x] Pixel art from [Kenney](https://kenney.nl) tilesheets
 - [x] Antigravity CLI, the successor of Gemini CLI for free accounts
 - [x] Downloadable universal build (ad-hoc signature)
+- [x] Usage quota for Claude and Antigravity, and an office board with session, git and the last hour
 - [ ] Windows support
 - [ ] Signed and notarized releases
 
