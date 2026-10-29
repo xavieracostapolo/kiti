@@ -6,7 +6,7 @@
   - Kiti no tiene un modelo propio ni decide nada. El "orquestador" es cualquier agente que reparte trabajo con las mismas herramientas que los demás.
   - Los agentes hablan con Kiti por **MCP**: un servidor `kiti-mcp` por stdio, con las herramientas `kiti_agents`, `kiti_send` y `kiti_inbox`.
   - Kiti entrega cada mensaje escribiéndolo en la terminal tmux del destinatario cuando está libre.
-  - Por defecto, el modo es **supervisado**: el usuario aprueba cada mensaje con un clic antes de que llegue.
+  - Hay dos modos: **automático** (por defecto), en el que los mensajes llegan solos, y **manual**, en el que el usuario aprueba cada uno. Los límites de envíos y de saltos cortan los bucles en los dos modos.
 
 ## Contexto
 
@@ -57,17 +57,20 @@ Kiti ya tiene casi todo:
   - Si está trabajando o esperando permiso, el mensaje queda en cola y se entrega al terminar su turno.
 - **Destinatario abierto fuera de Kiti:** no se le puede escribir. Su oficina muestra un sobre y el mensaje espera a que llame a `kiti_inbox`. El usuario puede copiarlo desde el panel.
 
-### Supervisión y límites
+### Modos y límites
 
-- **Modo supervisado (por defecto):**
-  - Cada mensaje aparece en el panel de mensajes con **Entregar** y **Descartar**.
-  - El usuario puede cambiar a **automático** para un hilo concreto.
-- **Límites, también en modo automático:**
+El usuario no quiere ser un cuello de botella leyendo y aprobando cada mensaje, así que el modo por defecto es el automático.
+
+- **Automático (por defecto):** los mensajes se entregan sin intervención. El panel solo es un registro para consultar cuando se quiera.
+- **Manual:** cada mensaje espera en el panel con **Entregar** y **Descartar**. Sirve para vigilar una colaboración nueva o delicada.
+- El modo es global y se cambia con un interruptor en el panel. Se guarda en los ajustes de Kiti.
+- **Límites, en los dos modos:**
   - 20 envíos por hora por agente.
-  - 12 saltos por hilo; al llegar al límite, el hilo vuelve a supervisado.
+  - 12 saltos por hilo. Al llegar al límite, el hilo se **pausa** y avisa (notificación de macOS si Kiti no está al frente, ADR 0010). El usuario elige **Continuar** (12 saltos más) o **Cerrar hilo**.
   - Un agente no puede enviarse mensajes a sí mismo.
   - Si se supera un límite, `kiti_send` devuelve un error claro y no se envía nada.
-- **Botón de pausa global:** congela todas las entregas.
+- **Botón de pausa global:** congela todas las entregas, en cualquier modo.
+- **Lo único que pide atención:** un hilo pausado por límite, o un mensaje pendiente en modo manual. Solo entonces el chip de la barra superior se pone amarillo.
 
 ### Arquitectura
 
@@ -76,16 +79,16 @@ Kiti ya tiene casi todo:
   - Cada herramienta es una llamada HTTP al core con `ureq`, token y `X-Kiti-Ppid`.
   - No guarda estado.
 - Core:
-  - Dominio `mailbox` puro: mensajes, hilos, colas, límites y aprobación. Probado con TDD y `proptest` para los límites.
+  - Dominio `mailbox` puro: mensajes, hilos, colas, modos, límites y aprobación. Probado con TDD y `proptest` para los límites.
   - El HookServer añade `/v1/mcp/{agents,send,inbox}`. A diferencia de los hooks, devuelven datos (JSON), pero siguen sin devolver decisiones a ningún hook.
 - La entrega por tmux reutiliza el adaptador `tmux.rs` (`send_keys`).
 - Protocolo:
   - `ServerMsg::Mail { threads }` al cambiar algo.
-  - Commands `approve_message`, `discard_message`, `set_thread_auto` y `pause_mail`.
+  - Commands `set_mail_mode`, `approve_message`, `discard_message`, `continue_thread`, `close_thread` y `pause_mail`.
 - UI:
   - Sobre animado que viaja entre las dos oficinas.
   - Contador de mensajes en la oficina.
-  - Panel de mensajes con hilos y aprobación.
+  - Panel de mensajes con los hilos, el interruptor de modo y la aprobación en modo manual.
 - Instalación:
   - `mise run mcp:install` registra `kiti-mcp` en Claude (`claude mcp add -s user`), en Antigravity (`agy mcp add`) y en Codex (`~/.codex/config.toml`), con copia de seguridad.
   - `mcp:uninstall` lo quita.
@@ -104,7 +107,8 @@ Kiti ya tiene casi todo:
 - **Inyección entre agentes:**
   - el texto entregado lleva siempre el prefijo `[Kiti] Mensaje de <alias>`;
   - las herramientas recuerdan que es información, no una orden del usuario;
-  - el modo supervisado deja ver cada mensaje antes de entregarlo.
+  - el modo manual deja ver cada mensaje antes de entregarlo;
+  - en modo automático, los límites cortan los bucles y todo queda visible en el panel.
 - **Archivos:** dos agentes en el mismo repositorio pueden pisarse. La documentación recomienda un `git worktree` por agente. Kiti no lo impone.
 
 ## Ficha de observabilidad
@@ -112,7 +116,7 @@ Kiti ya tiene casi todo:
 | Pregunta | Señal | Umbral y verificación |
 |---|---|---|
 | ¿Llegan los envíos? | `mail.sent` (alias, longitud, hilo, estado) | Cada `kiti_send` válido produce uno; test de integración del HookServer |
-| ¿Se entregan? | `mail.delivered` y `mail.queued` con `wait_ms` | Entrega menos de 1 s después de aprobar si el destinatario está libre; prueba real con dos agentes |
+| ¿Se entregan? | `mail.delivered` y `mail.queued` con `wait_ms` | Entrega menos de 1 s después del envío (o de aprobarlo, en modo manual) si el destinatario está libre; prueba real con dos agentes |
 | ¿Se rechaza lo que debe? | `mail.rejected` con `reason` (`unknown_sender`, `rate`, `hops`, `self`, `too_long`) | Tests de dominio |
 | ¿Cuánto tráfico hay? | `mails_per_min` y `pending` en el panel de debug | Visible con `Cmd+Shift+D` |
 | ¿Cuesta en la UI? | El test de rendimiento (50 agentes) con 10 sobres en vuelo | Dentro del presupuesto, `mise run ui:perf` |
