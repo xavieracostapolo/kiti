@@ -9,6 +9,7 @@ import type {
   ConversationInfo,
   CoreMetrics,
   GitInfo,
+  MailState,
   Provider,
   QuotaWindow,
   ServerMsg,
@@ -35,6 +36,11 @@ export type KitiState = {
   git: ReadonlyMap<string, GitInfo | null>;
   /** Última cuota de uso de cada proveedor (ADR 0015). */
   quotas: ReadonlyMap<Provider, readonly QuotaWindow[]>;
+  /** Mensajes entre agentes (ADR 0017); `undefined` hasta que el core manda el primero. */
+  mail: MailState | undefined;
+  /** Panel de mensajes abierto. */
+  mailOpen: boolean;
+  setMailOpen(open: boolean): void;
   /** Conversaciones de los últimos 7 días tal como llegan del core (ADR 0009). */
   conversations: readonly ConversationInfo[];
   /** Oficinas apagadas: las conversaciones sin agente encendido, por id de oficina. */
@@ -90,6 +96,11 @@ export function createKitiStore() {
     agents: EMPTY_AGENTS,
     quotas: new Map(),
     git: new Map(),
+    mail: undefined,
+    mailOpen: false,
+    setMailOpen(mailOpen) {
+      if (get().mailOpen !== mailOpen) set({ mailOpen });
+    },
     conversations: [],
     dormant: new Map(),
     filter: EMPTY_FILTER,
@@ -155,6 +166,11 @@ export function createKitiStore() {
         const git = new Map(get().git);
         git.set(msg.project, msg.git ?? null);
         set({ git });
+        return;
+      }
+      if (msg.type === "Mail") {
+        const { type: _, ...mail } = msg;
+        set({ mail });
         return;
       }
       if (msg.type === "Quota") {

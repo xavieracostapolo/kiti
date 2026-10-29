@@ -5,6 +5,7 @@ import type {
   FocusResult,
   Hello,
   KillResult,
+  MailCommand,
   Provider,
   ServerMsg,
   TerminalInfo,
@@ -45,6 +46,8 @@ export interface Transport {
   /** Termina el proceso del agente. Solo tras la confirmación que corresponda. */
   killAgent(id: AgentId): Promise<KillResult>;
   setDebugStream(on: boolean): Promise<void>;
+  /** Modo, pausa, aprobación y control de hilos de los mensajes entre agentes (ADR 0017). */
+  mailAction(command: MailCommand): Promise<void>;
   /** Resumen cada 2 s. No-op en Sim. */
   reportUiMetrics(m: UiMetrics): void;
   dispose(): void;

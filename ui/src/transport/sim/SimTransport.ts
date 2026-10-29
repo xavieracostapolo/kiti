@@ -1,11 +1,21 @@
 // Transport simulado: sustituye al core en el navegador y en CI (ADR 0003 §2).
 
-import type { AgentId, AgentState, Hello, KillResult, ServerMsg, UiMetrics } from "../../protocol";
+import type {
+  AgentId,
+  AgentState,
+  Hello,
+  KillResult,
+  MailCommand,
+  MailState,
+  ServerMsg,
+  UiMetrics,
+} from "../../protocol";
 import { PROTOCOL_VERSION } from "../../protocol";
 import type { ConversationApi, TerminalApi, Transport } from "../Transport";
 import { FakeConversations, fakeConversations } from "./FakeConversations";
 import { FakeTerminals } from "./FakeTerminals";
 import { fakeGit } from "./fakeGit";
+import { applyMailCommand, fakeMail } from "./fakeMail";
 import { fakeQuota } from "./fakeQuota";
 import { SimFleet, TICK_MS } from "./fleet";
 
@@ -25,6 +35,8 @@ export type SimOptions = {
   conversations?: boolean;
   /** Cuota de uso falsa (`?quota=1`). */
   quota?: boolean;
+  /** Mensajes entre agentes falsos (`?mail=1`, ADR 0017). */
+  mail?: boolean;
 };
 
 const intervalSchedule: Schedule = (tick) => {
@@ -41,6 +53,7 @@ export class SimTransport implements Transport {
   private onMsg: ((msg: ServerMsg) => void) | undefined;
   private cancel: (() => void) | undefined;
   private seq = 0;
+  private mail: MailState | undefined;
 
   constructor(opts: SimOptions) {
     this.opts = opts;
@@ -66,6 +79,10 @@ export class SimTransport implements Transport {
     onMsg({ type: "Snapshot", seq: this.seq, agents: this.fleet.snapshot() });
     if (this.opts.quota) for (const msg of fakeQuota(this.fleet.now)) onMsg(msg);
     for (const msg of fakeGit(this.fleet.snapshot())) onMsg(msg);
+    if (this.opts.mail) {
+      this.mail = fakeMail(this.fleet.snapshot(), this.fleet.now);
+      onMsg({ type: "Mail", ...this.mail });
+    }
     if (!this.opts.freeze)
       this.cancel = (this.opts.schedule ?? intervalSchedule)(() => this.tick());
     return { protocolVersion: PROTOCOL_VERSION, appVersion: "0.1.0-sim", source: "sim" };
@@ -99,6 +116,12 @@ export class SimTransport implements Transport {
   }
 
   async setDebugStream(_on: boolean): Promise<void> {}
+
+  async mailAction(command: MailCommand): Promise<void> {
+    if (!this.mail) return;
+    this.mail = applyMailCommand(this.mail, command);
+    this.onMsg?.({ type: "Mail", ...this.mail });
+  }
 
   reportUiMetrics(_m: UiMetrics): void {}
 

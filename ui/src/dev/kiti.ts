@@ -29,6 +29,10 @@ export type KitiDev = {
   dimmed(): string[];
   /** Texto del tablero de una oficina si se ve (solo en el zoom cercano). */
   board(id: string): string | null;
+  /** Alias y sobre de una oficina (ADR 0017). */
+  mail(id: string): string | null;
+  /** Sobres dibujados entre oficinas (ADR 0017). */
+  envelopes(): number;
 };
 
 declare global {
@@ -66,6 +70,8 @@ export function installDevHooks(
     dormant: () => [...store.getState().dormant.keys()],
     dimmed: () => getWorld()?.dimmed() ?? [],
     board: (id) => getWorld()?.board(id) ?? null,
+    mail: (id) => getWorld()?.mail(id) ?? null,
+    envelopes: () => getWorld()?.envelopes() ?? 0,
     kill: (idOrIndex) => {
       const id = /^\d+$/.test(idOrIndex) ? ids()[Number(idOrIndex)] : idOrIndex;
       if (id) store.getState().requestKill(id);

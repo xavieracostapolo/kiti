@@ -42,4 +42,9 @@ export const PAL = {
   zoneBorder: 0x3a4258,
   zoneHeader: 0x323a50,
   zoneText: 0xc9d1e3,
+  /** Mensajes entre agentes (ADR 0017): sobre, su etiqueta y la ruta entre oficinas. */
+  envelope: 0xf4ead2,
+  mailFill: 0xf5c542,
+  mailInk: 0x0e1018,
+  mailPath: 0xf5c542,
 } as const;

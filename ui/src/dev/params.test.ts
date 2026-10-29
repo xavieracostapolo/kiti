@@ -13,6 +13,7 @@ describe("parseParams", () => {
       terminals: false,
       conversations: false,
       quota: false,
+      mail: false,
     });
   });
 
@@ -31,6 +32,7 @@ describe("parseParams", () => {
       terminals: false,
       conversations: false,
       quota: false,
+      mail: false,
     });
   });
 

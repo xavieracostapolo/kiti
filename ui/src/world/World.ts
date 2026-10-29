@@ -41,6 +41,7 @@ import { DEFAULT_ZONES, layoutZones, type Zone, type ZoneSlots } from "../domain
 import type { AgentId, AgentState, ConversationInfo, Provider } from "../protocol";
 import { planScene } from "../state/agents";
 import { isActive, matchesAgent, matchesConversation } from "../state/filter";
+import { aliasOf, inTransit, waitingFor } from "../state/mail";
 import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
@@ -94,6 +95,10 @@ export type WorldHandle = {
   dimmed(): string[];
   /** Texto del tablero de una oficina si se ve (tests E2E, ADR 0016). */
   board(id: string): string | undefined;
+  /** Alias y sobre de una oficina (tests E2E, ADR 0017). */
+  mail(id: string): string | undefined;
+  /** Sobres dibujados entre oficinas (tests E2E, ADR 0017). */
+  envelopes(): number;
   dispose(): void;
 };
 
@@ -131,6 +136,9 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   const worldRoot = new Container();
   const zonesLayer = new Container();
   const officesLayer = new Container();
+  /** Rutas y sobres de los mensajes en camino entre oficinas (ADR 0017). */
+  const mailLayer = new Container();
+  let envelopeCount = 0;
   let corridor: TilingSprite | undefined;
   let art: OfficeArt | undefined;
 
@@ -206,7 +214,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       height: 1,
     });
 
-    worldRoot.addChild(corridor, zonesLayer, officesLayer);
+    worldRoot.addChild(corridor, zonesLayer, officesLayer, mailLayer);
     app.stage.addChild(worldRoot);
 
     let firstFrame: (() => void) | undefined;
@@ -277,6 +285,11 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
         }
         // Al cambiar el filtro, la cámara encuadra lo que coincide (o todo, si se quita).
         if (s.filter !== prev.filter) setCamera(filterCamera(), true);
+        // Mensajes entre agentes (ADR 0017): alias, sobres por oficina y rutas.
+        if (s.mail !== prev.mail) {
+          applyMail();
+          scheduler?.request();
+        }
         // Git del proyecto de cada oficina (ADR 0016).
         if (s.git !== prev.git) {
           for (const [id, view] of views) {
@@ -400,11 +413,74 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     bounds = l.bounds;
     for (const [id, r] of rooms) views.get(id)?.root.position.set(r.x, r.y);
     drawZones(l.zones);
+    applyMail();
     if (corridor) {
       const margin = layout.tile * 40;
       corridor.position.set(-margin, -margin);
       corridor.width = bounds.w + margin * 2;
       corridor.height = bounds.h + margin * 2;
+    }
+  }
+
+  /**
+   * Alias y sobre de cada oficina, y una ruta punteada con un sobre entre cada pareja con
+   * mensajes en camino (ADR 0017). Estático: no anima, así que en reposo sigue sin frames.
+   */
+  function applyMail() {
+    const mail = store.getState().mail;
+    for (const [id, view] of views) view.setMail(aliasOf(mail, id), waitingFor(mail, id));
+    for (const child of mailLayer.removeChildren()) child.destroy({ children: true });
+    envelopeCount = 0;
+    const t = layout.tile;
+    for (const tr of inTransit(mail)) {
+      const a = rooms.get(tr.from);
+      const b = rooms.get(tr.to);
+      if (!a || !b) continue;
+      const ax = a.x + a.w / 2;
+      const ay = a.y + a.h * 0.6;
+      const bx = b.x + b.w / 2;
+      const by = b.y + b.h * 0.6;
+      const len = Math.hypot(bx - ax, by - ay);
+      if (len < 1) continue;
+      const g = new Graphics();
+      const dash = t * 0.6;
+      const gap = t * 0.4;
+      const ux = (bx - ax) / len;
+      const uy = (by - ay) / len;
+      for (let d = 0; d < len; d += dash + gap) {
+        const e = Math.min(len, d + dash);
+        g.moveTo(ax + ux * d, ay + uy * d).lineTo(ax + ux * e, ay + uy * e);
+      }
+      g.stroke({ color: PAL.mailPath, width: Math.max(2, t * 0.25), alpha: 0.9 });
+      // Sobre en el punto medio, con su sombra y la solapa en V.
+      const ew = t * 2.2;
+      const eh = t * 1.5;
+      const ex = (ax + bx) / 2 - ew / 2;
+      const ey = (ay + by) / 2 - eh / 2;
+      const line = Math.max(1.5, t * 0.18);
+      g.rect(ex + line * 2, ey + line * 2, ew, eh)
+        .fill(PAL.housing)
+        .rect(ex, ey, ew, eh)
+        .fill(PAL.envelope)
+        .stroke({ color: PAL.mailInk, width: line })
+        .moveTo(ex, ey)
+        .lineTo(ex + ew / 2, ey + eh * 0.55)
+        .lineTo(ex + ew, ey)
+        .stroke({ color: PAL.mailInk, width: line })
+        .rect(ex + ew - t * 0.35, ey - t * 0.35, t * 0.7, t * 0.7)
+        .fill(PAL.mailFill)
+        .stroke({ color: PAL.mailInk, width: line * 0.7 });
+      mailLayer.addChild(g);
+      if (tr.count > 1) {
+        const n = new BitmapText({
+          text: String(tr.count),
+          style: { fontFamily: FONT, fontSize: t * 0.9 },
+        });
+        n.tint = PAL.mailInk;
+        n.position.set(ex + ew / 2 - n.width / 2, ey + eh * 0.45);
+        mailLayer.addChild(n);
+      }
+      envelopeCount++;
     }
   }
 
@@ -621,6 +697,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     zones: () => zones.map((z) => ({ name: z.name, count: z.count })),
     dimmed: () => [...views].filter(([, v]) => v.root.alpha < 1).map(([id]) => id),
     board: (id) => views.get(id)?.boardShown(),
+    mail: (id) => views.get(id)?.mailShown(),
+    envelopes: () => envelopeCount,
     async bench(durationMs = 10_000) {
       await ready;
       const s = scheduler;

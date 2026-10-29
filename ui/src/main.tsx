@@ -41,6 +41,7 @@ async function bootstrap() {
       terminals: params.terminals,
       conversations: params.conversations,
       quota: params.quota,
+      mail: params.mail,
     });
     transport = sim;
     getNow = () => sim.now();

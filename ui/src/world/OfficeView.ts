@@ -63,6 +63,11 @@ export class OfficeView {
   private readonly selection = new Graphics();
   /** Insignia `>_`: la oficina tiene una terminal de Kiti (ADR 0007). */
   private readonly terminalBadge = new Container();
+  /** Alias para los mensajes entre agentes y sobre con los que le esperan (ADR 0017). */
+  private readonly mailTag = new Container();
+  private readonly mailBg = new Graphics();
+  private readonly mailText: BitmapText;
+  private mailKey = "";
   /** Franja inferior: qué hace ahora o el último pedido (ADR 0009). */
   private readonly note = new Container();
   private readonly noteBg = new Graphics();
@@ -138,6 +143,9 @@ export class OfficeView {
     // Debajo de la insignia del proveedor (izquierda), sin tapar el cuadro ni el título.
     this.terminalBadge.position.set(6, size.tile * 2 + 4);
     this.terminalBadge.visible = false;
+    this.mailText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 6 } });
+    this.mailTag.addChild(this.mailBg, this.mailText);
+    this.mailTag.visible = false;
     this.root.addChild(
       this.background,
       this.person,
@@ -153,6 +161,7 @@ export class OfficeView {
       this.note,
       this.card,
       this.terminalBadge,
+      this.mailTag,
       this.hoverRing,
       this.selection,
     );
@@ -320,6 +329,45 @@ export class OfficeView {
     for (const which of ["label", "note", "card"] as const) {
       if (this.stale[which]) this.refresh(which);
     }
+  }
+
+  /**
+   * Alias del agente para los mensajes (`codex-1`) y, si hay mensajes esperándole, un sobre con
+   * cuántos (ADR 0017). Va a la derecha, bajo el semáforo, como la insignia `>_` a la izquierda.
+   */
+  setMail(alias: string | undefined, waiting: number): void {
+    const key = `${alias ?? ""}|${waiting}`;
+    if (key === this.mailKey) return;
+    this.mailKey = key;
+    this.mailTag.visible = alias !== undefined;
+    if (alias === undefined) return;
+    const env = waiting > 0 ? 11 : 0;
+    this.mailText.text = waiting > 0 ? `${waiting} ${alias}` : alias;
+    this.mailText.tint = waiting > 0 ? PAL.mailInk : PAL.text;
+    this.mailText.position.set(3 + env, 1.5);
+    const w = Math.ceil(this.mailText.width) + 6 + env;
+    this.mailBg
+      .clear()
+      .roundRect(0, 0, w, 10, 2)
+      .fill(waiting > 0 ? PAL.mailFill : PAL.housing)
+      .stroke({ color: waiting > 0 ? PAL.mailInk : PAL.text, width: 1 });
+    if (waiting > 0) {
+      // Sobre: rectángulo con la solapa en V.
+      this.mailBg
+        .rect(3, 2, 8.5, 6)
+        .fill(PAL.envelope)
+        .stroke({ color: PAL.mailInk, width: 0.75 })
+        .moveTo(3, 2)
+        .lineTo(7.25, 5.5)
+        .lineTo(11.5, 2)
+        .stroke({ color: PAL.mailInk, width: 0.75 });
+    }
+    this.mailTag.position.set(this.size.w - w - 6, this.size.tile * 2 + 4);
+  }
+
+  /** Texto del alias y del sobre (tests E2E). */
+  mailShown(): string | undefined {
+    return this.mailTag.visible ? this.mailText.text : undefined;
   }
 
   setHasTerminal(has: boolean): void {
