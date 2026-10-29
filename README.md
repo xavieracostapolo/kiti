@@ -26,7 +26,8 @@ When you run several coding agents at once, you lose track of them. One waits fo
 - **Automatic detection.** Kiti finds running Claude Code, Codex CLI, Antigravity CLI (`agy`) and Gemini CLI processes. It classifies them by executable and `argv`, never by process name, and ignores launchers and the desktop apps.
 - **Traffic light per agent.** Green is working, yellow is waiting for you, grey is idle, red is an error or a crash. The status comes from the CLI hooks, not from guessing. A failed tool call is not red.
 - **Zones per project.** Offices are grouped by git root (or folder), so each repository is a neighbourhood.
-- **Camera.** Pan, zoom, double-click to focus an office, `0` to see everything. Far away, each office shows its title on a large sign; close up you see the title, the current tool and the last request.
+- **Camera and layout.** Pan, zoom, double-click to focus an office, `0` to see everything, or use the `+`, `−` and fit buttons in the corner. Far away, each office shows its title on a large sign; close up you see the title, the current tool and the last request. The top bar switches the map between three layouts: dynamic (centered rows), horizontal and vertical.
+- **Alive offices.** Working agents are animated, and each office gets its own decor, so the map tells busy from idle at a glance.
 - **Filter and search.** The counters in the top bar filter by status, closed conversations included. Press `/` to search by title, project, folder or provider, and `Esc` to clear. Offices that do not match are dimmed, not hidden, so the map keeps its layout and the camera frames the matches.
 - **Embedded terminal.** Launch a new agent from Kiti. It runs in `tmux` (`-L kiti`), so it survives when you close Kiti.
 - **Jump to its terminal.** For an agent started outside Kiti, «Ir a su terminal» shows its exact tab in Ghostty or Terminal.app. Other apps, such as VS Code, are brought to the front.
@@ -40,7 +41,7 @@ When you run several coding agents at once, you lose track of them. One waits fo
 <table>
 <tr>
 <td><img src="site/img/board.png" alt="Close-up of a Claude office with its board: model, context, session cost, git status and the last hour; the top bar shows the Claude and Antigravity quota"></td>
-<td><img src="site/img/filter.png" alt="The waiting filter is on: the two yellow offices stand out and the others are dimmed"></td>
+<td><img src="site/img/filter.png" alt="Searching for billing: the camera frames that project and its four offices"></td>
 </tr>
 <tr>
 <td><img src="site/img/external.png" alt="Side panel of an agent opened outside Kiti, with the button to go to its terminal"></td>
@@ -101,7 +102,7 @@ mise install && mise exec -- pnpm install
 mise run ui:dev                        # http://127.0.0.1:5173/?sim=20&seed=42
 ```
 
-Or open the [live demo](https://xavieracostapolo.github.io/kiti/demo/). URL parameters: `sim` (number of agents), `seed`, `conversations=1` (closed conversations), `terminals=1` (fake terminal), `quota=1` (fake quota).
+Or open the [live demo](https://xavieracostapolo.github.io/kiti/demo/). URL parameters: `sim` (number of agents), `seed`, `conversations=1` (closed conversations), `terminals=1` (fake terminal), `quota=1` (fake quota), `layout=dynamic|horizontal|vertical`.
 
 ### Run the app
 

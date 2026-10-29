@@ -341,13 +341,13 @@
       <p class="note">Universal build for Apple Silicon and Intel, ad-hoc signed (see <a href="#start">install notes</a>). The demo runs in your browser with 20 simulated agents.</p>
 
       <div class="frame stage" id="stage">
-        <img src="img/map.png" alt="Kiti map with 20 simulated agents grouped by project, each office with its title and a coloured traffic light" width="1440" height="900">
+        <img src="img/map.png" alt="Kiti map with 20 simulated agents grouped by project, each office with its title and a coloured traffic light" width="1600" height="1000">
         <button class="play" id="play" type="button" aria-label="Run the simulation here">
           <span class="btn">▶ Run it here</span>
         </button>
       </div>
       <div class="stage-links">
-        <span>Drag to pan · wheel or pinch to zoom · double-click an office to focus · <code>/</code> to search · <code>0</code> to see all</span>
+        <span>Drag to pan · wheel or pinch to zoom · double-click an office to focus · <code>/</code> to search · <code>0</code> or ⊡ to see all</span>
         <a href="demo/?sim=20&amp;seed=42&amp;conversations=1">Open full screen →</a>
       </div>
     </div>
@@ -392,7 +392,7 @@
         <div class="grid">
           <div class="card"><div class="icon" style="background: var(--working)">⌕</div><h3>Automatic detection</h3><p>Finds agent processes by executable and argv, not by name. Launchers and desktop apps are ignored.</p></div>
           <div class="card"><div class="icon" style="background: var(--waiting)">▦</div><h3>Zones per project</h3><p>Offices are grouped by git root, so each repository is its own neighbourhood on the map.</p></div>
-          <div class="card"><div class="icon" style="background: var(--gemini)">⊕</div><h3>Camera and detail</h3><p>Pan, zoom and focus. Far away each office shows its title on a sign; close up you see the current tool and the last request.</p></div>
+          <div class="card"><div class="icon" style="background: var(--gemini)">⊕</div><h3>Camera and layout</h3><p>Pan, zoom and focus, with + / − / fit buttons. Pick a dynamic, horizontal or vertical map. Far away each office shows its title; close up, the current tool and the last request.</p></div>
           <div class="card"><div class="icon" style="background: var(--idle)">/</div><h3>Filter and search</h3><p>Click a counter to filter by status, or press / to search. The rest of the map is dimmed, not hidden, and the camera frames the matches.</p></div>
           <div class="card"><div class="icon" style="background: var(--panel-3); color: var(--text)">&gt;_</div><h3>Embedded terminal</h3><p>Launch agents from Kiti. They live in tmux and survive when you close the app.</p></div>
           <div class="card"><div class="icon" style="background: var(--codex)">↗</div><h3>Jump to its terminal</h3><p>For an agent started elsewhere, one click shows its exact tab in Ghostty or Terminal.app.</p></div>
@@ -413,19 +413,19 @@
         <p class="sub">Filter the map down to the agents that wait for you, then double-click an office to see what it is doing.</p>
         <div class="shots">
           <figure>
-            <div class="frame"><img src="img/filter.png" alt="The waiting filter is on: the two yellow offices stand out and the others are dimmed" loading="lazy" width="1440" height="900"></div>
-            <figcaption>The «esperando» (waiting) counter is on: everything else is dimmed.</figcaption>
+            <div class="frame"><img src="img/filter.png" alt="Searching for billing: the camera frames that project and its four offices" loading="lazy" width="1600" height="1000"></div>
+            <figcaption>Press / and type: the camera frames what matches; the rest is dimmed.</figcaption>
           </figure>
           <figure>
             <div class="frame"><img src="img/board.png" alt="Close-up of a Claude office with its board: model, context, session cost, git status and the last hour; the top bar shows the Claude and Antigravity quota" loading="lazy" width="1600" height="1000"></div>
             <figcaption>The office board at the closest zoom, and the quota in the top bar.</figcaption>
           </figure>
           <figure>
-            <div class="frame"><img src="img/external.png" alt="Side panel of an agent opened outside Kiti, with the button to go to its terminal" loading="lazy" width="1440" height="900"></div>
+            <div class="frame"><img src="img/external.png" alt="Side panel of an agent opened outside Kiti, with the button to go to its terminal" loading="lazy" width="1600" height="1000"></div>
             <figcaption>An agent opened in Ghostty. «Ir a su terminal» brings its tab to the front.</figcaption>
           </figure>
           <figure>
-            <div class="frame"><img src="img/dormant.png" alt="A closed conversation as a dark office with an empty chair, and a panel to resume it" loading="lazy" width="1440" height="900"></div>
+            <div class="frame"><img src="img/dormant.png" alt="A closed conversation as a dark office with an empty chair, and a panel to resume it" loading="lazy" width="1600" height="1000"></div>
             <figcaption>A closed conversation, ready to resume with its full context.</figcaption>
           </figure>
         </div>

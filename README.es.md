@@ -26,7 +26,8 @@ Cuando tienes varios agentes de código abiertos, les pierdes la pista. Uno espe
 - **Detección automática.** Kiti encuentra los procesos de Claude Code, Codex CLI, Antigravity CLI (`agy`) y Gemini CLI. Los clasifica por ejecutable y `argv`, nunca por el nombre del proceso, e ignora los lanzadores y las apps de escritorio.
 - **Semáforo por agente.** Verde es trabajando, amarillo es esperándote, gris es inactivo y rojo es error o caída. El estado sale de los hooks de los CLIs, no de adivinar. Un fallo de herramienta no es rojo.
 - **Zonas por proyecto.** Las oficinas se agrupan por raíz git (o carpeta): cada repositorio es un barrio.
-- **Cámara.** Pan, zoom, doble clic para enfocar una oficina y `0` para verlo todo. De lejos, cada oficina muestra su título en un cartel grande; de cerca ves el título, la herramienta actual y el último pedido.
+- **Cámara y distribución.** Pan, zoom, doble clic para enfocar una oficina y `0` para verlo todo, o los botones `+`, `−` y encuadrar de la esquina. De lejos, cada oficina muestra su título en un cartel grande; de cerca ves el título, la herramienta actual y el último pedido. La barra superior cambia el mapa entre tres distribuciones: dinámica (filas centradas), horizontal y vertical.
+- **Oficinas con vida.** Los agentes que trabajan están animados y cada oficina tiene su propia decoración, así que el mapa distingue de un vistazo quién trabaja y quién no.
 - **Filtro y buscador.** Los contadores de la barra superior filtran por estado, también las conversaciones apagadas. Pulsa `/` para buscar por título, proyecto, carpeta o proveedor, y `Esc` para limpiar. Las oficinas que no coinciden se atenúan, no se esconden: el mapa conserva su orden y la cámara encuadra las que coinciden.
 - **Terminal embebida.** Lanza un agente nuevo desde Kiti. Corre en `tmux` (`-L kiti`), así que sobrevive cuando cierras Kiti.
 - **Ir a su terminal.** Para un agente abierto fuera de Kiti, «Ir a su terminal» muestra su pestaña exacta en Ghostty o Terminal.app. Otras apps, como VS Code, pasan al frente.
@@ -40,7 +41,7 @@ Cuando tienes varios agentes de código abiertos, les pierdes la pista. Uno espe
 <table>
 <tr>
 <td><img src="site/img/board.png" alt="Oficina de Claude de cerca con su tablero: modelo, contexto, coste de la sesión, estado de git y la última hora; la barra superior muestra la cuota de Claude y Antigravity"></td>
-<td><img src="site/img/filter.png" alt="Filtro «esperando» activo: las dos oficinas amarillas destacan y el resto se atenúa"></td>
+<td><img src="site/img/filter.png" alt="Búsqueda de billing: la cámara encuadra ese proyecto y sus cuatro oficinas"></td>
 </tr>
 <tr>
 <td><img src="site/img/external.png" alt="Panel de un agente abierto fuera de Kiti, con el botón para ir a su terminal"></td>
@@ -101,7 +102,7 @@ mise install && mise exec -- pnpm install
 mise run ui:dev                        # http://127.0.0.1:5173/?sim=20&seed=42
 ```
 
-O abre la [demo](https://xavieracostapolo.github.io/kiti/demo/). Parámetros de URL: `sim` (número de agentes), `seed`, `conversations=1` (conversaciones cerradas), `terminals=1` (terminal falsa) y `quota=1` (cuota falsa).
+O abre la [demo](https://xavieracostapolo.github.io/kiti/demo/). Parámetros de URL: `sim` (número de agentes), `seed`, `conversations=1` (conversaciones cerradas), `terminals=1` (terminal falsa), `quota=1` (cuota falsa) y `layout=dynamic|horizontal|vertical`.
 
 ### Ejecuta la app
 
