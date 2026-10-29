@@ -12,9 +12,16 @@ Every pull request with a change people can see adds a line under **Unreleased**
 - `+`, `−` and fit buttons in the corner of the map.
 - Working agents are animated, and each office gets its own decor.
 - `CHANGELOG.md`, the history of every release.
+- The agent's side panel also shows the project's git status, and for Claude the model, context used and session cost.
+- An empty map shows a «Sin agentes en ejecución» notice, with buttons to launch Claude Code, Codex CLI or Antigravity CLI when Kiti can open terminals.
+
+### Changed
+
+- The layout buttons in the top bar are icons only (⊞ ⊟ ☷), with a tooltip, so the bar fits on narrower windows.
 
 ### Fixed
 
+- The office board's box fits its text instead of a fixed width.
 - The office board read the wrong repository when Kiti ran inside a git hook that exports `GIT_DIR`.
 
 ## [0.2.0] - 2026-10-27
