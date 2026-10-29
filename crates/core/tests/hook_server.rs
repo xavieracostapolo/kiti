@@ -281,3 +281,122 @@ fn la_cadena_de_ancestros_empieza_en_el_pid_y_sube() {
         Some(&Pid(std::os::unix::process::parent_id()))
     );
 }
+
+mod mcp {
+    //! `/v1/mcp/*` (ADR 0017): mismos controles que los hooks, JSON de vuelta y remitente
+    //! resuelto por el proceso.
+    use super::*;
+    use kiti_core::adapters::hooks::mcp_router;
+    use kiti_core::application::{Runtime, RuntimeHandle, Telemetry};
+    use kiti_core::domain::{
+        DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Timestamp, WorkingDir,
+    };
+    use kiti_core::ports::{AgentKiller, KillOutcome, KillTarget};
+    use kiti_core::testing::ManualClock;
+    use kiti_protocol::Source;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[derive(Clone)]
+    struct NoKill;
+
+    impl AgentKiller for NoKill {
+        async fn terminate(
+            &self,
+            _t: KillTarget,
+            _g: Duration,
+        ) -> Result<KillOutcome, kiti_core::ports::KillError> {
+            Ok(KillOutcome::Killed)
+        }
+    }
+
+    fn agent(provider: Provider, pid: u32) -> DetectedAgent {
+        DetectedAgent {
+            provider,
+            identity: ProcessIdentity {
+                pid: Pid(pid),
+                start_time: ProcessStartTime(1),
+                uid: 501,
+                cmd_fingerprint: 1,
+            },
+            cwd: WorkingDir::new("/Users/dev/api"),
+        }
+    }
+
+    /// Este proceso de test hace de agente Claude; otro Codex inventado recibe.
+    async fn runtime() -> RuntimeHandle {
+        let h = Runtime::spawn(
+            NoKill,
+            ManualClock::new(1),
+            Arc::new(Telemetry::new()),
+            Source::Sim,
+            "t",
+        );
+        h.register_agent(agent(Provider::Claude, std::process::id()), Timestamp(1))
+            .await;
+        h.register_agent(agent(Provider::Codex, 4_000_000), Timestamp(1))
+            .await;
+        h
+    }
+
+    async fn call(
+        rt: RuntimeHandle,
+        tool: &str,
+        ppid: Option<u32>,
+        body: &str,
+    ) -> (StatusCode, serde_json::Value) {
+        let mut req = with(&[]).uri(format!("/v1/mcp/{tool}"));
+        if let Some(p) = ppid {
+            req = req.header("x-kiti-ppid", p.to_string());
+        }
+        let res = mcp_router(TOKEN.into(), PORT, rt)
+            .oneshot(req.body(Body::from(body.to_owned())).unwrap())
+            .await
+            .unwrap();
+        let status = res.status();
+        let bytes = axum::body::to_bytes(res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap_or_default())
+    }
+
+    #[tokio::test]
+    async fn agents_y_send_responden_json_con_el_remitente_del_proceso() {
+        let rt = runtime().await;
+        let me = Some(std::process::id());
+        let (status, body) = call(rt.clone(), "agents", me, "{}").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["you"], "claude-1");
+        assert_eq!(body["peers"][0]["alias"], "codex-1");
+        let (status, body) =
+            call(rt.clone(), "send", me, r#"{"to":"codex-1","text":"hola"}"#).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["state"], "queued");
+        let (status, body) = call(rt, "send", me, r#"{"to":"codex-9","text":"hola"}"#).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "unknown_recipient");
+    }
+
+    #[tokio::test]
+    async fn sin_ppid_o_sin_token_no_hay_nada() {
+        let rt = runtime().await;
+        let (status, body) = call(rt.clone(), "agents", None, "{}").await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["code"], "no_ppid");
+        let res = mcp_router(TOKEN.into(), PORT, rt.clone())
+            .oneshot(
+                with(&[("authorization", "Bearer nope")])
+                    .uri("/v1/mcp/agents")
+                    .header("x-kiti-ppid", std::process::id().to_string())
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+        // Un proceso que no es ningún agente (PID 1 no se recorre).
+        let (status, body) = call(rt, "agents", Some(1), "{}").await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "unknown_sender");
+    }
+}

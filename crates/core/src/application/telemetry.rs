@@ -14,6 +14,7 @@ pub struct Telemetry {
     pub hook_rejected_total: AtomicU64,
     pub ipc_flush_total: AtomicU64,
     pub metrics_msgs_total: AtomicU64,
+    pub mails_total: AtomicU64,
     hook_to_publish_hist: Mutex<Histogram<u64>>,
     last_sample_time: Mutex<Instant>,
     last_sample_events: AtomicU64,
@@ -29,6 +30,7 @@ impl Telemetry {
             hook_rejected_total: AtomicU64::new(0),
             ipc_flush_total: AtomicU64::new(0),
             metrics_msgs_total: AtomicU64::new(0),
+            mails_total: AtomicU64::new(0),
             hook_to_publish_hist: Mutex::new(hist),
             last_sample_time: Mutex::new(Instant::now()),
             last_sample_events: AtomicU64::new(0),
@@ -37,6 +39,11 @@ impl Telemetry {
 
     pub fn record_event(&self) {
         self.events_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Un `kiti_send` aceptado (ADR 0017).
+    pub fn record_mail(&self) {
+        self.mails_total.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_publish_latency_ms(&self, ms: u64) {
@@ -55,6 +62,7 @@ impl Telemetry {
         agents_count: u32,
         rss_bytes: u64,
         cpu_percent: f64,
+        mail_pending: u32,
     ) -> CoreMetrics {
         self.metrics_msgs_total.fetch_add(1, Ordering::Relaxed);
         let now = Instant::now();
@@ -84,6 +92,8 @@ impl Telemetry {
             hook_to_publish_ms_p95,
             rss_bytes,
             cpu_percent,
+            mails_total: self.mails_total.load(Ordering::Relaxed),
+            mail_pending,
         }
     }
 }
@@ -109,7 +119,7 @@ mod tests {
         telem.record_publish_latency_ms(20);
         telem.record_publish_latency_ms(100);
 
-        let metrics = telem.snapshot_core_metrics(5, 1024 * 1024, 0.5);
+        let metrics = telem.snapshot_core_metrics(5, 1024 * 1024, 0.5, 0);
         assert_eq!(metrics.agents, 5);
         assert_eq!(metrics.rss_bytes, 1024 * 1024);
         assert_eq!(metrics.cpu_percent, 0.5);

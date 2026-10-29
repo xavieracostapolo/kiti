@@ -155,6 +155,12 @@ pub struct CoreMetrics {
     pub hook_to_publish_ms_p95: f64,
     pub rss_bytes: u64,
     pub cpu_percent: f64,
+    /// Mensajes entre agentes aceptados desde que arrancó Kiti (ADR 0017).
+    #[serde(default)]
+    pub mails_total: u64,
+    /// Mensajes aún sin entregar (por aprobar, en cola o retenidos).
+    #[serde(default)]
+    pub mail_pending: u32,
 }
 
 /// Stream core -> UI. El primer mensaje es siempre `Snapshot`; `seq` es monotónico.
@@ -188,6 +194,9 @@ pub enum ServerMsg {
     Focus {
         id: AgentId,
     },
+    /// Mensajes entre agentes (ADR 0017): el estado completo al cambiar algo y tras cada
+    /// Snapshot.
+    Mail(MailState),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -251,6 +260,156 @@ pub struct QuotaWindow {
     pub remaining_pct: u8,
     /// Cuándo se reinicia, en ms desde epoch (0 si no se sabe).
     pub resets_at: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum MailMode {
+    Auto,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum MailMessageState {
+    /// Modo manual: espera la aprobación del usuario.
+    Pending,
+    /// Espera a que el destinatario esté libre (o lo lea con `kiti_inbox`).
+    Queued,
+    /// Su hilo está pausado por el límite de saltos.
+    Held,
+    Delivered,
+    Discarded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum MailThreadState {
+    Open,
+    Paused,
+    Closed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MailMessage {
+    pub id: u64,
+    pub from: AgentId,
+    pub from_alias: String,
+    pub to: AgentId,
+    pub to_alias: String,
+    pub text: String,
+    pub sent_at: u64,
+    pub state: MailMessageState,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MailThread {
+    pub id: u64,
+    pub subject: String,
+    pub hops: u32,
+    pub limit: u32,
+    pub state: MailThreadState,
+    pub messages: Vec<MailMessage>,
+}
+
+/// Alias corto de un agente vivo (`claude-1`), con el que los demás le escriben.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MailAlias {
+    pub agent: AgentId,
+    pub alias: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MailState {
+    pub mode: MailMode,
+    pub paused: bool,
+    /// Mensajes por aprobar más hilos pausados.
+    pub attention: u32,
+    pub aliases: Vec<MailAlias>,
+    /// Del más reciente al más antiguo.
+    pub threads: Vec<MailThread>,
+}
+
+/// API local entre `kiti-mcp` y el core (ADR 0017). No va a la UI.
+pub mod mcp {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct Peer {
+        pub alias: String,
+        pub provider: String,
+        /// Nombre de la carpeta del proyecto.
+        pub project: String,
+        /// `working`, `waiting`, `idle`…
+        pub status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub title: Option<String>,
+        /// Kiti puede escribirle en su terminal (lanzado desde Kiti); si no, lee con `kiti_inbox`.
+        pub reachable: bool,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct AgentsReply {
+        /// Alias de quien pregunta.
+        pub you: String,
+        pub peers: Vec<Peer>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SendRequest {
+        pub to: String,
+        pub text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub reply_to: Option<u64>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SendReply {
+        pub id: u64,
+        pub thread: u64,
+        /// `queued`, `pending` (espera al usuario) o `held` (hilo pausado por el límite).
+        pub state: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct InboxMessage {
+        pub id: u64,
+        pub from: String,
+        pub project: String,
+        pub thread: u64,
+        pub subject: String,
+        pub text: String,
+        pub sent_at: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct InboxReply {
+        pub messages: Vec<InboxMessage>,
+    }
+
+    /// Cuerpo de las respuestas 4xx: `code` estable y `message` legible para el modelo.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct ErrorReply {
+        pub code: String,
+        pub message: String,
+    }
 }
 
 /// Resultado de "Ir a su terminal" para un agente abierto fuera de Kiti (ADR 0012).
@@ -419,6 +578,56 @@ mod tests {
             serde_json::to_value(t).unwrap(),
             json!({ "id": "pty-1", "pid": 77, "provider": "claude", "cwd": "/w", "running": true })
         );
+    }
+
+    #[test]
+    fn mail_lleva_type_y_camel_case() {
+        let msg = ServerMsg::Mail(MailState {
+            mode: MailMode::Auto,
+            paused: false,
+            attention: 1,
+            aliases: vec![MailAlias {
+                agent: AgentId("claude:1:2".into()),
+                alias: "claude-1".into(),
+            }],
+            threads: vec![MailThread {
+                id: 3,
+                subject: "Revisión".into(),
+                hops: 1,
+                limit: 12,
+                state: MailThreadState::Paused,
+                messages: vec![MailMessage {
+                    id: 7,
+                    from: AgentId("claude:1:2".into()),
+                    from_alias: "claude-1".into(),
+                    to: AgentId("codex:3:4".into()),
+                    to_alias: "codex-1".into(),
+                    text: "hola".into(),
+                    sent_at: 5,
+                    state: MailMessageState::Held,
+                }],
+            }],
+        });
+        let value = serde_json::to_value(&msg).unwrap();
+        assert_eq!(value["type"], "Mail");
+        assert_eq!(value["mode"], "auto");
+        assert_eq!(value["aliases"][0]["alias"], "claude-1");
+        assert_eq!(value["threads"][0]["state"], "paused");
+        assert_eq!(value["threads"][0]["messages"][0]["fromAlias"], "claude-1");
+        assert_eq!(value["threads"][0]["messages"][0]["sentAt"], 5);
+        assert_eq!(value["threads"][0]["messages"][0]["state"], "held");
+        let back: ServerMsg = serde_json::from_value(value).unwrap();
+        assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn mcp_send_en_camel_case_y_reply_to_opcional() {
+        let req: mcp::SendRequest =
+            serde_json::from_value(json!({ "to": "codex-1", "text": "x", "replyTo": 4 })).unwrap();
+        assert_eq!(req.reply_to, Some(4));
+        let req: mcp::SendRequest =
+            serde_json::from_value(json!({ "to": "codex-1", "text": "x" })).unwrap();
+        assert_eq!(req.reply_to, None);
     }
 
     /// ts-rs no exporta constantes: la copia TS de PROTOCOL_VERSION se vigila aquí.

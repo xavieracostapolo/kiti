@@ -9,20 +9,23 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, interval};
 
+use crate::application::mail;
 use crate::application::projection::{project_diff, project_provider, project_snapshot};
 use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
     AgentId, AgentInput, AgentRegistry, AgentStats, AlertPolicy, DetectedAgent, DomainEvent,
-    Events, GitStatus, Pid, Provider, QuotaPolicy, QuotaWindow, SessionId, StalePolicy, Timestamp,
+    Events, GitStatus, Mailbox, MessageId, Pid, Provider, QuotaPolicy, QuotaWindow, SessionId,
+    StalePolicy, StatusKind, ThreadId, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
 use crate::ports::{
     AgentKiller, AlertNotice, AlertSink, Clock, CwdProjects, DiffPublisher, KillError, KillOutcome,
-    KillTarget, ProjectResolver, SelfMonitor,
+    KillTarget, MailCourier, ProjectResolver, SelfMonitor,
 };
+use kiti_protocol::mcp;
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
 use tracing::{debug, info};
 
@@ -31,6 +34,22 @@ pub const METRICS_INTERVAL: Duration = Duration::from_secs(1);
 pub const STALE_TICK_INTERVAL: Duration = Duration::from_secs(2);
 /// Gracia entre SIGTERM y SIGKILL (ADR 0002 §5).
 pub const KILL_GRACE: Duration = Duration::from_secs(5);
+/// Tras escribir en la terminal de un agente, no se le escribe otra vez hasta verlo trabajar,
+/// o hasta pasado este tiempo si nunca llega a verse (ADR 0017).
+pub const MAIL_RETRY: Duration = Duration::from_secs(60);
+
+/// Lo que la UI puede hacer con los mensajes (ADR 0017).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MailAction {
+    Mode(kiti_protocol::MailMode),
+    Pause(bool),
+    Approve(u64),
+    Discard(u64),
+    Continue(u64),
+    Close(u64),
+}
+
+type McpReply<T> = oneshot::Sender<Result<T, mcp::ErrorReply>>;
 
 pub enum RuntimeCommand {
     RegisterAgent {
@@ -97,6 +116,25 @@ pub enum RuntimeCommand {
         id: AgentId,
         reply: oneshot::Sender<KillResult>,
     },
+    /// `kiti_agents` (ADR 0017): `ancestry` es el de `kiti-mcp`, para saber quién pregunta.
+    McpAgents {
+        ancestry: Vec<Pid>,
+        reply: McpReply<mcp::AgentsReply>,
+    },
+    McpSend {
+        ancestry: Vec<Pid>,
+        request: mcp::SendRequest,
+        reply: McpReply<mcp::SendReply>,
+    },
+    McpInbox {
+        ancestry: Vec<Pid>,
+        reply: McpReply<mcp::InboxReply>,
+    },
+    /// PIDs de los agentes lanzados desde Kiti (sesiones tmux): a ellos se les puede escribir.
+    MailReachable(Vec<Pid>),
+    /// La escritura en la terminal falló: esos mensajes vuelven a la cola.
+    MailUndeliver(Vec<u64>),
+    Mail(MailAction),
     /// Interno: la tarea de kill terminó y devuelve el resultado al actor.
     #[doc(hidden)]
     KillFinished {
@@ -269,6 +307,59 @@ impl RuntimeHandle {
         reply_rx.await.map_err(|e| e.to_string())
     }
 
+    async fn mcp<T>(
+        &self,
+        make: impl FnOnce(McpReply<T>) -> RuntimeCommand,
+    ) -> Result<T, mcp::ErrorReply> {
+        let (reply, rx) = oneshot::channel();
+        let closed = || mcp::ErrorReply {
+            code: "closed".into(),
+            message: "Kiti se está cerrando".into(),
+        };
+        self.tx.send(make(reply)).await.map_err(|_| closed())?;
+        rx.await.map_err(|_| closed())?
+    }
+
+    /// `kiti_agents`: los demás agentes vivos (ADR 0017).
+    pub async fn mcp_agents(
+        &self,
+        ancestry: Vec<Pid>,
+    ) -> Result<mcp::AgentsReply, mcp::ErrorReply> {
+        self.mcp(|reply| RuntimeCommand::McpAgents { ancestry, reply })
+            .await
+    }
+
+    pub async fn mcp_send(
+        &self,
+        ancestry: Vec<Pid>,
+        request: mcp::SendRequest,
+    ) -> Result<mcp::SendReply, mcp::ErrorReply> {
+        self.mcp(|reply| RuntimeCommand::McpSend {
+            ancestry,
+            request,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn mcp_inbox(&self, ancestry: Vec<Pid>) -> Result<mcp::InboxReply, mcp::ErrorReply> {
+        self.mcp(|reply| RuntimeCommand::McpInbox { ancestry, reply })
+            .await
+    }
+
+    /// Agentes a los que Kiti puede escribir (sesiones tmux).
+    pub async fn mail_reachable(&self, pids: Vec<Pid>) {
+        let _ = self.tx.send(RuntimeCommand::MailReachable(pids)).await;
+    }
+
+    pub async fn mail_undeliver(&self, ids: Vec<u64>) {
+        let _ = self.tx.send(RuntimeCommand::MailUndeliver(ids)).await;
+    }
+
+    pub async fn mail(&self, action: MailAction) {
+        let _ = self.tx.send(RuntimeCommand::Mail(action)).await;
+    }
+
     /// El actor terminó (se soltaron todos los handles o el runtime se apagó).
     pub fn is_closed(&self) -> bool {
         self.tx.is_closed()
@@ -356,6 +447,13 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     /// Último estado de git de cada proyecto (ADR 0016): se reenvía tras cada Snapshot.
     git: std::collections::BTreeMap<String, Option<GitStatus>>,
     quota_policy: QuotaPolicy,
+    /// Mensajes entre agentes (ADR 0017).
+    mailbox: Mailbox,
+    mail_dirty: bool,
+    courier: Option<Box<dyn MailCourier>>,
+    reachable: std::collections::HashSet<Pid>,
+    /// A quién se escribió y cuándo: no se le vuelve a escribir hasta verlo trabajar.
+    typed: std::collections::HashMap<AgentId, Timestamp>,
 }
 
 impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
@@ -391,6 +489,11 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             quotas: std::collections::BTreeMap::new(),
             git: std::collections::BTreeMap::new(),
             quota_policy: QuotaPolicy::default(),
+            mailbox: Mailbox::default(),
+            mail_dirty: false,
+            courier: None,
+            reachable: std::collections::HashSet::new(),
+            typed: std::collections::HashMap::new(),
         };
         (runtime, RuntimeHandle { tx, telemetry })
     }
@@ -410,6 +513,12 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     /// Avisos al usuario (ADR 0010). En el simulador no se instala: serían ruido.
     pub fn with_alerts(mut self, sink: impl AlertSink) -> Self {
         self.alerts = Some(Box::new(sink));
+        self
+    }
+
+    /// Quién escribe los mensajes en las terminales (ADR 0017). Sin él, solo hay `kiti_inbox`.
+    pub fn with_courier(mut self, courier: impl MailCourier) -> Self {
+        self.courier = Some(Box::new(courier));
         self
     }
 
@@ -633,6 +742,9 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     for (project, status) in &self.git {
                         publisher.publish(git_msg(project, status.as_ref()));
                     }
+                    self.sync_mail();
+                    publisher.publish(ServerMsg::Mail(mail::mail_state(&self.mailbox)));
+                    self.mail_dirty = false;
                     if let Some(id) = self.pending_focus.take() {
                         publisher.publish(ServerMsg::Focus {
                             id: kiti_protocol::AgentId(id.to_string()),
@@ -670,13 +782,259 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 let _ = reply.send(summary);
             }
             RuntimeCommand::KillAgent { id, reply } => self.start_kill(id, reply),
+            RuntimeCommand::McpAgents { ancestry, reply } => {
+                let _ = reply.send(self.mcp_agents(&ancestry));
+            }
+            RuntimeCommand::McpSend {
+                ancestry,
+                request,
+                reply,
+            } => {
+                let _ = reply.send(self.mcp_send(&ancestry, request));
+            }
+            RuntimeCommand::McpInbox { ancestry, reply } => {
+                let _ = reply.send(self.mcp_inbox(&ancestry));
+            }
+            RuntimeCommand::MailReachable(pids) => {
+                self.reachable = pids.into_iter().collect();
+            }
+            RuntimeCommand::MailUndeliver(ids) => {
+                let ids: Vec<MessageId> = ids.into_iter().map(MessageId).collect();
+                for m in self.mailbox.messages().filter(|m| ids.contains(&m.id)) {
+                    self.typed.remove(&m.to);
+                }
+                self.mailbox.undeliver(&ids);
+                info!(event = "mail.undelivered", count = ids.len());
+                self.mail_dirty = true;
+            }
+            RuntimeCommand::Mail(action) => {
+                self.sync_mail();
+                let changed = match action {
+                    MailAction::Mode(m) => self.mailbox.set_mode(mail::domain_mail_mode(m)),
+                    MailAction::Pause(p) => self.mailbox.set_paused(p),
+                    MailAction::Approve(id) => self.mailbox.approve(MessageId(id)),
+                    MailAction::Discard(id) => self.mailbox.discard(MessageId(id)),
+                    MailAction::Continue(id) => self.mailbox.continue_thread(ThreadId(id)),
+                    MailAction::Close(id) => self.mailbox.close_thread(ThreadId(id)),
+                };
+                info!(event = "mail.action", action = ?action, changed);
+                self.mail_dirty |= changed;
+            }
             RuntimeCommand::KillFinished { id, outcome, reply } => {
                 let _ = reply.send(self.finish_kill(id, outcome));
             }
         }
     }
 
+    /// Alias para los agentes vivos; los que murieron sueltan el suyo y lo que se les debía.
+    fn sync_mail(&mut self) {
+        let live: Vec<AgentId> = self
+            .registry
+            .agents()
+            .filter(|a| !a.is_dead())
+            .map(|a| a.id())
+            .collect();
+        for id in &live {
+            if self.mailbox.alias(id).is_none() {
+                self.mailbox.join(*id);
+                self.mail_dirty = true;
+            }
+        }
+        let gone: Vec<AgentId> = self
+            .mailbox
+            .members()
+            .map(|(id, _)| *id)
+            .filter(|id| !live.contains(id))
+            .collect();
+        for id in gone {
+            self.mailbox.leave(&id);
+            self.typed.remove(&id);
+            self.mail_dirty = true;
+        }
+    }
+
+    /// Escribe lo pendiente en la terminal de los destinatarios libres: en gris, lanzados desde
+    /// Kiti y sin una entrega reciente que aún no hayan empezado a atender.
+    fn deliver_mail(&mut self) {
+        let now = self.clock.now();
+        let registry = &self.registry;
+        self.typed.retain(|id, at| {
+            registry
+                .get(id)
+                .is_some_and(|a| a.status().kind == StatusKind::Idle)
+                && now.since(*at) < MAIL_RETRY
+        });
+        let Some(courier) = self.courier.as_mut() else {
+            return;
+        };
+        let (reachable, typed) = (&self.reachable, &self.typed);
+        let deliveries = self.mailbox.take_deliveries(|id| {
+            reachable.contains(&id.pid)
+                && !typed.contains_key(id)
+                && registry
+                    .get(id)
+                    .is_some_and(|a| a.status().kind == StatusKind::Idle)
+        });
+        for d in deliveries {
+            let projects = &mut self.projects;
+            let text = mail::delivery_prompt(&d, |m| {
+                registry.get(&m.from).map_or_else(
+                    || "?".to_owned(),
+                    |a| mail::project_name(&projects.project_of(a.cwd().as_str())),
+                )
+            });
+            let ids: Vec<u64> = d.messages.iter().map(|m| m.id.0).collect();
+            let wait_ms = d
+                .messages
+                .first()
+                .map_or(0, |m| now.0.saturating_sub(m.sent_at.0));
+            info!(event = "mail.delivered", to = %d.to, count = ids.len(), wait_ms, via = "terminal");
+            self.typed.insert(d.to, now);
+            courier.deliver(d.to.pid, text, ids);
+            self.mail_dirty = true;
+        }
+    }
+
+    fn caller(&mut self, ancestry: &[Pid]) -> Result<AgentId, mcp::ErrorReply> {
+        self.sync_mail();
+        self.registry.agent_in_ancestry(ancestry).ok_or_else(|| {
+            info!(event = "mail.rejected", reason = "unknown_sender");
+            mail::unknown_caller()
+        })
+    }
+
+    fn mcp_agents(&mut self, ancestry: &[Pid]) -> Result<mcp::AgentsReply, mcp::ErrorReply> {
+        let me = self.caller(ancestry)?;
+        let mut peers: Vec<mcp::Peer> = Vec::new();
+        for agent in self
+            .registry
+            .agents()
+            .filter(|a| !a.is_dead() && a.id() != me)
+        {
+            let Some(alias) = self.mailbox.alias(&agent.id()) else {
+                continue;
+            };
+            let project = self.projects.project_of(agent.cwd().as_str());
+            peers.push(mail::peer(
+                agent,
+                alias,
+                &project,
+                self.reachable.contains(&agent.id().pid),
+            ));
+        }
+        peers.sort_by(|a, b| a.alias.cmp(&b.alias));
+        Ok(mcp::AgentsReply {
+            you: self.mailbox.alias(&me).unwrap_or_default().to_owned(),
+            peers,
+        })
+    }
+
+    fn mcp_send(
+        &mut self,
+        ancestry: &[Pid],
+        request: mcp::SendRequest,
+    ) -> Result<mcp::SendReply, mcp::ErrorReply> {
+        let me = self.caller(ancestry)?;
+        let now = self.clock.now();
+        match self.mailbox.send(
+            me,
+            &request.to,
+            &request.text,
+            request.reply_to.map(MessageId),
+            now,
+        ) {
+            Ok(sent) => {
+                info!(
+                    event = "mail.sent",
+                    from = self.mailbox.alias(&me).unwrap_or_default(),
+                    to = request.to.trim(),
+                    len = request.text.chars().count(),
+                    thread = sent.thread.0,
+                    state = mail::state_code(sent.state),
+                );
+                self.telemetry.record_mail();
+                self.mail_dirty = true;
+                if sent.paused_thread {
+                    self.alert_mail_paused(sent.thread);
+                }
+                Ok(mcp::SendReply {
+                    id: sent.id.0,
+                    thread: sent.thread.0,
+                    state: mail::state_code(sent.state).to_owned(),
+                })
+            }
+            Err(e) => {
+                info!(event = "mail.rejected", reason = e.code());
+                Err(mail::send_error(&e))
+            }
+        }
+    }
+
+    fn alert_mail_paused(&mut self, thread: ThreadId) {
+        let Some(t) = self.mailbox.thread(thread) else {
+            return;
+        };
+        let mut who: Vec<&str> = Vec::new();
+        for m in self.mailbox.messages().filter(|m| m.thread == thread) {
+            for a in [m.from_alias.as_str(), m.to_alias.as_str()] {
+                if !who.contains(&a) {
+                    who.push(a);
+                }
+            }
+        }
+        info!(
+            event = "alert.raised",
+            kind = "MailPaused",
+            thread = thread.0
+        );
+        if let Some(sink) = self.alerts.as_mut() {
+            sink.mail_paused(&t.subject, &who.join(" ⇄ "));
+        }
+    }
+
+    fn mcp_inbox(&mut self, ancestry: &[Pid]) -> Result<mcp::InboxReply, mcp::ErrorReply> {
+        let me = self.caller(ancestry)?;
+        let messages = self.mailbox.inbox(&me);
+        if !messages.is_empty() {
+            info!(event = "mail.delivered", to = %me, count = messages.len(), via = "inbox");
+            self.mail_dirty = true;
+        }
+        let out = messages
+            .into_iter()
+            .map(|m| {
+                let project = self.registry.get(&m.from).map_or_else(
+                    || "?".to_owned(),
+                    |a| mail::project_name(&self.projects.project_of(a.cwd().as_str())),
+                );
+                mcp::InboxMessage {
+                    id: m.id.0,
+                    from: m.from_alias,
+                    project,
+                    thread: m.thread.0,
+                    subject: self
+                        .mailbox
+                        .thread(m.thread)
+                        .map(|t| t.subject.clone())
+                        .unwrap_or_default(),
+                    text: m.text,
+                    sent_at: m.sent_at.0,
+                }
+            })
+            .collect();
+        Ok(mcp::InboxReply { messages: out })
+    }
+
     fn flush_diff(&mut self) {
+        self.sync_mail();
+        self.deliver_mail();
+        if self.mail_dirty
+            && let Some(publisher) = self.publisher.as_mut()
+        {
+            self.mail_dirty = false;
+            if !publisher.publish(ServerMsg::Mail(mail::mail_state(&self.mailbox))) {
+                self.drop_publisher();
+            }
+        }
         let Some(publisher) = self.publisher.as_mut() else {
             return;
         };
@@ -707,9 +1065,12 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             return;
         };
         let (rss, cpu) = self.monitor.as_mut().map_or((0, 0.0), |m| m.sample());
-        let metrics = self
-            .telemetry
-            .snapshot_core_metrics(self.registry.len() as u32, rss, cpu);
+        let metrics = self.telemetry.snapshot_core_metrics(
+            self.registry.len() as u32,
+            rss,
+            cpu,
+            self.mailbox.pending() as u32,
+        );
         if !publisher.publish(ServerMsg::Metrics(metrics)) {
             self.drop_publisher();
         }

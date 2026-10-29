@@ -1,0 +1,236 @@
+//! Mensajes entre agentes a través del runtime (ADR 0017): `kiti_agents`, `kiti_send`,
+//! `kiti_inbox`, entrega por terminal y estado para la UI.
+
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use kiti_core::application::runtime::MailAction;
+use kiti_core::application::{Runtime, RuntimeHandle, Telemetry};
+use kiti_core::domain::{
+    DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Timestamp, WorkingDir,
+};
+use kiti_core::ports::{AgentKiller, DiffPublisher, KillOutcome, KillTarget, MailCourier};
+use kiti_core::testing::ManualClock;
+use kiti_protocol::mcp::SendRequest;
+use kiti_protocol::{MailMessageState, MailMode, ServerMsg, Source};
+
+#[derive(Clone)]
+struct NoKill;
+
+impl AgentKiller for NoKill {
+    async fn terminate(
+        &self,
+        _target: KillTarget,
+        _grace: Duration,
+    ) -> Result<KillOutcome, kiti_core::ports::KillError> {
+        Ok(KillOutcome::Killed)
+    }
+}
+
+type Typed = Arc<Mutex<Vec<(u32, String, Vec<u64>)>>>;
+
+#[derive(Clone, Default)]
+struct FakeCourier(Typed);
+
+impl MailCourier for FakeCourier {
+    fn deliver(&mut self, pid: Pid, text: String, ids: Vec<u64>) {
+        self.0.lock().unwrap().push((pid.0, text, ids));
+    }
+}
+
+#[derive(Clone, Default)]
+struct Sink(Arc<Mutex<Vec<ServerMsg>>>);
+
+impl DiffPublisher for Sink {
+    fn publish(&mut self, msg: ServerMsg) -> bool {
+        self.0.lock().unwrap().push(msg);
+        true
+    }
+}
+
+fn agent(provider: Provider, pid: u32, cwd: &str) -> DetectedAgent {
+    DetectedAgent {
+        provider,
+        identity: ProcessIdentity {
+            pid: Pid(pid),
+            start_time: ProcessStartTime(100),
+            uid: 501,
+            cmd_fingerprint: 1,
+        },
+        cwd: WorkingDir::new(cwd),
+    }
+}
+
+async fn setup() -> (RuntimeHandle, FakeCourier, Sink, ManualClock) {
+    let clock = ManualClock::new(1_000);
+    let courier = FakeCourier::default();
+    let (runtime, handle) = Runtime::new(
+        NoKill,
+        clock.clone(),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(runtime.with_courier(courier.clone()).run());
+    let sink = Sink::default();
+    handle.subscribe(sink.clone()).await.unwrap();
+    for a in [
+        agent(Provider::Claude, 10, "/Users/dev/tienda-web"),
+        agent(Provider::Codex, 20, "/Users/dev/api"),
+    ] {
+        handle.register_agent(a, Timestamp(1_000)).await;
+    }
+    (handle, courier, sink, clock)
+}
+
+/// Deja correr el actor unos cuantos flushes.
+async fn settle() {
+    for _ in 0..5 {
+        tokio::time::advance(Duration::from_millis(100)).await;
+        tokio::task::yield_now().await;
+    }
+}
+
+fn last_mail(sink: &Sink) -> kiti_protocol::MailState {
+    sink.0
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find_map(|m| match m {
+            ServerMsg::Mail(s) => Some(s.clone()),
+            _ => None,
+        })
+        .expect("ningún ServerMsg::Mail")
+}
+
+/// `kiti-mcp` (900) es hijo del agente.
+fn from(pid: u32) -> Vec<Pid> {
+    vec![Pid(900), Pid(pid), Pid(1)]
+}
+
+fn send(to: &str, text: &str) -> SendRequest {
+    SendRequest {
+        to: to.into(),
+        text: text.into(),
+        reply_to: None,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn kiti_agents_dice_quien_soy_y_quien_mas_hay() {
+    let (h, _, _, _) = setup().await;
+    h.mail_reachable(vec![Pid(20)]).await;
+    let r = h.mcp_agents(from(10)).await.unwrap();
+    assert_eq!(r.you, "claude-1");
+    assert_eq!(r.peers.len(), 1);
+    assert_eq!(r.peers[0].alias, "codex-1");
+    assert_eq!(r.peers[0].provider, "codex");
+    assert_eq!(r.peers[0].project, "api");
+    assert_eq!(r.peers[0].status, "idle");
+    assert!(r.peers[0].reachable);
+    let err = h.mcp_agents(vec![Pid(900), Pid(1)]).await.unwrap_err();
+    assert_eq!(err.code, "unknown_sender");
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_mensaje_se_escribe_en_la_terminal_del_destinatario_libre() {
+    let (h, courier, sink, _) = setup().await;
+    let sent = h
+        .mcp_send(from(10), send("codex-1", "¿revisas mi diff?"))
+        .await
+        .unwrap();
+    assert_eq!(sent.state, "queued");
+    settle().await;
+    // Aún no se sabe que se le pueda escribir: espera.
+    assert!(courier.0.lock().unwrap().is_empty());
+    h.mail_reachable(vec![Pid(20)]).await;
+    settle().await;
+    let typed = courier.0.lock().unwrap().clone();
+    assert_eq!(typed.len(), 1);
+    assert_eq!(typed[0].0, 20);
+    assert!(
+        typed[0]
+            .1
+            .starts_with("[Kiti] Mensaje 1 de claude-1 (tienda-web):\n¿revisas mi diff?")
+    );
+    assert_eq!(typed[0].2, vec![sent.id]);
+    let mail = last_mail(&sink);
+    assert_eq!(
+        mail.threads[0].messages[0].state,
+        MailMessageState::Delivered
+    );
+    assert_eq!(mail.aliases.len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_se_le_vuelve_a_escribir_hasta_que_atiende_o_pasa_un_minuto() {
+    let (h, courier, _, clock) = setup().await;
+    h.mail_reachable(vec![Pid(20)]).await;
+    h.mcp_send(from(10), send("codex-1", "uno")).await.unwrap();
+    settle().await;
+    h.mcp_send(from(10), send("codex-1", "dos")).await.unwrap();
+    settle().await;
+    assert_eq!(courier.0.lock().unwrap().len(), 1);
+    clock.advance(61_000);
+    settle().await;
+    let typed = courier.0.lock().unwrap().clone();
+    assert_eq!(typed.len(), 2);
+    assert!(typed[1].1.contains("\ndos\n"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn si_falla_la_escritura_se_reintenta() {
+    let (h, courier, _, _) = setup().await;
+    h.mail_reachable(vec![Pid(20)]).await;
+    let sent = h.mcp_send(from(10), send("codex-1", "uno")).await.unwrap();
+    settle().await;
+    h.mail_undeliver(vec![sent.id]).await;
+    settle().await;
+    assert_eq!(courier.0.lock().unwrap().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn sin_terminal_el_destinatario_lo_lee_con_inbox() {
+    let (h, courier, _, _) = setup().await;
+    let sent = h
+        .mcp_send(from(20), send("claude-1", "el total va sin impuestos"))
+        .await
+        .unwrap();
+    settle().await;
+    assert!(courier.0.lock().unwrap().is_empty());
+    let inbox = h.mcp_inbox(from(10)).await.unwrap();
+    assert_eq!(inbox.messages.len(), 1);
+    let m = &inbox.messages[0];
+    assert_eq!(m.id, sent.id);
+    assert_eq!(m.from, "codex-1");
+    assert_eq!(m.project, "api");
+    assert_eq!(m.subject, "el total va sin impuestos");
+    assert!(h.mcp_inbox(from(10)).await.unwrap().messages.is_empty());
+}
+
+#[tokio::test(start_paused = true)]
+async fn en_manual_espera_al_usuario_y_los_errores_tienen_codigo() {
+    let (h, courier, sink, _) = setup().await;
+    h.mail_reachable(vec![Pid(20)]).await;
+    h.mail(MailAction::Mode(MailMode::Manual)).await;
+    let sent = h.mcp_send(from(10), send("codex-1", "uno")).await.unwrap();
+    assert_eq!(sent.state, "pending");
+    settle().await;
+    assert!(courier.0.lock().unwrap().is_empty());
+    let mail = last_mail(&sink);
+    assert_eq!(mail.mode, MailMode::Manual);
+    assert_eq!(mail.attention, 1);
+    h.mail(MailAction::Approve(sent.id)).await;
+    settle().await;
+    assert_eq!(courier.0.lock().unwrap().len(), 1);
+    assert_eq!(last_mail(&sink).attention, 0);
+
+    let err = h
+        .mcp_send(from(10), send("claude-1", "a mí"))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "self");
+    let err = h.mcp_send(from(10), send("agy-3", "x")).await.unwrap_err();
+    assert_eq!(err.code, "unknown_recipient");
+}

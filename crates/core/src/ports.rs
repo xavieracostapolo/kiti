@@ -23,6 +23,15 @@ pub trait AlertSink: Send + 'static {
     fn alert(&mut self, notice: AlertNotice);
     /// Queda poca cuota semanal de un proveedor (ADR 0015).
     fn quota_low(&mut self, _alert: crate::domain::QuotaAlert) {}
+    /// Un hilo de mensajes llegó al límite de saltos y espera al usuario (ADR 0017).
+    fn mail_paused(&mut self, _subject: &str, _between: &str) {}
+}
+
+/// Escribe mensajes en la terminal de un agente lanzado desde Kiti (ADR 0017). No bloquea: la
+/// escritura va en otra tarea, y si falla se devuelven los ids con
+/// `RuntimeHandle::mail_undeliver`.
+pub trait MailCourier: Send + 'static {
+    fn deliver(&mut self, pid: crate::domain::Pid, text: String, ids: Vec<u64>);
 }
 
 /// Proyecto (raíz git o carpeta) de un `cwd` (ADR 0009). Puede consultar el disco y guardar
