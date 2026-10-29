@@ -10,7 +10,7 @@ pub mod scanner;
 pub mod summary;
 pub mod telemetry;
 
-pub use alerts::alert_text;
+pub use alerts::{alert_text, quota_text};
 pub use runtime::{AgentBrief, Runtime, RuntimeHandle};
 pub use scanner::{run_scanner, run_scanner_with};
 pub use summary::Summary;

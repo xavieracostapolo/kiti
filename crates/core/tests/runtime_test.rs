@@ -605,3 +605,87 @@ async fn el_foco_pedido_sin_ventana_llega_tras_el_snapshot() {
     handle.subscribe(again).await.expect("subscribe ok");
     assert_eq!(again_msgs.lock().unwrap().len(), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn la_cuota_se_publica_y_se_reenvia_tras_el_snapshot() {
+    let handle = spawn(TestKiller, ManualClock::new(1000));
+    let first = TestPublisher::new();
+    let first_msgs = first.messages.clone();
+    handle.subscribe(first).await.expect("subscribe ok");
+    let window = kiti_core::domain::QuotaWindow {
+        label: "semana".into(),
+        weekly: true,
+        remaining: 0.395,
+        resets_at: 1_793_572_705_000,
+    };
+    handle.quota(Provider::Claude, vec![window]).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let expected = ServerMsg::Quota {
+        provider: kiti_protocol::Provider::Claude,
+        windows: vec![kiti_protocol::QuotaWindow {
+            label: "semana".into(),
+            weekly: true,
+            remaining_pct: 40,
+            resets_at: 1_793_572_705_000,
+        }],
+    };
+    assert!(first_msgs.lock().unwrap().contains(&expected));
+    // Una ventana que se conecta después la recibe justo tras el Snapshot.
+    let later = TestPublisher::new();
+    let later_msgs = later.messages.clone();
+    handle.subscribe(later).await.expect("subscribe ok");
+    let list = later_msgs.lock().unwrap();
+    assert!(matches!(list[0], ServerMsg::Snapshot { .. }));
+    assert_eq!(list[1], expected);
+}
+
+#[tokio::test(start_paused = true)]
+async fn git_solo_se_publica_si_cambia_y_se_reenvia_tras_el_snapshot() {
+    let handle = spawn(TestKiller, ManualClock::new(1000));
+    handle
+        .register_agent(sample_agent(77), Timestamp(1000))
+        .await;
+    assert_eq!(
+        handle.live_projects().await,
+        vec!["/Users/dev/app".to_owned()]
+    );
+    let first = TestPublisher::new();
+    let msgs = first.messages.clone();
+    handle.subscribe(first).await.expect("subscribe ok");
+    let status = kiti_core::domain::GitStatus {
+        branch: Some("main".into()),
+        ahead: 1,
+        behind: 0,
+        changed: 3,
+    };
+    let update = vec![("/Users/dev/app".to_owned(), Some(status))];
+    handle.git(update.clone()).await;
+    handle.git(update).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    let git_msgs = |list: &[ServerMsg]| {
+        list.iter()
+            .filter(|m| matches!(m, ServerMsg::Git { .. }))
+            .count()
+    };
+    assert_eq!(
+        git_msgs(&msgs.lock().unwrap()),
+        1,
+        "el mismo estado no se repite"
+    );
+    let later = TestPublisher::new();
+    let later_msgs = later.messages.clone();
+    handle.subscribe(later).await.expect("subscribe ok");
+    let list = later_msgs.lock().unwrap();
+    assert_eq!(
+        list[1],
+        ServerMsg::Git {
+            project: "/Users/dev/app".into(),
+            git: Some(kiti_protocol::GitInfo {
+                branch: Some("main".into()),
+                ahead: 1,
+                behind: 0,
+                changed: 3,
+            }),
+        }
+    );
+}

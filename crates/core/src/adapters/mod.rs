@@ -9,6 +9,7 @@ mod clock;
 pub mod conversations;
 #[cfg(target_os = "macos")]
 pub mod focus;
+pub mod git_status;
 mod hook_config;
 #[cfg(feature = "hooks")]
 pub mod hooks;
@@ -21,6 +22,7 @@ mod projects;
 pub mod pty;
 #[cfg(feature = "scanner")]
 mod scanner;
+pub mod statusline;
 pub mod tail;
 #[cfg(feature = "pty")]
 pub mod tmux;

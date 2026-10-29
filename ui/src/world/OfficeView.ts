@@ -4,11 +4,12 @@
 // Solo traduce el estado a Pixi; la lógica vive en domain/ y state/.
 
 import { BitmapText, Container, Graphics, Rectangle, Sprite, type Texture } from "pixi.js";
+import { boardLines, timeline } from "../domain/board";
 import type { Lod } from "../domain/lod";
 import { displayName } from "../domain/names";
 import { decorFor, personFor } from "../domain/people";
 import { charsIn, fitLines, fitWords, fontFor, LINE_H } from "../domain/text";
-import type { AgentState, ConversationInfo, Provider, StatusKind } from "../protocol";
+import type { AgentState, ConversationInfo, GitInfo, Provider, StatusKind } from "../protocol";
 import { anchors, type RoomSize } from "./officeTemplate";
 import { PAL, PROVIDER_COLOR, PROVIDER_LETTER, STATUS_COLOR } from "./palette";
 
@@ -25,6 +26,8 @@ export type OfficeArt = {
  */
 const LABEL = { screenPx: 13, min: 4, max: 9, width: 96, height: 22, maxLines: 3 };
 const NOTE = { screenPx: 11, min: 3, max: 7, height: 40, maxLines: 4 };
+/** Tablero del zoom cercano (ADR 0016): en el suelo, bajo la insignia del proveedor. */
+const BOARD = { x: 4, y: 55, width: 58, font: 4, pad: 3, bar: 4 };
 /** Cartel de la vista lejana: en la parte baja de la sala para no tapar a la persona ni el escritorio. */
 const CARD = { screenPx: 12, min: 9, max: 24, maxLines: 3, pad: 8 };
 /** Nombres de carpeta enteros: el corte lo hace `fitLines`. */
@@ -73,6 +76,14 @@ export class OfficeView {
   private cardSize = CARD.max;
   /** Lejos se ve el cartel; en mid y near, el título de la pared y la nota. */
   private far = true;
+  private near_ = false;
+  /** Tablero del zoom cercano (ADR 0016): sesión, git y la última hora. */
+  private readonly board = new Container();
+  private readonly boardBg = new Graphics();
+  private readonly boardText: BitmapText;
+  private readonly boardTimeline = new Graphics();
+  private git: GitInfo | null | undefined;
+  private boardStale = true;
   /** Texto oculto que cambió: se recalcula al volver a verse (el zoom continuo no lo paga). */
   private readonly stale = { label: false, note: false, card: false };
   /** Cartel de la vista lejana (Hito 13). */
@@ -83,6 +94,8 @@ export class OfficeView {
   constructor(
     private readonly art: OfficeArt,
     private readonly size: RoomSize,
+    /** Reloj para la línea de tiempo del tablero. */
+    private readonly now: () => number = Date.now,
   ) {
     this.background = new Sprite(art.templates.claude[0]);
     const a = anchors(size);
@@ -108,7 +121,13 @@ export class OfficeView {
     this.person.position.set(a.person.x, a.person.y);
     this.person.visible = false;
 
-    this.near.addChild(this.bubble, this.bubbleText);
+    this.boardText = new BitmapText({
+      text: "",
+      style: { fontFamily: FONT, fontSize: BOARD.font },
+    });
+    this.board.addChild(this.boardBg, this.boardText, this.boardTimeline);
+    this.board.position.set(BOARD.x, BOARD.y);
+    this.near.addChild(this.bubble, this.bubbleText, this.board);
     const badgeBg = new Graphics()
       .roundRect(0, 0, 22, 14, 3)
       .fill(PAL.housing)
@@ -163,6 +182,62 @@ export class OfficeView {
     } else if (kind !== "working" && this.animPhase !== 0) {
       this.resetWorkingAnimation(kind);
     }
+    if (
+      prev?.model !== agent.model ||
+      prev?.contextPct !== agent.contextPct ||
+      prev?.costCents !== agent.costCents ||
+      prev?.history !== agent.history
+    ) {
+      this.refreshBoard();
+    }
+  }
+
+  /** Texto del tablero si se ve (tests E2E): `undefined` fuera del zoom cercano. */
+  boardShown(): string | undefined {
+    return this.near_ && this.boardText.text !== "" ? this.boardText.text : undefined;
+  }
+
+  /** Estado de git del proyecto de esta oficina (ADR 0016). */
+  setGit(git: GitInfo | null | undefined): void {
+    if (git === this.git) return;
+    this.git = git;
+    this.refreshBoard();
+  }
+
+  /** Solo se dibuja si se ve (zoom cercano); si no, se marca para cuando se vea. */
+  private refreshBoard(): void {
+    if (!this.near_) {
+      this.boardStale = true;
+      return;
+    }
+    this.boardStale = false;
+    this.renderBoard();
+  }
+
+  private renderBoard(): void {
+    const agent = this.agent;
+    this.boardBg.clear();
+    this.boardTimeline.clear();
+    this.boardText.text = "";
+    if (!agent || this.conversation) return;
+    const lines = boardLines(agent, this.git);
+    const lineH = BOARD.font * LINE_H;
+    const textH = lines.length * lineH;
+    this.boardText.text = lines.join("\n");
+    this.boardText.position.set(BOARD.pad, BOARD.pad);
+    // Última hora: tramos del color del semáforo; el gris de "inactivo" se atenúa.
+    const barY = BOARD.pad + textH + (lines.length ? 2 : 0);
+    const barW = BOARD.width - 2 * BOARD.pad;
+    this.boardTimeline.rect(BOARD.pad, barY, barW, BOARD.bar).fill({ color: PAL.lampOff });
+    for (const seg of timeline(agent.history, this.now())) {
+      const x = BOARD.pad + seg.from * barW;
+      const w = Math.max(0.5, (seg.to - seg.from) * barW);
+      this.boardTimeline
+        .rect(x, barY, w, BOARD.bar)
+        .fill({ color: STATUS_COLOR[seg.kind], alpha: seg.kind === "idle" ? 0.45 : 1 });
+    }
+    const height = barY + BOARD.bar + BOARD.pad;
+    this.boardBg.rect(0, 0, BOARD.width, height).fill({ color: PAL.housing, alpha: 0.85 });
   }
 
   /** Avanza un paso de animación del personaje y el monitor al recibir actividad real/simulada. */
@@ -240,6 +315,8 @@ export class OfficeView {
     this.label.visible = !this.far;
     this.note.visible = !this.far;
     this.near.visible = lod === "near";
+    this.near_ = lod === "near";
+    if (this.near_ && this.boardStale) this.refreshBoard();
     for (const which of ["label", "note", "card"] as const) {
       if (this.stale[which]) this.refresh(which);
     }

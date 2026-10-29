@@ -73,15 +73,22 @@ async fn handle(
     if !header_str(header::CONTENT_TYPE).is_some_and(|c| c.starts_with("application/json")) {
         return reject("content_type", StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
-    let Ok(provider) = Provider::from_str(&provider) else {
-        return reject("provider", StatusCode::NOT_FOUND);
+    // La status line de Claude (ADR 0015) entra como un evento más de Claude.
+    let (provider, forced_event) = if provider == "statusline" {
+        (Provider::Claude, Some("StatusLine".to_owned()))
+    } else {
+        let Ok(provider) = Provider::from_str(&provider) else {
+            return reject("provider", StatusCode::NOT_FOUND);
+        };
+        (provider, None)
     };
     let ppid =
         header_str(header::HeaderName::from_static("x-kiti-ppid")).and_then(|v| v.parse().ok());
     // Solo un nombre de evento: letras, hasta 32.
     let event = header_str(header::HeaderName::from_static("x-kiti-event"))
         .filter(|v| !v.is_empty() && v.len() <= 32 && v.chars().all(|c| c.is_ascii_alphabetic()))
-        .map(str::to_owned);
+        .map(str::to_owned)
+        .or(forced_event);
     debug!(event = "hook.accepted", provider = %provider, bytes = body.len());
     if ctx
         .tx
@@ -176,6 +183,17 @@ pub async fn run_hook_pump<C: crate::ports::Clock>(
 ) {
     use crate::ingestion::{antigravity, claude, codex, gemini};
     while let Some(req) = rx.recv().await {
+        // Status line de Claude: solo trae la cuota (ADR 0015), no es un hook del agente.
+        if req.provider == Provider::Claude && req.event.as_deref() == Some("StatusLine") {
+            if let Some(windows) = claude::parse_rate_limits(&req.body) {
+                runtime.quota(Provider::Claude, windows).await;
+            }
+            // Y el tablero de la oficina (ADR 0016).
+            if let Some((session, stats)) = claude::parse_session_stats(&req.body) {
+                runtime.session_stats(session, stats, clock.now()).await;
+            }
+            continue;
+        }
         let parsed = match req.provider {
             Provider::Claude => claude::parse_hook(&req.body),
             Provider::Codex => codex::parse_hook(&req.body),

@@ -91,6 +91,30 @@ pub struct AgentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_prompt: Option<String>,
+    /// Modelo de la sesión (ADR 0016).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub model: Option<String>,
+    /// Contexto usado, en porcentaje.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub context_pct: Option<u8>,
+    /// Coste estimado de la sesión, en céntimos de dólar.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cost_cents: Option<u32>,
+    /// Últimos cambios de estado, el más reciente al final (línea de tiempo del tablero).
+    #[serde(default)]
+    pub history: Vec<StatusSpan>,
+}
+
+/// Un cambio de estado: desde `since` el agente estuvo en `kind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StatusSpan {
+    pub kind: StatusKind,
+    pub since: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -149,6 +173,17 @@ pub enum ServerMsg {
         removed: Vec<AgentId>,
     },
     Metrics(CoreMetrics),
+    /// Estado de git de un proyecto (ADR 0016); `git` vacío si no es un repositorio. Se reenvía
+    /// el último tras cada Snapshot.
+    Git {
+        project: String,
+        git: Option<GitInfo>,
+    },
+    /// Cuota de uso de un proveedor (ADR 0015). Se reenvía la última tras cada Snapshot.
+    Quota {
+        provider: Provider,
+        windows: Vec<QuotaWindow>,
+    },
     /// Enfocar y seleccionar esa oficina (clic en una notificación, ADR 0010).
     Focus {
         id: AgentId,
@@ -190,6 +225,32 @@ pub struct TerminalInfo {
     pub provider: Provider,
     pub cwd: String,
     pub running: bool,
+}
+
+/// Estado de git de un proyecto para el tablero de la oficina (ADR 0016).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GitInfo {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub branch: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub changed: u32,
+}
+
+/// Una ventana de límite de uso (ADR 0015): "5 h", "semana", "Gemini Models · semana"…
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct QuotaWindow {
+    pub label: String,
+    pub weekly: bool,
+    /// Lo que queda, en porcentaje (0-100).
+    pub remaining_pct: u8,
+    /// Cuándo se reinicia, en ms desde epoch (0 si no se sabe).
+    pub resets_at: u64,
 }
 
 /// Resultado de "Ir a su terminal" para un agente abierto fuera de Kiti (ADR 0012).
@@ -260,6 +321,10 @@ mod tests {
             title: Some("Hito 11".into()),
             activity: None,
             last_prompt: None,
+            model: None,
+            context_pct: None,
+            cost_cents: None,
+            history: vec![],
         }
     }
 
@@ -289,7 +354,8 @@ mod tests {
                     "lastEventAt": 1_700_000_005_000u64,
                     "project": "/Users/dev/kiti",
                     "sessionId": "s-1",
-                    "title": "Hito 11"
+                    "title": "Hito 11",
+                    "history": []
                 }],
                 "removed": ["codex:1:2"]
             })

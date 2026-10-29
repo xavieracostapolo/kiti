@@ -12,7 +12,9 @@ use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pum
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
 use kiti_core::adapters::{GitProjects, SysinfoScanner, SystemClock, UnixKiller};
-use kiti_core::application::{Runtime, RuntimeHandle, Telemetry, alert_text, run_scanner_with};
+use kiti_core::application::{
+    Runtime, RuntimeHandle, Telemetry, alert_text, quota_text, run_scanner_with,
+};
 use kiti_core::domain::{AgentId, Timestamp};
 use kiti_core::ingestion::claude::{has_conversations, is_session_id};
 use kiti_core::ports::{
@@ -930,6 +932,8 @@ pub fn run() {
                             app: app.handle().clone(),
                         });
                     on_alert_click(app.handle(), handle.clone());
+                    start_antigravity_quota(handle.clone());
+                    start_git_status(handle.clone());
                     tauri::async_runtime::spawn(runtime.run());
                     let home = app.path().home_dir().ok();
                     tauri::async_runtime::spawn(run_scanner_with(
@@ -1071,6 +1075,92 @@ impl AlertSink for NativeAlerts {
             Err(e) => warn!(event = "alert.error", error = %e),
         }
     }
+
+    /// Cuota semanal baja (ADR 0015). Avisa aunque Kiti esté al frente: el indicador de la barra
+    /// es pequeño y esto pasa una vez por semana como mucho.
+    fn quota_low(&mut self, alert: kiti_core::domain::QuotaAlert) {
+        let (title, body) = quota_text(&alert, SystemClock.now().0);
+        match self
+            .app
+            .notification()
+            .builder()
+            .title(title)
+            .body(body)
+            .show()
+        {
+            Ok(()) => info!(event = "alert.sent", provider = %alert.provider, kind = "QuotaLow"),
+            Err(e) => warn!(event = "alert.error", error = %e),
+        }
+    }
+}
+
+/// Git de los proyectos con agentes vivos para el tablero de la oficina (ADR 0016), cada 15 s.
+fn start_git_status(runtime: RuntimeHandle) {
+    use kiti_core::adapters::git_status::status;
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(15));
+        loop {
+            ticker.tick().await;
+            if runtime.is_closed() {
+                return;
+            }
+            let projects = runtime.live_projects().await;
+            if projects.is_empty() {
+                continue;
+            }
+            let started = std::time::Instant::now();
+            let statuses = tauri::async_runtime::spawn_blocking(move || {
+                projects
+                    .into_iter()
+                    .map(|p| {
+                        let s = status(std::path::Path::new(&p));
+                        (p, s)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .unwrap_or_default();
+            debug!(
+                event = "git.updated",
+                projects = statuses.len(),
+                duration_ms = started.elapsed().as_millis() as u64
+            );
+            runtime.git(statuses).await;
+        }
+    });
+}
+
+/// Cuota de Antigravity (ADR 0015): `agy -p /usage` al arrancar y cada 5 minutos, si `agy` está
+/// instalado. No gasta tokens.
+fn start_antigravity_quota(runtime: RuntimeHandle) {
+    use kiti_core::adapters::antigravity::{find_agy, usage_json};
+    use kiti_core::ingestion::antigravity::parse_usage;
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(Duration::from_secs(10)).await;
+        let mut ticker = tokio::time::interval(Duration::from_secs(300));
+        loop {
+            ticker.tick().await;
+            if runtime.is_closed() {
+                return;
+            }
+            let read = tauri::async_runtime::spawn_blocking(|| {
+                let agy = find_agy()?;
+                let body = usage_json(&agy, Duration::from_secs(30))?;
+                parse_usage(&body).ok()
+            })
+            .await
+            .ok()
+            .flatten();
+            match read {
+                Some(windows) => {
+                    runtime
+                        .quota(kiti_core::domain::Provider::Antigravity, windows)
+                        .await
+                }
+                None => debug!(event = "quota.error", provider = "antigravity"),
+            }
+        }
+    });
 }
 
 /// Clic en un aviso: abre la ventana (aunque estuviera cerrada) y enfoca la oficina del agente.

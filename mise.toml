@@ -56,6 +56,14 @@ run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core -
 description = "Instala los hooks de Kiti en ~/.gemini/config/hooks.json (Antigravity CLI, ADR 0014)"
 run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core --example hooks -- install-antigravity target/release/kiti-hook"
 
+[tasks."statusline:install"]
+description = "La status line de Claude pasa por Kiti para leer la cuota (ADR 0015); la tuya se sigue viendo igual"
+run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core --example hooks -- install-statusline target/release/kiti-hook"
+
+[tasks."statusline:uninstall"]
+description = "Restaura tu status line de Claude original"
+run = "cargo run -q -p kiti-core --example hooks -- uninstall-statusline"
+
 [tasks."hooks:uninstall"]
 description = "Quita los hooks de Kiti de ~/.claude/settings.json (deja los tuyos intactos)"
 run = "cargo run -q -p kiti-core --example hooks -- uninstall"

@@ -15,6 +15,7 @@ const agent: AgentState = {
   startedAt: 0,
   status: { kind: "working", reason: "hook", since: 0 },
   lastEventAt: 0,
+  history: [],
 };
 
 function setup() {

@@ -5,6 +5,8 @@ import { PROTOCOL_VERSION } from "../../protocol";
 import type { ConversationApi, TerminalApi, Transport } from "../Transport";
 import { FakeConversations, fakeConversations } from "./FakeConversations";
 import { FakeTerminals } from "./FakeTerminals";
+import { fakeGit } from "./fakeGit";
+import { fakeQuota } from "./fakeQuota";
 import { SimFleet, TICK_MS } from "./fleet";
 
 export type Schedule = (tick: () => void) => () => void;
@@ -21,6 +23,8 @@ export type SimOptions = {
   terminals?: boolean;
   /** Conversaciones cerradas falsas (`?conversations=1`). */
   conversations?: boolean;
+  /** Cuota de uso falsa (`?quota=1`). */
+  quota?: boolean;
 };
 
 const intervalSchedule: Schedule = (tick) => {
@@ -60,6 +64,8 @@ export class SimTransport implements Transport {
     for (let i = 0; i < (this.opts.steps ?? 0); i++) this.fleet.step();
     this.seq = 0;
     onMsg({ type: "Snapshot", seq: this.seq, agents: this.fleet.snapshot() });
+    if (this.opts.quota) for (const msg of fakeQuota(this.fleet.now)) onMsg(msg);
+    for (const msg of fakeGit(this.fleet.snapshot())) onMsg(msg);
     if (!this.opts.freeze)
       this.cancel = (this.opts.schedule ?? intervalSchedule)(() => this.tick());
     return { protocolVersion: PROTOCOL_VERSION, appVersion: "0.1.0-sim", source: "sim" };

@@ -2,6 +2,7 @@
 import type { AgentId } from "./AgentId";
 import type { Provider } from "./Provider";
 import type { Status } from "./Status";
+import type { StatusSpan } from "./StatusSpan";
 
 export type AgentState = { id: AgentId, provider: Provider, pid: number, cwd: string, startedAt: number, status: Status, lastTool?: string, lastEventAt: number, 
 /**
@@ -23,4 +24,20 @@ activity?: string,
 /**
  * Último pedido del usuario, recortado.
  */
-lastPrompt?: string, };
+lastPrompt?: string, 
+/**
+ * Modelo de la sesión (ADR 0016).
+ */
+model?: string, 
+/**
+ * Contexto usado, en porcentaje.
+ */
+contextPct?: number, 
+/**
+ * Coste estimado de la sesión, en céntimos de dólar.
+ */
+costCents?: number, 
+/**
+ * Últimos cambios de estado, el más reciente al final (línea de tiempo del tablero).
+ */
+history: Array<StatusSpan>, };

@@ -40,6 +40,7 @@ async function bootstrap() {
       freeze: params.freeze,
       terminals: params.terminals,
       conversations: params.conversations,
+      quota: params.quota,
     });
     transport = sim;
     getNow = () => sim.now();

@@ -110,8 +110,11 @@ pub fn classify(p: &ProcessSnapshot) -> Option<(Provider, Role)> {
     // con el que se lanzó (`/opt/homebrew/bin/agy`).
     if name == "antigravity" || name == "agy" {
         let sub = p.argv.get(1).map(String::as_str);
+        // `agy -p /usage`: la consulta de cuota de Kiti (ADR 0015), no una sesión.
+        let usage = p.argv.iter().any(|a| a == "/usage");
         return match sub {
             Some(s) if ANTIGRAVITY_NOT_AGENT.contains(&s) => None,
+            _ if usage => None,
             _ => Some((Provider::Antigravity, Role::Agent)),
         };
     }
@@ -261,6 +264,16 @@ mod tests {
         assert_eq!(
             class(&snap(11, 1, exe, &["agy", "--conversation", "c-1"])),
             Some((Provider::Antigravity, Role::Agent))
+        );
+        // La consulta de cuota que lanza Kiti (ADR 0015) tampoco es una oficina.
+        assert_eq!(
+            class(&snap(
+                14,
+                1,
+                exe,
+                &["agy", "-p", "/usage", "--output-format", "json"]
+            )),
+            None
         );
         for sub in [
             "models",

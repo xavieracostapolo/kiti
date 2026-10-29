@@ -12,6 +12,19 @@ use super::status::{Status, StatusKind, StatusReason, TrafficLight};
 
 pub type Events = SmallVec<[DomainEvent; 2]>;
 
+/// Cambios de estado que se recuerdan para la línea de tiempo del tablero (ADR 0016).
+pub const HISTORY_MAX: usize = 32;
+
+/// Datos de la sesión que da la status line de Claude (ADR 0016). `None` = no se sabe.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AgentStats {
+    pub model: Option<String>,
+    /// Contexto usado, en porcentaje.
+    pub context_pct: Option<u8>,
+    /// Coste estimado de la sesión, en céntimos de dólar.
+    pub cost_cents: Option<u32>,
+}
+
 /// Un proceso ya clasificado como agente. En el Hito 3 lo produce `classify` desde un
 /// `ProcessSnapshot`; en el Hito 2, `SimFleet`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +51,8 @@ pub enum AgentInput {
     Info(AgentInfo),
     /// El registro enlazó la conversación que el proceso tiene abierta (ADR 0009).
     Linked(SessionId),
+    /// Modelo, contexto y coste de la sesión (ADR 0016). Solo enriquece: no cambia el color.
+    Stats(AgentStats),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,6 +73,9 @@ pub struct Agent {
     activity: Option<String>,
     last_prompt: Option<String>,
     session: Option<SessionId>,
+    stats: AgentStats,
+    /// Últimos cambios de estado `(estado, desde)`, el más reciente al final.
+    history: std::collections::VecDeque<(StatusKind, Timestamp)>,
     last_event_at: Timestamp,
     exit_expected: bool,
     kill_requested: bool,
@@ -87,6 +105,8 @@ impl Agent {
             activity: None,
             last_prompt: None,
             session: None,
+            stats: AgentStats::default(),
+            history: std::collections::VecDeque::from([(StatusKind::Idle, now)]),
             last_event_at: now,
             exit_expected: false,
             kill_requested: false,
@@ -132,6 +152,15 @@ impl Agent {
 
     pub fn last_prompt(&self) -> Option<&str> {
         self.last_prompt.as_deref()
+    }
+
+    pub fn stats(&self) -> &AgentStats {
+        &self.stats
+    }
+
+    /// Últimos cambios de estado, el más reciente al final (ADR 0016).
+    pub fn history(&self) -> &std::collections::VecDeque<(StatusKind, Timestamp)> {
+        &self.history
     }
 
     /// Conversación abierta, si ya se enlazó.
@@ -196,6 +225,12 @@ impl Agent {
                     }
                 }
                 if changed {
+                    self.revision += 1;
+                }
+            }
+            AgentInput::Stats(stats) => {
+                if &self.stats != stats {
+                    self.stats = stats.clone();
                     self.revision += 1;
                 }
             }
@@ -336,6 +371,10 @@ impl Agent {
         }
         if from != kind {
             self.status.since = now;
+            self.history.push_back((kind, now));
+            if self.history.len() > HISTORY_MAX {
+                self.history.pop_front();
+            }
             ev.push(DomainEvent::StatusChanged {
                 id: self.id,
                 from,
@@ -755,5 +794,49 @@ mod tests {
             (None, None),
             "/clear: conversación nueva"
         );
+    }
+
+    #[test]
+    fn guarda_las_estadisticas_de_la_sesion() {
+        let mut a = agent();
+        let rev = a.revision();
+        let stats = AgentStats {
+            model: Some("Opus 5.5".into()),
+            context_pct: Some(62),
+            cost_cents: Some(120),
+        };
+        a.apply(&AgentInput::Stats(stats.clone()), T0);
+        assert_eq!(a.stats(), &stats);
+        assert!(a.revision() > rev);
+        // Lo mismo otra vez no es un cambio visible.
+        let rev = a.revision();
+        a.apply(&AgentInput::Stats(stats), T0);
+        assert_eq!(a.revision(), rev);
+    }
+
+    #[test]
+    fn recuerda_los_ultimos_cambios_de_estado() {
+        let mut a = agent();
+        assert_eq!(a.history().len(), 1, "el estado inicial cuenta");
+        a.apply(
+            &AgentInput::Signal(Signal::PromptSubmit),
+            Timestamp(T0.0 + 10),
+        );
+        a.apply(&AgentInput::Signal(Signal::Stop), Timestamp(T0.0 + 20));
+        let kinds: Vec<StatusKind> = a.history().iter().map(|(k, _)| *k).collect();
+        assert_eq!(
+            kinds,
+            [StatusKind::Idle, StatusKind::Working, StatusKind::Idle]
+        );
+        assert_eq!(a.history().back().unwrap().1, Timestamp(T0.0 + 20));
+        for i in 0..100 {
+            let signal = if i % 2 == 0 {
+                Signal::PromptSubmit
+            } else {
+                Signal::Stop
+            };
+            a.apply(&AgentInput::Signal(signal), Timestamp(T0.0 + 100 + i));
+        }
+        assert_eq!(a.history().len(), HISTORY_MAX);
     }
 }

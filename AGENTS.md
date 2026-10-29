@@ -16,7 +16,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 17 en `main`. El último, "Antigravity CLI", está en el [ADR 0014](docs/decisiones/0014-antigravity/README.md).
+- **Fase:** Hitos 1 a 19 en `main`. El último, "Tablero de la oficina", está en el [ADR 0016](docs/decisiones/0016-tablero-de-oficina/README.md).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -43,6 +43,8 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
 | [0012](docs/decisiones/0012-ir-a-la-terminal/README.md) | «Ir a su terminal» para agentes abiertos fuera de Kiti: pestaña exacta en Ghostty y Terminal.app; otras apps, al frente |
 | [0013](docs/decisiones/0013-pixel-art-kenney/README.md) | Oficinas con tiles de Kenney (CC0): RPG Pack (sala), Indoors (muebles) y Urban (personas); lo funcional sigue por código |
 | [0014](docs/decisiones/0014-antigravity/README.md) | Antigravity CLI (`agy`, sucesor de Gemini CLI) como proveedor: hooks por comando, amarillo desde su base de datos, retomar con `--conversation` |
+| [0015](docs/decisiones/0015-cuota/README.md) | Cuota de uso: Claude por su status line (`rate_limits`), Antigravity por `agy -p /usage`; chip en la barra y aviso al bajar del 20 % semanal |
+| [0016](docs/decisiones/0016-tablero-de-oficina/README.md) | Tablero en el zoom cercano: modelo, contexto y coste (status line de Claude), git del proyecto y la última hora |
 
 ## Decisiones tomadas (no repetir)
 
@@ -185,6 +187,8 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **15. Arreglos:** un agente que ya trabajaba al arrancar Kiti sale en verde; el clic en un aviso abre Kiti y enfoca la oficina.
 - [x] **16. Pixel art con Kenney:** sala de tiles (madera, muebles), una persona por agente y alfombra del color del proveedor.
 - [x] **17. Antigravity CLI:** cuarto proveedor (`agy`), con semáforo, permiso, título, último pedido, lanzar y retomar conversaciones.
+- [x] **18. Cuota:** cuánto queda del plan de Claude (5 h y semana) y de Antigravity, en la barra superior, con aviso al bajar del 20 % semanal.
+- [x] **19. Tablero de la oficina:** en el zoom cercano, modelo, contexto y coste de la sesión, git del proyecto y la última hora.
 - [ ] **Después:** soporte para Windows.
 
 ## Pendientes de verificar
@@ -231,6 +235,8 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run hooks:install-codex  # solo si usas Codex CLI (luego /hooks en Codex)
   mise run hooks:install-gemini # solo si usas Gemini CLI
   mise run hooks:install-antigravity # Antigravity CLI (agy), ADR 0014
+  mise run statusline:install   # la status line de Claude pasa por Kiti para leer la cuota (ADR 0015)
+  mise run statusline:uninstall # deja tu status line como estaba
   mise run hooks:uninstall # quita los hooks de Kiti de ~/.claude/settings.json (los tuyos quedan)
   mise run app:build     # release sin empaquetar: target/release/kiti-app
   mise run app:bundle    # Kiti.app y copia en el Escritorio (cierra Kiti antes)
@@ -238,6 +244,6 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
-- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant` y `dimmed`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas), `quota=1` (cuota falsa de Claude y Antigravity). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant`, `dimmed` y `board`. El panel de debug se abre con `Cmd+Shift+D`.
 - **Releases:** un tag `vX.Y.Z` firma, notariza y publica Kiti.app en borrador (`.github/workflows/release.yml`). Secrets y pasos en [docs/release.md](docs/release.md).
 - Los recursos gráficos son de Kenney.nl (CC0), en `ui/public/assets/kenney/` con sus licencias (ADR 0013).

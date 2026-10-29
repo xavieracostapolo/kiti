@@ -143,6 +143,50 @@ pub fn parse_hook(body: &[u8], event: Option<&str>) -> Result<HookEvent, AclErro
     })
 }
 
+#[derive(Deserialize)]
+struct UsageBucket {
+    window: Option<String>,
+    remaining_fraction: Option<f64>,
+    reset_time: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct UsageGroup {
+    name: Option<String>,
+    #[serde(default)]
+    buckets: Vec<UsageBucket>,
+}
+
+/// Salida de `agy -p /usage --output-format json` → ventanas de cuota (ADR 0015).
+pub fn parse_usage(body: &[u8]) -> Result<Vec<crate::domain::QuotaWindow>, AclError> {
+    let v: serde_json::Value =
+        serde_json::from_slice(body).map_err(|e| AclError::Json(e.to_string()))?;
+    let groups: Vec<UsageGroup> = serde_json::from_value(v["command"]["data"]["groups"].clone())
+        .map_err(|_| AclError::Missing("command.data.groups"))?;
+    let mut windows = Vec::new();
+    for g in groups {
+        let group = g.name.unwrap_or_default();
+        for b in g.buckets {
+            let (Some(window), Some(remaining)) = (b.window, b.remaining_fraction) else {
+                continue;
+            };
+            let weekly = window == "weekly";
+            let span = if weekly { "semana" } else { "5 h" };
+            windows.push(crate::domain::QuotaWindow {
+                label: format!("{group} · {span}"),
+                weekly,
+                remaining: remaining.clamp(0.0, 1.0),
+                resets_at: b
+                    .reset_time
+                    .as_deref()
+                    .and_then(super::rfc3339_ms)
+                    .unwrap_or(0),
+            });
+        }
+    }
+    Ok(windows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +276,28 @@ mod tests {
         assert!(parse_hook(body("").as_bytes(), None).is_err());
         assert!(parse_hook(br#"{"workspacePaths":[]}"#, Some("Stop")).is_err());
         assert!(parse_hook(b"no json", Some("Stop")).is_err());
+    }
+
+    #[test]
+    fn la_cuota_de_usage_por_grupo_y_ventana() {
+        // Con la forma real de `agy -p /usage --output-format json` (1.4.7).
+        let body = br#"{"conversation_id":"","status":"SUCCESS","response":"...","usage":{"total_tokens":0},
+          "command":{"name":"usage","data":{"description":"d","groups":[
+            {"name":"Gemini Models","buckets":[
+              {"id":"gemini-weekly","window":"weekly","remaining_fraction":1,"reset_time":"2026-11-01T22:38:25Z"},
+              {"id":"gemini-5h","window":"5h","remaining_fraction":1,"reset_time":"2026-10-26T06:17:37Z"}]},
+            {"name":"Claude and GPT models","buckets":[
+              {"id":"3p-weekly","window":"weekly","remaining_fraction":0.4797,"reset_time":"2026-11-01T01:50:35Z"}]}]}}}"#;
+        let w = parse_usage(body).unwrap();
+        assert_eq!(w.len(), 3);
+        assert_eq!(w[0].label, "Gemini Models · semana");
+        assert!(w[0].weekly);
+        assert_eq!(w[1].label, "Gemini Models · 5 h");
+        assert!(!w[1].weekly);
+        assert_eq!(w[2].label, "Claude and GPT models · semana");
+        assert!((w[2].remaining - 0.4797).abs() < 1e-9);
+        assert_eq!(w[0].resets_at, 1_793_572_705_000);
+        assert!(parse_usage(b"{}").is_err());
+        assert!(parse_usage(b"no json").is_err());
     }
 }

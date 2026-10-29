@@ -5,6 +5,10 @@
 //! clasifica (manda su `getppid()` en `X-Kiti-Ppid` y el core sube por los ancestros), envía los
 //! bytes tal cual y, para Gemini, imprime `{}` porque su stdout debe ser solo JSON.
 //!
+//! `kiti-hook statusline '<comando>'` (ADR 0015) va delante de la status line de Claude: ejecuta
+//! el comando del usuario con el mismo stdin (su salida es la status line, tal cual) y después
+//! reenvía el JSON a Kiti, que solo lee la cuota (`rate_limits`).
+//!
 //! Antigravity no dice qué evento es en su JSON: va en `X-Kiti-Event`. Y exige respuesta: en
 //! `PreToolUse` y `Stop`, `{"decision":"allow"}` (delega en su política normal: Kiti no decide).
 
@@ -64,12 +68,38 @@ fn antigravity_reply(event: &str) -> &'static [u8] {
     }
 }
 
+/// Ejecuta la status line del usuario con `sh -c`, pasándole el mismo JSON por stdin. Su
+/// stdout y stderr van directos a Claude.
+fn run_user_statusline(command: &str, body: &[u8]) {
+    let Ok(mut child) = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg(command)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+    else {
+        return;
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(body);
+    }
+    let _ = child.wait();
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let provider = args.next().unwrap_or_default();
     let event = args.next().filter(|e| valid_event(e));
     let mut body = Vec::new();
     let _ = std::io::stdin().take(MAX_BODY).read_to_end(&mut body);
+    if provider == "statusline" {
+        // `event` aquí no es un evento: es el comando del usuario (sin filtrar por `valid_event`).
+        if let Some(command) = std::env::args().nth(2).filter(|c| !c.trim().is_empty()) {
+            let _ = std::io::stdout().flush();
+            run_user_statusline(&command, &body);
+        }
+        let _ = forward("statusline", None, &body);
+        return;
+    }
     match provider.as_str() {
         "claude" | "codex" | "gemini" => {
             let _ = forward(&provider, None, &body);

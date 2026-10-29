@@ -9,6 +9,7 @@ import type { KitiStore } from "../state/store";
 import { PAL, STATUS_COLOR } from "../world/palette";
 import { STATUS_LABEL as LABEL } from "./labels";
 import s from "./panels.module.css";
+import { QuotaBadge } from "./QuotaBadge";
 
 const ORDER: StatusKind[] = ["working", "waiting", "idle", "error", "dead"];
 
@@ -28,13 +29,15 @@ type Props = {
   store: KitiStore;
   /** Solo con terminales (app nativa): lanza un agente del CLI elegido (ADR 0007). */
   onLaunch?: (provider: Provider) => void;
+  /** Reloj para "se reinicia en…" (el del simulador en modo sim). */
+  now?: () => number;
 };
 
 /**
  * Los contadores también filtran (Hito 13): pulsar «2 esperando» atenúa el resto y encuadra esas
  * oficinas. El buscador (`/` lo enfoca, `Esc` lo limpia) busca por título, proyecto o carpeta.
  */
-export function TopBar({ store, onLaunch }: Props) {
+export function TopBar({ store, onLaunch, now }: Props) {
   const counts = useStore(
     store,
     useShallow((st) => countsByKind(st.agents.agents)),
@@ -79,12 +82,13 @@ export function TopBar({ store, onLaunch }: Props) {
           SIMULADO
         </span>
       )}
-      <span>{total} agentes</span>
+      <span className={s.nowrap}>{total} agentes</span>
       <span className={s.counts}>
         {ORDER.map((k) => chip(k, counts[k], STATUS_COLOR[k], LABEL[k]))}
         {dormant > 0 && chip("dormant", dormant, PAL.dormant, "apagadas")}
       </span>
       <span className={s.spacer} />
+      <QuotaBadge store={store} now={now ?? Date.now} />
       <div className={s.layoutGroup} role="radiogroup" aria-label="Modo de distribución">
         {(["dynamic", "horizontal", "vertical"] as const).map((mode) => (
           <button
