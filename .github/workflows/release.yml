@@ -10,6 +10,7 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - ".github/release-notes-adhoc.md"
+      - "CHANGELOG.md"
       - "src-tauri/tauri.conf.json"
       - "src-tauri/Info.plist"
       - "src-tauri/entitlements.plist"
@@ -48,6 +49,10 @@ jobs:
           version=$(node -p "require('./src-tauri/tauri.conf.json').version")
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "::error::El tag $GITHUB_REF_NAME no coincide con la versión $version"
+            exit 1
+          fi
+          if ! grep -qF "## [$version]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md no tiene la sección ## [$version]"
             exit 1
           fi
 
@@ -138,10 +143,21 @@ jobs:
         if: env.RELEASE == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+        # Las notas empiezan por la sección de la versión en CHANGELOG.md; GitHub añade la lista de PRs.
         run: |
-          notes=()
-          if [ "$MODE" = adhoc ]; then notes=(--notes-file .github/release-notes-adhoc.md); fi
-          gh release create "$GITHUB_REF_NAME" dist/* "${notes[@]}" \
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## \\[" v "\\]" { on = 1; next }
+            on && /^## \[/ { exit }
+            on && /^\[[^]]+\]: / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md no tiene la sección ## [$version]"
+            exit 1
+          fi
+          if [ "$MODE" = adhoc ]; then { echo; cat .github/release-notes-adhoc.md; } >> notes.md; fi
+          gh release create "$GITHUB_REF_NAME" dist/* --notes-file notes.md \
             --draft --verify-tag --generate-notes --title "Kiti $GITHUB_REF_NAME"
 
       - name: Subir la compilación de prueba

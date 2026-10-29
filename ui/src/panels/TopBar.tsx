@@ -97,14 +97,17 @@ export function TopBar({ store, onLaunch, now }: Props) {
             key={mode}
             type="button"
             className={`${s.layoutBtn} ${layoutMode === mode ? s.layoutActive : ""}`}
-            title={`Distribución: ${mode}`}
+            title={
+              mode === "dynamic"
+                ? "Distribución dinámica (centrada)"
+                : mode === "horizontal"
+                  ? "Distribución horizontal"
+                  : "Distribución vertical"
+            }
+            aria-label={`Distribución ${mode}`}
             onClick={() => store.getState().setLayoutMode(mode)}
           >
-            {mode === "dynamic"
-              ? "⊞ Dinámico"
-              : mode === "horizontal"
-                ? "⊟ Horizontal"
-                : "☷ Vertical"}
+            {mode === "dynamic" ? "⊞" : mode === "horizontal" ? "⊟" : "☷"}
           </button>
         ))}
       </div>

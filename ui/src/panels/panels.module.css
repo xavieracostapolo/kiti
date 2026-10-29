@@ -73,8 +73,8 @@
   right: 12px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 7px 12px;
   background: var(--panel);
   border: 3px solid var(--edge);
   box-shadow: 4px 4px 0 var(--shadow);
@@ -102,8 +102,8 @@
 
 .counts {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 6px;
+  flex-wrap: nowrap;
 }
 
 /* Contadores que filtran (Hito 13): sin aspecto de botón hasta que se pulsan. */
@@ -113,10 +113,11 @@
   gap: 5px;
   font: inherit;
   color: inherit;
-  padding: 2px 6px;
+  padding: 2px 5px;
   background: none;
   border: 2px solid transparent;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .count:hover {
@@ -129,10 +130,10 @@
 }
 
 .search {
-  width: 180px;
+  width: 148px;
   font: inherit;
   font-size: 12px;
-  padding: 6px 8px;
+  padding: 5px 8px;
   color: var(--text);
   background: var(--panel-2);
   border: 2px solid var(--edge);
@@ -155,6 +156,7 @@
 
 .layoutGroup {
   display: flex;
+  flex-shrink: 0;
   background: var(--panel-2);
   border: 2px solid var(--edge);
   box-shadow: 2px 2px 0 var(--shadow);
@@ -162,8 +164,9 @@
 
 .layoutBtn {
   font: inherit;
-  font-size: 11px;
-  padding: 4px 8px;
+  font-size: 13px;
+  line-height: 1;
+  padding: 5px 7px;
   background: none;
   border: none;
   color: var(--muted);

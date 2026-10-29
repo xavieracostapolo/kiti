@@ -64,18 +64,18 @@ export function drawOfficeTemplate(
     put(TILES.shelfA, tile * 1, tile * 2);
     put(TILES.shelfB, tile * 2, tile * 2);
     put(TILES.shelfC, tile * 3, tile * 2);
-    put(TILES.roundTable, tile * 9.5, tile * 4.5);
-    put(TILES.plantB, tile * 1.2, tile * 6.8);
-    put(TILES.plantA, tile * 9.8, tile * 6.8);
+    put(TILES.sideTable, tile * 10, tile * 4.5);
+    put(TILES.plantB, tile * 1, tile * 7);
+    put(TILES.plantA, tile * 10, tile * 7);
   } else if (v === 2) {
     put(TILES.paintingA, tile * 8.2, 8);
     put(TILES.paintingB, tile * 9.2, 8);
     put(TILES.shelfA, tile * 8, tile * 2);
     put(TILES.shelfB, tile * 9, tile * 2);
     put(TILES.shelfC, tile * 10, tile * 2);
-    put(TILES.roundTable, tile * 1.5, tile * 4.5);
-    put(TILES.plantA, tile * 1.5, tile * 2.3);
-    put(TILES.plantB, tile * 10, tile * 7);
+    put(TILES.sideTable, tile * 10, tile * 5);
+    put(TILES.plantA, tile * 1, tile * 2.3);
+    put(TILES.plantB, tile * 1, tile * 7);
   } else {
     put(TILES.paintingA, tile * 8.2, 8);
     put(TILES.paintingB, tile * 9.2, 8);

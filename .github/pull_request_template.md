@@ -13,3 +13,4 @@
 - [ ] No prompts, code or tool output in logs or fixtures
 - [ ] New dependencies are justified (maintenance, license, alternative)
 - [ ] Docs, ADRs or AGENTS.md updated if the behaviour or architecture changed
+- [ ] A line under `## [Unreleased]` in CHANGELOG.md for any change users can see

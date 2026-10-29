@@ -26,7 +26,7 @@ When you run several coding agents at once, you lose track of them. One waits fo
 - **Automatic detection.** Kiti finds running Claude Code, Codex CLI, Antigravity CLI (`agy`) and Gemini CLI processes. It classifies them by executable and `argv`, never by process name, and ignores launchers and the desktop apps.
 - **Traffic light per agent.** Green is working, yellow is waiting for you, grey is idle, red is an error or a crash. The status comes from the CLI hooks, not from guessing. A failed tool call is not red.
 - **Zones per project.** Offices are grouped by git root (or folder), so each repository is a neighbourhood.
-- **Camera and layout.** Pan, zoom, double-click to focus an office, `0` to see everything, or use the `+`, `−` and fit buttons in the corner. Far away, each office shows its title on a large sign; close up you see the title, the current tool and the last request. The top bar switches the map between three layouts: dynamic (centered rows), horizontal and vertical.
+- **Camera and layout.** Pan, zoom, double-click to focus an office, `0` to see everything, or use the `+`, `−` and fit buttons in the corner. Far away, each office shows its title on a large sign; close up you see the title, the current tool and the last request. The icons in the top bar (⊞ ⊟ ☷) switch the map between three layouts: dynamic (centered rows), horizontal and vertical. With no agents running, the map shows how to start one.
 - **Alive offices.** Working agents are animated, and each office gets its own decor, so the map tells busy from idle at a glance.
 - **Filter and search.** The counters in the top bar filter by status, closed conversations included. Press `/` to search by title, project, folder or provider, and `Esc` to clear. Offices that do not match are dimmed, not hidden, so the map keeps its layout and the camera frames the matches.
 - **Embedded terminal.** Launch a new agent from Kiti. It runs in `tmux` (`-L kiti`), so it survives when you close Kiti.
@@ -34,7 +34,7 @@ When you run several coding agents at once, you lose track of them. One waits fo
 - **Resume conversations.** Closed Claude conversations from the last 7 days stay as dark offices. One click runs `claude --resume` in a Kiti terminal.
 - **Menu bar and notifications.** The menu bar shows the counters. macOS notifies you when an agent asks for permission, finishes a long turn, fails or crashes, but only when Kiti is not in front. Click the notification to open Kiti on that office.
 - **Usage quota.** The top bar shows how much of your Claude plan (5-hour and weekly windows) and of your Antigravity quota is left, and Kiti notifies you once when a weekly limit drops to 20 % or less.
-- **Office board.** Zoom in on an office to see the model, context used and session cost (Claude), the project's git branch, changes and commits to push or pull, and a timeline of the last hour. It only appears at the closest zoom, so the overview stays clean.
+- **Office board.** Zoom in on an office to see the model, context used and session cost (Claude), the project's git branch, changes and commits to push or pull, and a timeline of the last hour. It only appears at the closest zoom, so the overview stays clean; the side panel shows the same data at any zoom.
 - **Pixel art.** Rooms, furniture and people come from [Kenney](https://kenney.nl)'s CC0 tilesheets. Each agent always gets the same person, and the rug takes the colour of its provider.
 - **Close an office.** Ends the agent process after a confirmation. Kiti checks `(pid, start_time, uid, cmd)` before each signal, so it never kills a reused PID.
 
@@ -159,6 +159,9 @@ Stack: Tauri v2, Rust (`tokio`, `axum`, `sysinfo`), TypeScript 7, PixiJS v8, Rea
 The design is documented in ADRs (in Spanish), from the [stack choice](docs/decisiones/0001-stack/README.md) to [pixel art](docs/decisiones/0013-pixel-art-kenney/README.md). [AGENTS.md](AGENTS.md) is the full guide to the codebase.
 
 ## Roadmap
+
+What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+
 
 - [x] Simulated office, native shell, real processes, hooks for Claude Code, Codex and Gemini
 - [x] Transcript tailer, menu bar, embedded terminal, persistent `tmux` sessions

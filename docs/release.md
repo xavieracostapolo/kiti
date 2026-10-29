@@ -50,16 +50,17 @@ Pasos:
 
 ## Publicar una versión
 
-1. Sube la versión en `src-tauri/tauri.conf.json` (y en los `Cargo.toml` y `package.json` si cambia). El workflow falla si el tag no coincide con esa versión.
-2. Crea el tag desde `main` y súbelo:
+1. En [CHANGELOG.md](../CHANGELOG.md), renombra `## [Unreleased]` a `## [X.Y.Z] - AAAA-MM-DD`, deja un `## [Unreleased]` vacío encima y actualiza los enlaces de comparación del final. Las notas del release empiezan por esa sección; el workflow falla si no existe.
+2. Sube la versión en `src-tauri/tauri.conf.json` (y en los `Cargo.toml` y `package.json` si cambia). El workflow falla si el tag no coincide con esa versión.
+3. Crea el tag desde `main` y súbelo:
 
    ```bash
    git tag -a v0.1.0 -m "Kiti 0.1.0"
    git push origin v0.1.0
    ```
 
-3. Espera el workflow (unos 20 minutos; la notarización tarda lo que tarde Apple). Verifica la firma, los entitlements, Gatekeeper y el grapado antes de crear el release.
-4. Revisa el borrador en *Releases*, edita las notas y publícalo.
+4. Espera el workflow (unos 20 minutos; la notarización tarda lo que tarde Apple). Verifica la firma, los entitlements, Gatekeeper y el grapado antes de crear el release.
+5. Revisa el borrador en *Releases*, edita las notas y publícalo.
 
 ## Permisos de macOS
 

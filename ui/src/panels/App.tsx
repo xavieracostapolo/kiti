@@ -9,6 +9,7 @@ import { AgentPanel } from "./AgentPanel";
 import { CloseOfficeDialog } from "./CloseOfficeDialog";
 import { ConversationPanel } from "./ConversationPanel";
 import { DebugPanel } from "./DebugPanel";
+import { EmptyState } from "./EmptyState";
 import { MailPanel } from "./MailPanel";
 import { NativeCloseOffice } from "./NativeCloseOffice";
 import { OfficeTooltip } from "./OfficeTooltip";
@@ -83,6 +84,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
     <Profiler id="panels" onRender={() => metrics.reactCommit()}>
       <WorldHost store={store} metrics={metrics} params={params} onWorld={handleWorld} now={now} />
       <TopBar store={store} now={now} {...(terminals ? { onLaunch: launch } : {})} />
+      <EmptyState store={store} {...(terminals ? { onLaunch: launch } : {})} />
       <div className={s.mapControls}>
         <button
           type="button"
