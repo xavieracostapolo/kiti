@@ -46,10 +46,19 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
   const agent = useStore(store, (st) =>
     st.view.selectedId ? st.agents.agents.get(st.view.selectedId) : undefined,
   );
+  const git = useStore(store, (st) => (agent?.project ? st.git.get(agent.project) : undefined));
   const terminal = useStore(store, (st) => (agent ? st.terminals.get(agent.pid) : undefined));
   // Con la terminal abierta, su cabecera ya dice qué agente es: el panel no tapa oficinas.
   const terminalOpen = useStore(store, (st) => st.openTerminalId !== undefined);
   if (!agent || terminalOpen) return null;
+  const gitText = git
+    ? [
+        git.branch ?? "HEAD separado",
+        ...(git.changed > 0 ? [`${git.changed} cambios`] : []),
+        ...(git.ahead > 0 ? [`↑${git.ahead}`] : []),
+        ...(git.behind > 0 ? [`↓${git.behind}`] : []),
+      ].join(" · ")
+    : undefined;
   return (
     <aside className={s.agentPanel} aria-label="Agente seleccionado">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -73,6 +82,12 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
             <dd>{projectName(agent.project)}</dd>
           </>
         )}
+        {gitText && (
+          <>
+            <dt>git</dt>
+            <dd>{gitText}</dd>
+          </>
+        )}
         {agent.activity && (
           <>
             <dt>ahora</dt>
@@ -83,6 +98,24 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
           <>
             <dt>último pedido</dt>
             <dd>{agent.lastPrompt}</dd>
+          </>
+        )}
+        {agent.model && (
+          <>
+            <dt>modelo</dt>
+            <dd>{agent.model}</dd>
+          </>
+        )}
+        {agent.contextPct !== undefined && (
+          <>
+            <dt>contexto</dt>
+            <dd>{agent.contextPct} %</dd>
+          </>
+        )}
+        {agent.costCents !== undefined && (
+          <>
+            <dt>coste</dt>
+            <dd>${(agent.costCents / 100).toFixed(2)} sesión</dd>
           </>
         )}
         <dt>proveedor</dt>

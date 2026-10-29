@@ -117,4 +117,31 @@ describe("AgentPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: "Ir a su terminal" }));
     expect((await screen.findByRole("status")).textContent).toContain("no supe cuál es su pestaña");
   });
+
+  it("muestra git del proyecto, modelo, contexto y coste de la sesión", () => {
+    const store = setup({
+      ...base,
+      model: "Opus 4.7",
+      contextPct: 34,
+      costCents: 185,
+    });
+    act(() =>
+      store.getState().receive({
+        type: "Git",
+        project: "/Users/dev/billing",
+        git: { branch: "feat/board", changed: 3, ahead: 1, behind: 2 },
+      }),
+    );
+    expect(screen.getByText("feat/board · 3 cambios · ↑1 · ↓2")).toBeTruthy();
+    expect(screen.getByText("Opus 4.7")).toBeTruthy();
+    expect(screen.getByText("34 %")).toBeTruthy();
+    expect(screen.getByText("$1.85 sesión")).toBeTruthy();
+  });
+
+  it("el botón de cerrar deselecciona la oficina", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const store = setup(base);
+    await userEvent.click(screen.getByTitle("Cerrar panel"));
+    expect(store.getState().view.selectedId).toBeUndefined();
+  });
 });
