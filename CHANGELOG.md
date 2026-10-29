@@ -19,6 +19,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 ### Changed
 
 - The layout buttons in the top bar are icons only (⊞ ⊟ ☷), with a tooltip, so the bar fits on narrower windows.
+- Quota updates in real time: Antigravity's is read again as soon as one of its agents finishes a turn (at most every 30 s, and every 5 min without turns), and a window whose reset time has passed shows 100 % without waiting for a new reading.
 
 ### Fixed
 

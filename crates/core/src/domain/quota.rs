@@ -1,8 +1,9 @@
 //! Cuota de uso de cada proveedor (ADR 0015) y cuándo avisar de que queda poca. Puro.
 
 use std::collections::HashSet;
+use std::time::Duration;
 
-use super::ids::Provider;
+use super::ids::{Provider, Timestamp};
 
 /// Una ventana de límite: "Claude · 5 h", "Claude y GPT · semana"…
 #[derive(Debug, Clone, PartialEq)]
@@ -49,9 +50,84 @@ impl QuotaPolicy {
     }
 }
 
+/// Cuándo volver a consultar una cuota que hay que pedir (la de Antigravity): al terminar un turno
+/// del agente, que es cuando cambia, sin bajar de `min_gap` entre consultas; y, sin turnos, cada
+/// `idle` por si se gastó desde fuera de Kiti.
+#[derive(Debug)]
+pub struct QuotaRefresh {
+    min_gap: Duration,
+    idle: Duration,
+    last: Option<Timestamp>,
+    pending: bool,
+}
+
+impl QuotaRefresh {
+    pub fn new(min_gap: Duration, idle: Duration) -> Self {
+        Self {
+            min_gap,
+            idle,
+            last: None,
+            pending: false,
+        }
+    }
+
+    /// Terminó un turno: la cuota pudo cambiar.
+    pub fn kick(&mut self) {
+        self.pending = true;
+    }
+
+    /// Cuánto falta para la próxima consulta (cero: ya toca).
+    pub fn wait(&self, now: Timestamp) -> Duration {
+        let Some(last) = self.last else {
+            return Duration::ZERO;
+        };
+        let gap = if self.pending {
+            self.min_gap
+        } else {
+            self.idle
+        };
+        gap.saturating_sub(now.since(last))
+    }
+
+    /// Se acaba de consultar.
+    pub fn polled(&mut self, now: Timestamp) {
+        self.last = Some(now);
+        self.pending = false;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const S: u64 = 1000;
+
+    fn refresh() -> QuotaRefresh {
+        QuotaRefresh::new(Duration::from_secs(30), Duration::from_secs(300))
+    }
+
+    #[test]
+    fn la_primera_consulta_es_inmediata_y_sin_turnos_espera_el_intervalo_largo() {
+        let mut r = refresh();
+        assert_eq!(r.wait(Timestamp(0)), Duration::ZERO);
+        r.polled(Timestamp(0));
+        assert_eq!(r.wait(Timestamp(100 * S)), Duration::from_secs(200));
+        assert_eq!(r.wait(Timestamp(300 * S)), Duration::ZERO);
+    }
+
+    #[test]
+    fn un_turno_terminado_adelanta_la_consulta_sin_bajar_del_minimo() {
+        let mut r = refresh();
+        r.polled(Timestamp(0));
+        r.kick();
+        // Dentro del mínimo: espera lo que falta, no consulta en cada turno.
+        assert_eq!(r.wait(Timestamp(10 * S)), Duration::from_secs(20));
+        // Pasado el mínimo: ya toca.
+        assert_eq!(r.wait(Timestamp(45 * S)), Duration::ZERO);
+        r.polled(Timestamp(45 * S));
+        // Consultada, vuelve al intervalo largo.
+        assert_eq!(r.wait(Timestamp(50 * S)), Duration::from_secs(295));
+    }
 
     fn w(label: &str, weekly: bool, remaining: f64, resets_at: u64) -> QuotaWindow {
         QuotaWindow {

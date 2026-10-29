@@ -643,6 +643,38 @@ async fn la_cuota_se_publica_y_se_reenvia_tras_el_snapshot() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn la_cuota_repetida_no_se_vuelve_a_publicar() {
+    let handle = spawn(TestKiller, ManualClock::new(1000));
+    let publisher = TestPublisher::new();
+    let msgs = publisher.messages.clone();
+    handle.subscribe(publisher).await.expect("subscribe ok");
+    let window = |remaining| kiti_core::domain::QuotaWindow {
+        label: "semana".into(),
+        weekly: true,
+        remaining,
+        resets_at: 1_793_572_705_000,
+    };
+    let quotas = || {
+        msgs.lock()
+            .unwrap()
+            .iter()
+            .filter(|m| matches!(m, ServerMsg::Quota { .. }))
+            .count()
+    };
+    // La status line de Claude llega varias veces por respuesta, casi siempre igual.
+    handle.quota(Provider::Claude, vec![window(0.40)]).await;
+    handle.quota(Provider::Claude, vec![window(0.40)]).await;
+    // Mismo porcentaje redondeado: tampoco cambia lo que ve la UI.
+    handle.quota(Provider::Claude, vec![window(0.401)]).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(quotas(), 1);
+    // Cambia: se publica en el momento, sin esperar al siguiente diff.
+    handle.quota(Provider::Claude, vec![window(0.38)]).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    assert_eq!(quotas(), 2);
+}
+
+#[tokio::test(start_paused = true)]
 async fn git_solo_se_publica_si_cambia_y_se_reenvia_tras_el_snapshot() {
     let handle = spawn(TestKiller, ManualClock::new(1000));
     handle

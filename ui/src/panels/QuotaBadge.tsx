@@ -1,7 +1,8 @@
 import { HoverCard } from "radix-ui";
+import { useEffect, useState } from "react";
 import { useStore } from "zustand";
 import type { Provider, QuotaWindow } from "../protocol";
-import { type QuotaLevel, summarize } from "../state/quota";
+import { current, nextReset, type QuotaLevel, summarize } from "../state/quota";
 import type { KitiStore } from "../state/store";
 import { inTime } from "./labels";
 import s from "./panels.module.css";
@@ -25,14 +26,26 @@ type Props = { store: KitiStore; now: () => number };
  * Cuánta cuota queda de cada proveedor (ADR 0015): lo semanal a la vista, con el color de lo
  * peor entre 5 h y semana; el detalle de cada ventana y cuándo se reinicia, al pasar el ratón. Va aparte de
  * la barra para poder moverlo a otro sitio sin tocar nada más.
+ *
+ * Cada lectura nueva llega en el momento; además, cuando pasa la hora de reinicio de una ventana,
+ * esa ventana vuelve al 100 % sin esperar a otra lectura (un solo temporizador, al próximo reinicio).
  */
 export function QuotaBadge({ store, now }: Props) {
   const quotas = useStore(store, (st) => st.quotas);
+  const [, repaint] = useState(0);
+  const t = now();
+  const next = nextReset([...quotas.values()].flat(), t);
+  useEffect(() => {
+    if (next === undefined) return;
+    // setTimeout no admite más de ~24,8 días; la cuota llega antes.
+    const id = setTimeout(() => repaint((n) => n + 1), Math.min(next - t, 2 ** 31 - 1));
+    return () => clearTimeout(id);
+  }, [next, t]);
   if (quotas.size === 0) return null;
   return (
     <span className={s.quotas}>
       {[...quotas].map(([provider, windows]) => (
-        <QuotaChip key={provider} provider={provider} windows={windows} now={now} />
+        <QuotaChip key={provider} provider={provider} windows={current(windows, t)} now={now} />
       ))}
     </span>
   );

@@ -1259,12 +1259,22 @@ fn start_git_status(runtime: RuntimeHandle) {
 /// instalado. No gasta tokens.
 fn start_antigravity_quota(runtime: RuntimeHandle) {
     use kiti_core::adapters::antigravity::{find_agy, usage_json};
+    use kiti_core::domain::QuotaRefresh;
     use kiti_core::ingestion::antigravity::parse_usage;
+    use kiti_core::ports::Clock;
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(10)).await;
-        let mut ticker = tokio::time::interval(Duration::from_secs(300));
+        // Al terminar cada turno de agy (sin bajar de 30 s entre consultas) y, si no, cada 5 min.
+        let mut refresh = QuotaRefresh::new(Duration::from_secs(30), Duration::from_secs(300));
         loop {
-            ticker.tick().await;
+            let wait = refresh.wait(SystemClock.now());
+            if !wait.is_zero() {
+                tokio::select! {
+                    () = tokio::time::sleep(wait) => {}
+                    () = runtime.quota_kicked() => refresh.kick(),
+                }
+                continue;
+            }
             if runtime.is_closed() {
                 return;
             }
@@ -1276,6 +1286,7 @@ fn start_antigravity_quota(runtime: RuntimeHandle) {
             .await
             .ok()
             .flatten();
+            refresh.polled(SystemClock.now());
             match read {
                 Some(windows) => {
                     runtime

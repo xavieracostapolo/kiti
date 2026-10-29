@@ -140,6 +140,9 @@ pub enum RuntimeCommand {
 pub struct RuntimeHandle {
     tx: mpsc::Sender<RuntimeCommand>,
     telemetry: Arc<Telemetry>,
+    /// Un agente terminó un turno y su cuota hay que pedirla (Antigravity): quien la consulta
+    /// lo hace antes de su intervalo.
+    quota_kick: Arc<tokio::sync::Notify>,
 }
 
 impl RuntimeHandle {
@@ -212,6 +215,17 @@ impl RuntimeHandle {
             .tx
             .send(RuntimeCommand::Quota { provider, windows })
             .await;
+    }
+
+    /// Un agente de Antigravity terminó un turno: su cuota pudo cambiar.
+    pub fn kick_quota(&self) {
+        self.quota_kick.notify_one();
+    }
+
+    /// Se completa cuando conviene volver a consultar la cuota de Antigravity. Un aviso sin nadie
+    /// esperando se guarda para la siguiente espera, y varios seguidos cuentan como uno.
+    pub async fn quota_kicked(&self) {
+        self.quota_kick.notified().await;
     }
 
     /// `(sesión, título, esperando permiso)` de las conversaciones recientes de Antigravity.
@@ -487,7 +501,14 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             reachable: std::collections::HashSet::new(),
             typed: std::collections::HashMap::new(),
         };
-        (runtime, RuntimeHandle { tx, telemetry })
+        (
+            runtime,
+            RuntimeHandle {
+                tx,
+                telemetry,
+                quota_kick: Arc::default(),
+            },
+        )
     }
 
     /// Muestreo de RSS y CPU del proceso para el panel de debug.
@@ -691,7 +712,15 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     }
                 }
                 let msg = quota_msg(provider, &windows);
-                self.quotas.insert(provider, windows);
+                // La status line de Claude se repite mucho y casi siempre igual: solo los cambios
+                // que la UI llega a ver (porcentaje redondeado) viajan.
+                let same = self
+                    .quotas
+                    .insert(provider, windows)
+                    .is_some_and(|old| quota_msg(provider, &old) == msg);
+                if same {
+                    return;
+                }
                 if let Some(p) = self.publisher.as_mut()
                     && !p.publish(msg)
                 {

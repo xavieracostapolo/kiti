@@ -70,7 +70,7 @@ Todo se queda en tu máquina. Kiti no tiene servidor ni telemetría.
 - Los prompts, el código y las salidas de herramientas nunca se registran ni se guardan. El título y el último pedido solo viajan del core a la UI.
 - Al primer arranque, Kiti añade sus hooks HTTP a `~/.claude/settings.json` y deja intactos los tuyos. `mise run hooks:uninstall` los quita. Los hooks de Codex, Antigravity y Gemini son opcionales.
 - La cuota y el tablero de Claude necesitan que su status line pase por Kiti. Es opcional: `mise run statusline:install` pone `kiti-hook` delante de tu comando de status line, que sigue mostrando lo mismo, y `mise run statusline:uninstall` lo restaura. De ese JSON Kiti solo se queda con los límites de uso, el modelo, el contexto y el coste.
-- Si `agy` está instalado, Kiti ejecuta `agy -p /usage --output-format json` al arrancar y cada 5 minutos para leer la cuota de Antigravity. La llamada no gasta tokens.
+- Si `agy` está instalado, Kiti ejecuta `agy -p /usage --output-format json` al arrancar, tras cada turno de Antigravity (como mucho cada 30 s) y cada 5 minutos sin turnos, para leer la cuota de Antigravity. La llamada no gasta tokens.
 - Cada 15 s, Kiti ejecuta `git --no-optional-locks status` en los proyectos con agentes vivos, así que nunca les quita el `index.lock`.
 
 Para reportar vulnerabilidades, sigue [SECURITY.md](SECURITY.md).
