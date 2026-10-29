@@ -21,7 +21,13 @@ export function OfficeTooltip({ store, now }: Props) {
     (st) => st.hover !== undefined && st.hover.id === st.view.selectedId,
   );
   if (!hover || selected || (!agent && !closed)) return null;
-  const style = { left: hover.x + 14, top: hover.y + 14 };
+  const vw = typeof window !== "undefined" ? window.innerWidth : 1440;
+  const vh = typeof window !== "undefined" ? window.innerHeight : 900;
+  const tipW = 340;
+  const tipH = 120;
+  const left = hover.x + 14 + tipW > vw ? Math.max(8, hover.x - tipW - 8) : hover.x + 14;
+  const top = hover.y + 14 + tipH > vh ? Math.max(8, hover.y - tipH - 8) : hover.y + 14;
+  const style = { left, top };
   if (agent) {
     return (
       <div role="tooltip" className={s.tooltip} style={style}>

@@ -1,5 +1,7 @@
 // Parámetros de URL del modo sim y del ciclo visual (ADR 0003 §10).
 
+import type { LayoutMode } from "../domain/zones";
+
 export type Zoom = "far" | "mid" | "near";
 
 export type Params = {
@@ -10,6 +12,8 @@ export type Params = {
   freeze: boolean;
   anim: boolean;
   zoom: Zoom;
+  /** Modo de distribución del mapa de zonas. */
+  layoutMode?: LayoutMode;
   /** Id o índice de la oficina a enfocar. */
   focus?: string;
   bench?: string;
@@ -31,6 +35,7 @@ function int(value: string | null, fallback: number, min: number, max: number): 
 export function parseParams(search: string): Params {
   const q = new URLSearchParams(search);
   const zoom = q.get("zoom");
+  const layout = q.get("layout");
   const params: Params = {
     sim: int(q.get("sim"), 20, 0, MAX_AGENTS),
     seed: int(q.get("seed"), 1, 0, 2 ** 31 - 1),
@@ -42,6 +47,9 @@ export function parseParams(search: string): Params {
     conversations: q.get("conversations") === "1",
     quota: q.get("quota") === "1",
   };
+  if (layout === "dynamic" || layout === "horizontal" || layout === "vertical") {
+    params.layoutMode = layout;
+  }
   const focus = q.get("focus");
   if (focus) params.focus = focus;
   const bench = q.get("bench");

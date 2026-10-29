@@ -33,6 +33,9 @@ export const TILES = {
   paintingB: ["indoors", 21, 12],
   plantA: ["indoors", 16, 0],
   plantB: ["indoors", 17, 0],
+  roundTable: ["indoors", 6, 0],
+  paintingAltA: ["indoors", 18, 12],
+  paintingAltB: ["indoors", 19, 12],
 } as const satisfies Record<string, TileRef>;
 
 /** Alfombra 3×3 del color de cada proveedor: esquina superior izquierda en la hoja `rpg`. */
@@ -40,13 +43,14 @@ export const RUG: Record<Provider, readonly [number, number]> = {
   claude: [10, 19],
   codex: [10, 16],
   gemini: [10, 22],
-  // Los dos de Google comparten la turquesa (ADR 0014).
+  // Los dos de Google comparten el patrón base; Antigravity se tinta en violeta (ADR 0014).
   antigravity: [10, 22],
 };
 
-/** Personas del RPG Urban Pack, vistas de espaldas (columna 25): primera fila de cada una. */
+/** Personas del RPG Urban Pack, vistas de espaldas (columna 25): 3 frames por persona (filas +0, +1, +2). */
 export const PEOPLE_BACK_COLUMN = 25;
 export const PEOPLE_ROWS = [0, 3, 6, 9, 12, 15] as const;
+export const PEOPLE_ANIM_FRAMES = [0, 1, 2] as const;
 
 export type Sheets = Record<Sheet, Texture>;
 

@@ -14,6 +14,7 @@ import type { WorldHandle } from "./world/World";
 async function bootstrap() {
   const params = parseParams(window.location.search);
   const store = createKitiStore();
+  if (params.layoutMode) store.getState().setLayoutMode(params.layoutMode);
   const metrics = createMetrics();
 
   const isTauri =

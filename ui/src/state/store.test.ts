@@ -135,4 +135,11 @@ describe("store", () => {
     store.getState().receive({ type: "Focus", id: "nadie" });
     expect(store.getState().pendingLaunchPid).toBeUndefined();
   });
+
+  it("permite cambiar el modo de layout del mapa", () => {
+    const store = createKitiStore();
+    expect(store.getState().layoutMode).toBe("dynamic");
+    store.getState().setLayoutMode("vertical");
+    expect(store.getState().layoutMode).toBe("vertical");
+  });
 });

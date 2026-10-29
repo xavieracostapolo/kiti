@@ -31,9 +31,22 @@ pub fn parse_porcelain_v2(out: &str) -> GitStatus {
     s
 }
 
+/// Variables con las que git ignora `-C`: las exporta un hook de git (Kiti lanzado desde uno, o
+/// los tests en `pre-push`), y entonces `status` describiría otro repositorio.
+const GIT_ENV: [&str; 4] = [
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_INDEX_FILE",
+    "GIT_COMMON_DIR",
+];
+
 /// `None` si no es un repositorio (o git falla).
 pub fn status(dir: &Path) -> Option<GitStatus> {
-    let out = Command::new("/usr/bin/git")
+    let mut git = Command::new("/usr/bin/git");
+    for var in GIT_ENV {
+        git.env_remove(var);
+    }
+    let out = git
         .args(["--no-optional-locks", "-C"])
         .arg(dir)
         .args(["status", "--porcelain=v2", "--branch"])
@@ -77,7 +90,11 @@ mod tests {
         let root = std::env::temp_dir().join(format!("kiti-git-status-{}", std::process::id()));
         std::fs::create_dir_all(&root).unwrap();
         assert_eq!(status(&root), None);
-        let ok = Command::new("/usr/bin/git")
+        let mut init = Command::new("/usr/bin/git");
+        for var in GIT_ENV {
+            init.env_remove(var);
+        }
+        let ok = init
             .args(["init", "-q", "-b", "trabajo"])
             .current_dir(&root)
             .status()

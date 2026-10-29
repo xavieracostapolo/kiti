@@ -15,3 +15,8 @@ function fnv1a(text: string): number {
 export function personFor(id: string, count: number): number {
   return fnv1a(id) % count;
 }
+
+/** Índice de variante de decoración interior (de 0 a `count` - 1) para la oficina `id`. */
+export function decorFor(id: string, count: number): number {
+  return fnv1a(`decor:${id}`) % count;
+}

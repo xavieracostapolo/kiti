@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { personFor } from "./people";
+import { decorFor, personFor } from "./people";
 
 describe("personFor", () => {
   it("es estable: el mismo agente siempre es la misma persona", () => {
@@ -19,5 +19,13 @@ describe("personFor", () => {
       expect(n).toBeGreaterThanOrEqual(0);
       expect(n).toBeLessThan(6);
     }
+  });
+});
+
+describe("decorFor", () => {
+  it("reparte las variantes de decoración y es independiente de personFor", () => {
+    const seen = new Set<number>();
+    for (let pid = 1000; pid < 1050; pid++) seen.add(decorFor(`claude:${pid}:1`, 3));
+    expect([...seen].sort()).toEqual([0, 1, 2]);
   });
 });

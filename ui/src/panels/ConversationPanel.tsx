@@ -49,10 +49,20 @@ function Details({ store, world, now, onResume, onArchive }: Props) {
 
   return (
     <aside className={s.agentPanel} aria-label="Conversación cerrada">
-      <h2 className={s.agentTitle}>
-        <span className={s.dot} style={{ background: "#4a5266" }} />
-        {conv.title ?? displayName(conv.cwd)}
-      </h2>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <h2 className={s.agentTitle} style={{ margin: 0 }}>
+          <span className={s.dot} style={{ background: "#4a5266" }} />
+          {conv.title ?? displayName(conv.cwd)}
+        </h2>
+        <button
+          type="button"
+          className={s.closeBtn}
+          title="Cerrar panel"
+          onClick={() => store.getState().select(undefined)}
+        >
+          ✕
+        </button>
+      </div>
       <dl className={s.fields}>
         <dt>proyecto</dt>
         <dd>{projectName(conv.project || conv.cwd)}</dd>

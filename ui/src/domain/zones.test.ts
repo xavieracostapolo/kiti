@@ -83,6 +83,63 @@ describe("layoutZones", () => {
       h: DEFAULT_LAYOUT.roomH * T,
     });
   });
+
+  it("en modo dynamic centra las filas más cortas para que no queden pegadas a la izquierda", () => {
+    const l = layoutZones(
+      new Map(),
+      entries(
+        ["a1", "/w/a"],
+        ["a2", "/w/a"],
+        ["a3", "/w/a"],
+        ["b1", "/w/b"],
+        ["b2", "/w/b"],
+        ["b3", "/w/b"],
+        ["c1", "/w/c"],
+      ),
+      DEFAULT_LAYOUT,
+      { cols: 3, header: 2, pad: 1, gap: 3, maxRowRooms: 6, mode: "dynamic", aspect: 1.5 },
+    );
+    const cZone = l.zones.find((z) => z.name === "c");
+    expect(cZone).toBeDefined();
+    expect(cZone?.x).toBeGreaterThan(0);
+  });
+
+  it("en modo vertical apila las zonas una debajo de otra", () => {
+    const l = layoutZones(
+      new Map(),
+      entries(["a", "/w/a"], ["b", "/w/b"], ["c", "/w/c"]),
+      DEFAULT_LAYOUT,
+      { cols: 3, header: 2, pad: 1, gap: 3, maxRowRooms: 8, mode: "vertical" },
+    );
+    const [za, zb, zc] = l.zones;
+    expect(za?.x).toBe(0);
+    expect(zb?.x).toBe(0);
+    expect(zc?.x).toBe(0);
+    expect(zb?.y).toBeGreaterThan(za?.y ?? 0);
+    expect(zc?.y).toBeGreaterThan(zb?.y ?? 0);
+  });
+
+  it("en modo horizontal permite filas más anchas que en vertical", () => {
+    const many = Array.from({ length: 12 }, (_, i): [string, string] => [`id${i}`, `/w/p${i}`]);
+    const horiz = layoutZones(new Map(), entries(...many), DEFAULT_LAYOUT, {
+      cols: 3,
+      header: 2,
+      pad: 1,
+      gap: 3,
+      maxRowRooms: 8,
+      mode: "horizontal",
+    });
+    const vert = layoutZones(new Map(), entries(...many), DEFAULT_LAYOUT, {
+      cols: 3,
+      header: 2,
+      pad: 1,
+      gap: 3,
+      maxRowRooms: 8,
+      mode: "vertical",
+    });
+    expect(horiz.bounds.w).toBeGreaterThan(vert.bounds.w);
+    expect(vert.bounds.h).toBeGreaterThan(horiz.bounds.h);
+  });
 });
 
 describe("projectName", () => {
