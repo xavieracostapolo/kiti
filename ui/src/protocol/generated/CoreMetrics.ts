@@ -3,4 +3,12 @@
 /**
  * Métricas del core, a 1 Hz y solo con el panel de debug abierto.
  */
-export type CoreMetrics = { agents: number, eventsPerSec: number, hookToPublishMsP95: number, rssBytes: number, cpuPercent: number, };
+export type CoreMetrics = { agents: number, eventsPerSec: number, hookToPublishMsP95: number, rssBytes: number, cpuPercent: number, 
+/**
+ * Mensajes entre agentes aceptados desde que arrancó Kiti (ADR 0017).
+ */
+mailsTotal: number, 
+/**
+ * Mensajes aún sin entregar (por aprobar, en cola o retenidos).
+ */
+mailPending: number, };

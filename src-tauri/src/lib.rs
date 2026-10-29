@@ -8,7 +8,9 @@ use std::time::Duration;
 use kiti_core::adapters::antigravity::{AgyConversation, AntigravityStore};
 use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
 use kiti_core::adapters::conversations::{ConversationIndex, HiddenConversations};
-use kiti_core::adapters::hooks::{hook_router, load_or_create_token, run_hook_pump, serve_hooks};
+use kiti_core::adapters::hooks::{
+    hook_router, load_or_create_token, mcp_router, run_hook_pump, serve_hooks,
+};
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
 use kiti_core::adapters::{GitProjects, SysinfoScanner, SystemClock, UnixKiller};
@@ -19,11 +21,12 @@ use kiti_core::domain::{AgentId, Timestamp};
 use kiti_core::ingestion::claude::{has_conversations, is_session_id};
 use kiti_core::ports::{
     AgentKiller, AlertNotice, AlertSink, Clock, DiffPublisher, KillError, KillOutcome, KillTarget,
-    ProjectResolver, SelfMonitor,
+    MailCourier, ProjectResolver, SelfMonitor,
 };
 use kiti_core::sim::{SimFleet, SimSpec, TICK_MS};
 use kiti_protocol::{
-    ConversationInfo, Hello, IpcError, KillResult, ServerMsg, Source, TerminalInfo, UiMetrics,
+    ConversationInfo, Hello, IpcError, KillResult, MailCommand, MailMode, ServerMsg, Source,
+    TerminalInfo, UiMetrics,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -60,6 +63,8 @@ pub struct AppState {
     pub terminals: Option<Arc<Terminals>>,
     /// Conversaciones cerradas de Claude (ADR 0009). `None` en modo simulado o sin `$HOME`.
     pub conversations: Option<Arc<Conversations>>,
+    /// Dónde se guarda el modo de los mensajes entre agentes (ADR 0017).
+    pub mail_mode_file: Option<std::path::PathBuf>,
 }
 
 pub struct Conversations {
@@ -780,6 +785,80 @@ fn ui_log(level: String, message: String) {
     }
 }
 
+/// Modo, pausa, aprobación y control de hilos de los mensajes entre agentes (ADR 0017).
+#[tauri::command]
+async fn mail_action(command: MailCommand, state: State<'_, AppState>) -> Result<(), IpcError> {
+    if let (MailCommand::Mode { mode }, Some(file)) = (command, &state.mail_mode_file) {
+        let text = match mode {
+            MailMode::Auto => "auto",
+            MailMode::Manual => "manual",
+        };
+        if let Err(e) = std::fs::write(file, text) {
+            warn!(event = "mail.mode_save", error = %e);
+        }
+    }
+    state.runtime.mail(command).await;
+    Ok(())
+}
+
+/// Modo guardado; si no hay nada, automático (ADR 0017).
+fn saved_mail_mode(file: &std::path::Path) -> MailMode {
+    match std::fs::read_to_string(file).as_deref().map(str::trim) {
+        Ok("manual") => MailMode::Manual,
+        _ => MailMode::Auto,
+    }
+}
+
+/// Escribe los mensajes en la sesión tmux del destinatario (ADR 0017). Si falla, los devuelve
+/// a la cola del core.
+struct TmuxCourier {
+    tmux: Option<Tmux>,
+    runtime: RuntimeHandle,
+}
+
+impl MailCourier for TmuxCourier {
+    fn deliver(&mut self, pid: kiti_core::domain::Pid, text: String, ids: Vec<u64>) {
+        let tmux = self.tmux.clone();
+        let runtime = self.runtime.clone();
+        tauri::async_runtime::spawn(async move {
+            let typed = tokio::task::spawn_blocking(move || match tmux {
+                Some(t) => t.type_into(pid.0, &text),
+                None => Err(std::io::Error::other("sin tmux")),
+            })
+            .await
+            .unwrap_or_else(|e| Err(std::io::Error::other(e.to_string())));
+            if let Err(e) = typed {
+                warn!(event = "mail.type_failed", pid = pid.0, error = %e);
+                runtime.mail_undeliver(ids).await;
+            }
+        });
+    }
+}
+
+/// Cada 3 s, qué agentes viven en sesiones tmux de Kiti: a esos se les puede escribir.
+fn start_mail_reachable(tmux: Option<Tmux>, runtime: RuntimeHandle) {
+    let Some(tmux) = tmux else { return };
+    tauri::async_runtime::spawn(async move {
+        let mut ticker = tokio::time::interval(Duration::from_secs(3));
+        loop {
+            ticker.tick().await;
+            if runtime.is_closed() {
+                return;
+            }
+            let t = tmux.clone();
+            let pids = tokio::task::spawn_blocking(move || {
+                t.list()
+                    .into_iter()
+                    .map(|s| kiti_core::domain::Pid(s.pid))
+                    .collect::<Vec<_>>()
+            })
+            .await
+            .unwrap_or_default();
+            runtime.mail_reachable(pids).await;
+        }
+    });
+}
+
 #[tauri::command]
 async fn set_debug_stream(on: bool, state: State<'_, AppState>) -> Result<(), IpcError> {
     state.runtime.set_debug_stream(on).await;
@@ -811,8 +890,10 @@ fn start_claude_hooks(app: &AppHandle, home: Option<&std::path::Path>, runtime: 
         }
     };
     let (tx, rx) = mpsc::channel(1024);
+    // La API de kiti-mcp (ADR 0017) comparte puerto y token con los hooks.
+    let mcp = mcp_router(token.clone(), port, runtime.clone());
     tauri::async_runtime::spawn(run_hook_pump(rx, runtime, SystemClock));
-    let router = hook_router(token.clone(), port, tx);
+    let router = hook_router(token.clone(), port, tx).merge(mcp);
     tauri::async_runtime::spawn(async move {
         if let Err(e) = serve_hooks(port, router).await {
             error!(event = "hooks.server", port, error = %e, "¿puerto ocupado? (KITI_HOOK_PORT)");
@@ -918,6 +999,7 @@ pub fn run() {
                 }
                 Err(_) => {
                     info!(event = "app.start", mode = "live");
+                    let mail_tmux = Tmux::detect("kiti", None);
                     let (runtime, handle) = Runtime::new(
                         UnixKiller::default(),
                         SystemClock,
@@ -930,7 +1012,21 @@ pub fn run() {
                         .with_projects(GitProjects::default())
                         .with_alerts(NativeAlerts {
                             app: app.handle().clone(),
+                        })
+                        .with_courier(TmuxCourier {
+                            tmux: mail_tmux.clone(),
+                            runtime: handle.clone(),
                         });
+                    start_mail_reachable(mail_tmux, handle.clone());
+                    if let Ok(dir) = app.path().app_data_dir() {
+                        let mode = saved_mail_mode(&dir.join("mail-mode"));
+                        if mode == MailMode::Manual {
+                            let h = handle.clone();
+                            tauri::async_runtime::spawn(async move {
+                                h.mail(MailCommand::Mode { mode }).await;
+                            });
+                        }
+                    }
                     on_alert_click(app.handle(), handle.clone());
                     start_antigravity_quota(handle.clone());
                     start_git_status(handle.clone());
@@ -980,10 +1076,12 @@ pub fn run() {
                         agy_prompts: Mutex::default(),
                     })
                 });
+            let mail_mode_file = app.path().app_data_dir().ok().map(|d| d.join("mail-mode"));
             app.manage(AppState {
                 runtime: handle,
                 terminals,
                 conversations,
+                mail_mode_file,
             });
             Ok(())
         })
@@ -1002,6 +1100,7 @@ pub fn run() {
             resume_conversation,
             hide_conversation,
             focus_agent_terminal,
+            mail_action,
         ])
         .build(tauri::generate_context!())
         .expect("error al construir la aplicación Tauri")
@@ -1072,6 +1171,32 @@ impl AlertSink for NativeAlerts {
             .show();
         match shown {
             Ok(()) => info!(event = "alert.sent", agent_id = %notice.agent, kind = ?notice.kind),
+            Err(e) => warn!(event = "alert.error", error = %e),
+        }
+    }
+
+    /// Un hilo de mensajes entre agentes llegó al límite (ADR 0017). Solo si Kiti no está al
+    /// frente: dentro, el chip de la barra ya se pone amarillo.
+    fn mail_paused(&mut self, subject: &str, between: &str) {
+        let focused = self
+            .app
+            .get_webview_window("main")
+            .and_then(|w| w.is_focused().ok())
+            .unwrap_or(false);
+        if focused {
+            return;
+        }
+        match self
+            .app
+            .notification()
+            .builder()
+            .title("Mensajes en pausa")
+            .body(format!(
+                "{between}: «{subject}» llegó al límite de mensajes. Ábrelo en Kiti para continuar o cerrarlo."
+            ))
+            .show()
+        {
+            Ok(()) => info!(event = "alert.sent", kind = "MailPaused"),
             Err(e) => warn!(event = "alert.error", error = %e),
         }
     }

@@ -341,6 +341,19 @@ pub struct MailState {
     pub threads: Vec<MailThread>,
 }
 
+/// Lo que la UI pide sobre los mensajes (command `mail_action`, ADR 0017).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[ts(export)]
+pub enum MailCommand {
+    Mode { mode: MailMode },
+    Pause { paused: bool },
+    Approve { id: u64 },
+    Discard { id: u64 },
+    Continue { id: u64 },
+    Close { id: u64 },
+}
+
 /// API local entre `kiti-mcp` y el core (ADR 0017). No va a la UI.
 pub mod mcp {
     use serde::{Deserialize, Serialize};
@@ -618,6 +631,21 @@ mod tests {
         assert_eq!(value["threads"][0]["messages"][0]["state"], "held");
         let back: ServerMsg = serde_json::from_value(value).unwrap();
         assert_eq!(back, msg);
+    }
+
+    #[test]
+    fn mail_command_usa_kind() {
+        let c: MailCommand =
+            serde_json::from_value(json!({ "kind": "mode", "mode": "manual" })).unwrap();
+        assert_eq!(
+            c,
+            MailCommand::Mode {
+                mode: MailMode::Manual
+            }
+        );
+        let c: MailCommand =
+            serde_json::from_value(json!({ "kind": "continue", "id": 3 })).unwrap();
+        assert_eq!(c, MailCommand::Continue { id: 3 });
     }
 
     #[test]

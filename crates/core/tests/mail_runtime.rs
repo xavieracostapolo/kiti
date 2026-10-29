@@ -213,7 +213,10 @@ async fn sin_terminal_el_destinatario_lo_lee_con_inbox() {
 async fn en_manual_espera_al_usuario_y_los_errores_tienen_codigo() {
     let (h, courier, sink, _) = setup().await;
     h.mail_reachable(vec![Pid(20)]).await;
-    h.mail(MailAction::Mode(MailMode::Manual)).await;
+    h.mail(MailAction::Mode {
+        mode: MailMode::Manual,
+    })
+    .await;
     let sent = h.mcp_send(from(10), send("codex-1", "uno")).await.unwrap();
     assert_eq!(sent.state, "pending");
     settle().await;
@@ -221,7 +224,7 @@ async fn en_manual_espera_al_usuario_y_los_errores_tienen_codigo() {
     let mail = last_mail(&sink);
     assert_eq!(mail.mode, MailMode::Manual);
     assert_eq!(mail.attention, 1);
-    h.mail(MailAction::Approve(sent.id)).await;
+    h.mail(MailAction::Approve { id: sent.id }).await;
     settle().await;
     assert_eq!(courier.0.lock().unwrap().len(), 1);
     assert_eq!(last_mail(&sink).attention, 0);

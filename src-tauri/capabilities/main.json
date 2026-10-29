@@ -17,6 +17,7 @@
     "allow-list-conversations",
     "allow-resume-conversation",
     "allow-hide-conversation",
-    "allow-focus-agent-terminal"
+    "allow-focus-agent-terminal",
+    "allow-mail-action"
   ]
 }

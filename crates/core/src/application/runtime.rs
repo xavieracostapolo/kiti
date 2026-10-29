@@ -39,15 +39,7 @@ pub const KILL_GRACE: Duration = Duration::from_secs(5);
 pub const MAIL_RETRY: Duration = Duration::from_secs(60);
 
 /// Lo que la UI puede hacer con los mensajes (ADR 0017).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MailAction {
-    Mode(kiti_protocol::MailMode),
-    Pause(bool),
-    Approve(u64),
-    Discard(u64),
-    Continue(u64),
-    Close(u64),
-}
+pub type MailAction = kiti_protocol::MailCommand;
 
 type McpReply<T> = oneshot::Sender<Result<T, mcp::ErrorReply>>;
 
@@ -810,12 +802,14 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             RuntimeCommand::Mail(action) => {
                 self.sync_mail();
                 let changed = match action {
-                    MailAction::Mode(m) => self.mailbox.set_mode(mail::domain_mail_mode(m)),
-                    MailAction::Pause(p) => self.mailbox.set_paused(p),
-                    MailAction::Approve(id) => self.mailbox.approve(MessageId(id)),
-                    MailAction::Discard(id) => self.mailbox.discard(MessageId(id)),
-                    MailAction::Continue(id) => self.mailbox.continue_thread(ThreadId(id)),
-                    MailAction::Close(id) => self.mailbox.close_thread(ThreadId(id)),
+                    MailAction::Mode { mode } => {
+                        self.mailbox.set_mode(mail::domain_mail_mode(mode))
+                    }
+                    MailAction::Pause { paused } => self.mailbox.set_paused(paused),
+                    MailAction::Approve { id } => self.mailbox.approve(MessageId(id)),
+                    MailAction::Discard { id } => self.mailbox.discard(MessageId(id)),
+                    MailAction::Continue { id } => self.mailbox.continue_thread(ThreadId(id)),
+                    MailAction::Close { id } => self.mailbox.close_thread(ThreadId(id)),
                 };
                 info!(event = "mail.action", action = ?action, changed);
                 self.mail_dirty |= changed;
