@@ -43,7 +43,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 | [0012](docs/decisiones/0012-ir-a-la-terminal/README.md) | «Ir a su terminal» para agentes abiertos fuera de Kiti: pestaña exacta en Ghostty y Terminal.app; otras apps, al frente |
 | [0013](docs/decisiones/0013-pixel-art-kenney/README.md) | Oficinas con tiles de Kenney (CC0): RPG Pack (sala), Indoors (muebles) y Urban (personas); lo funcional sigue por código |
 | [0014](docs/decisiones/0014-antigravity/README.md) | Antigravity CLI (`agy`, sucesor de Gemini CLI) como proveedor: hooks por comando, amarillo desde su base de datos, retomar con `--conversation` |
-| [0015](docs/decisiones/0015-cuota/README.md) | Cuota de uso: Claude por su status line (`rate_limits`), Antigravity por `agy -p /usage`; chip en la barra y aviso al bajar del 20 % semanal |
+| [0015](docs/decisiones/0015-cuota/README.md) | Cuota de uso: Claude por su status line (`rate_limits`), Antigravity por `agy -p /usage` tras cada turno (mínimo 30 s; 5 min sin turnos); chip en la barra, reinicio al 100 % a su hora y aviso al bajar del 20 % semanal |
 | [0016](docs/decisiones/0016-tablero-de-oficina/README.md) | Tablero en el zoom cercano: modelo, contexto y coste (status line de Claude), git del proyecto y la última hora |
 | [0017](docs/decisiones/0017-mensajes-entre-agentes/README.md) | Mensajes entre agentes: `kiti-mcp` (MCP por stdio) con `kiti_agents`, `kiti_send` y `kiti_inbox`; entrega en su terminal tmux; automático por defecto, con límites |
 
@@ -189,7 +189,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **15. Arreglos:** un agente que ya trabajaba al arrancar Kiti sale en verde; el clic en un aviso abre Kiti y enfoca la oficina.
 - [x] **16. Pixel art con Kenney:** sala de tiles (madera, muebles), una persona por agente y alfombra del color del proveedor.
 - [x] **17. Antigravity CLI:** cuarto proveedor (`agy`), con semáforo, permiso, título, último pedido, lanzar y retomar conversaciones.
-- [x] **18. Cuota:** cuánto queda del plan de Claude (5 h y semana) y de Antigravity, en la barra superior, con aviso al bajar del 20 % semanal.
+- [x] **18. Cuota:** cuánto queda del plan de Claude (5 h y semana) y de Antigravity, en la barra superior, con aviso al bajar del 20 % semanal. Se actualiza en tiempo real: Antigravity tras cada turno y las ventanas vuelven al 100 % al reiniciarse.
 - [x] **19. Tablero de la oficina:** en el zoom cercano, modelo, contexto y coste de la sesión, git del proyecto y la última hora.
 - [x] **20. Mensajes entre agentes:** los agentes se escriben a través de Kiti con `kiti-mcp`, sea cual sea su proveedor; panel de mensajes, sobres en el mapa y modos automático y manual.
 - [x] **UX (PR #17):** distribuciones del mapa (dinámica, horizontal y vertical), botones `+`, `−` y encuadrar, animaciones de trabajo y decoración por oficina.

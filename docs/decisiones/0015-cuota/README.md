@@ -22,7 +22,8 @@ Se descartó leer el token OAuth de Claude del llavero de macOS para consultar s
   - El forwarder ejecuta el comando original con el mismo stdin e imprime su salida, así que la status line se ve igual. Después reenvía el JSON a Kiti (`POST /v1/statusline`).
   - El core se queda solo con `rate_limits`.
   - Se instala con copia de seguridad y se revierte con `mise run statusline:uninstall`, que restaura el comando original.
-- **Antigravity:** si `agy` está instalado, el shell lo consulta al arrancar y cada 5 minutos. Ese proceso (`agy -p /usage`) no cuenta como oficina.
+- **Antigravity:** si `agy` está instalado, el shell lo consulta al arrancar y después **cuando un agente de Antigravity termina un turno** (hook `Stop` o fallo), que es cuando la cuota cambia. Entre dos consultas pasan como mínimo 30 s, y sin turnos se consulta cada 5 minutos. Ese proceso (`agy -p /usage`) no cuenta como oficina.
+- **Tiempo real en la interfaz:** cuando pasa el `resets_at` de una ventana, la barra la muestra al 100 % sin esperar a otra lectura.
 - **Aviso:** una vez por ventana semanal y periodo (es decir, por `resets_at`), cuando lo que queda baja al 20 % o menos. Las ventanas de 5 h no avisan, porque se reinician cada pocas horas.
 - **Interfaz:** un componente aparte (`QuotaBadge`) en la barra superior: lo que queda de cada proveedor con un color, y el detalle al pasar el ratón.
 
@@ -34,7 +35,11 @@ Se descartó leer el token OAuth de Claude del llavero de macOS para consultar s
 - **ACLs puras:**
   - `ingestion::claude::parse_rate_limits`: JSON de la status line → ventanas.
   - `ingestion::antigravity::parse_usage`: JSON de `/usage` → ventanas.
-- **Protocolo:** `ServerMsg::Quota { provider, windows }`. El runtime guarda la última cuota de cada proveedor y la reenvía tras cada Snapshot.
+- **`domain::QuotaRefresh` (puro):** decide cuánto esperar hasta la próxima consulta a `agy`. `kick()` marca un turno terminado, `wait(now)` devuelve 0 en la primera consulta, el mínimo de 30 s si hay un turno pendiente o el intervalo de 5 min si no, y `polled(now)` registra la consulta.
+- **Aviso de fin de turno:** `run_hook_pump` (`adapters/hooks.rs`) llama a `RuntimeHandle::kick_quota()` con cada `Stop` o fallo de Antigravity. Es un `tokio::sync::Notify`: varios avisos seguidos cuentan como uno.
+- **Bucle del shell:** `start_antigravity_quota` (`src-tauri/src/lib.rs`) duerme lo que diga `QuotaRefresh::wait`, pero se despierta antes con `RuntimeHandle::quota_kicked()`.
+- **Protocolo:** `ServerMsg::Quota { provider, windows }`. El runtime guarda la última cuota de cada proveedor y la reenvía tras cada Snapshot. Solo publica una cuota nueva si cambian los porcentajes redondeados, porque la status line de Claude repite el mismo JSON muchas veces.
+- **UI:** `state/quota.ts` añade `current()` (las ventanas con las ya reiniciadas al 100 %) y `nextReset()`. `QuotaBadge` programa un único `setTimeout` al próximo reinicio, así que no hay temporizadores en reposo.
 - **Privacidad:** del JSON de la status line solo se leen los dos `rate_limits`; el resto (carpeta, modelo, coste) se descarta en la ACL. No se registra nada.
 
 ## Ficha de observabilidad
@@ -42,7 +47,9 @@ Se descartó leer el token OAuth de Claude del llavero de macOS para consultar s
 | Pregunta | Señal | Verificación |
 |---|---|---|
 | ¿Llega la cuota de Claude? | `quota.updated` (debug) con `provider=claude` y el número de ventanas | Tras una respuesta en una sesión de Claude |
-| ¿Funciona la consulta a agy? | `quota.updated` con `provider=antigravity`, o `quota.error` (warn) con el motivo | Al arrancar y cada 5 min |
+| ¿Funciona la consulta a agy? | `quota.updated` con `provider=antigravity`, o `quota.error` (warn) con el motivo | Al arrancar, tras cada turno de Antigravity (mínimo 30 s entre consultas) y cada 5 min sin turnos |
+| ¿Se publica solo lo que cambia? | Sin `ServerMsg::Quota` repetidos con los mismos porcentajes | `crates/core/tests/runtime_test.rs` |
+| ¿Un turno adelanta la consulta? | `kick_quota` desde el hook `Stop` de Antigravity | `crates/core/tests/hook_server.rs` y los tests de `QuotaRefresh` |
 | ¿Se avisa? | `alert.raised` / `alert.sent` con `kind=QuotaLow` | Test de la política; en real, cuando baje del 20 % |
 
 ## Resultados (prueba real)
@@ -55,6 +62,6 @@ Se descartó leer el token OAuth de Claude del llavero de macOS para consultar s
 ## Límites conocidos
 
 - La cuota de Claude solo se actualiza mientras alguna sesión refresca su status line. Sin sesiones abiertas, se ve la última conocida.
-- La de Antigravity se consulta cada 5 minutos.
+- La de Antigravity se lee tras cada turno, pero no más de una vez cada 30 s: dos turnos muy seguidos se reflejan en la consulta siguiente. Si su uso cambia fuera de Kiti (otro equipo, la IDE), puede tardar hasta 5 minutos en verse.
 - Con la barra de la app nativa llena («+ Nuevo agente», «apagadas»), los contadores pasan a una segunda línea. Queda para el trabajo de UX en curso.
 
