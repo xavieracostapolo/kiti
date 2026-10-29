@@ -10,20 +10,21 @@ use tokio::sync::{mpsc, oneshot};
 use tokio::time::{Instant, interval};
 
 use crate::application::mail;
+use crate::application::memory;
 use crate::application::projection::{project_diff, project_provider, project_snapshot};
 use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
     AgentId, AgentInput, AgentRegistry, AgentStats, AlertPolicy, DetectedAgent, DomainEvent,
-    Events, GitStatus, Mailbox, MessageId, Pid, Provider, QuotaPolicy, QuotaWindow, SessionId,
-    StalePolicy, StatusKind, ThreadId, Timestamp,
+    Events, GitStatus, Mailbox, MemoryBook, MemoryEntry, MessageId, Pid, Provider, QuotaPolicy,
+    QuotaWindow, SEARCH_LIMIT, SessionId, StalePolicy, StatusKind, ThreadId, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
 use crate::ports::{
     AgentKiller, AlertNotice, AlertSink, Clock, CwdProjects, DiffPublisher, KillError, KillOutcome,
-    KillTarget, MailCourier, ProjectResolver, SelfMonitor,
+    KillTarget, MailCourier, MemoryStore, ProjectResolver, SelfMonitor,
 };
 use kiti_protocol::mcp;
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
@@ -121,6 +122,16 @@ pub enum RuntimeCommand {
     McpInbox {
         ancestry: Vec<Pid>,
         reply: McpReply<mcp::InboxReply>,
+    },
+    McpRemember {
+        ancestry: Vec<Pid>,
+        request: mcp::RememberRequest,
+        reply: McpReply<mcp::RememberReply>,
+    },
+    McpRecall {
+        ancestry: Vec<Pid>,
+        request: mcp::RecallRequest,
+        reply: McpReply<mcp::RecallReply>,
     },
     /// PIDs de los agentes lanzados desde Kiti (sesiones tmux): a ellos se les puede escribir.
     MailReachable(Vec<Pid>),
@@ -353,6 +364,32 @@ impl RuntimeHandle {
             .await
     }
 
+    pub async fn mcp_remember(
+        &self,
+        ancestry: Vec<Pid>,
+        request: mcp::RememberRequest,
+    ) -> Result<mcp::RememberReply, mcp::ErrorReply> {
+        self.mcp(|reply| RuntimeCommand::McpRemember {
+            ancestry,
+            request,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn mcp_recall(
+        &self,
+        ancestry: Vec<Pid>,
+        request: mcp::RecallRequest,
+    ) -> Result<mcp::RecallReply, mcp::ErrorReply> {
+        self.mcp(|reply| RuntimeCommand::McpRecall {
+            ancestry,
+            request,
+            reply,
+        })
+        .await
+    }
+
     /// Agentes a los que Kiti puede escribir (sesiones tmux).
     pub async fn mail_reachable(&self, pids: Vec<Pid>) {
         let _ = self.tx.send(RuntimeCommand::MailReachable(pids)).await;
@@ -460,6 +497,10 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     reachable: std::collections::HashSet<Pid>,
     /// A quién se escribió y cuándo: no se le vuelve a escribir hasta verlo trabajar.
     typed: std::collections::HashMap<AgentId, Timestamp>,
+    /// Memoria de los proyectos (ADR 0018).
+    memories: MemoryBook,
+    memory_store: Option<Box<dyn MemoryStore>>,
+    memory_dirty: bool,
 }
 
 impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
@@ -500,6 +541,9 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             courier: None,
             reachable: std::collections::HashSet::new(),
             typed: std::collections::HashMap::new(),
+            memories: MemoryBook::default(),
+            memory_store: None,
+            memory_dirty: false,
         };
         (
             runtime,
@@ -532,6 +576,14 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     /// Quién escribe los mensajes en las terminales (ADR 0017). Sin él, solo hay `kiti_inbox`.
     pub fn with_courier(mut self, courier: impl MailCourier) -> Self {
         self.courier = Some(Box::new(courier));
+        self
+    }
+
+    /// Almacén persistente de recuerdos (`SqliteMemoryStore`, ADR 0018) e hidratación inicial.
+    pub fn with_memories(mut self, initial: Vec<MemoryEntry>, store: impl MemoryStore) -> Self {
+        self.memories.load(initial);
+        self.telemetry.set_memories_total(self.memories.total());
+        self.memory_store = Some(Box::new(store));
         self
     }
 
@@ -766,6 +818,10 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     self.sync_mail();
                     publisher.publish(ServerMsg::Mail(mail::mail_state(&self.mailbox)));
                     self.mail_dirty = false;
+                    if self.memories.total() > 0 {
+                        publisher.publish(memory::memory_msg(&self.memories));
+                    }
+                    self.memory_dirty = false;
                     if let Some(id) = self.pending_focus.take() {
                         publisher.publish(ServerMsg::Focus {
                             id: kiti_protocol::AgentId(id.to_string()),
@@ -815,6 +871,20 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             }
             RuntimeCommand::McpInbox { ancestry, reply } => {
                 let _ = reply.send(self.mcp_inbox(&ancestry));
+            }
+            RuntimeCommand::McpRemember {
+                ancestry,
+                request,
+                reply,
+            } => {
+                let _ = reply.send(self.mcp_remember(&ancestry, request));
+            }
+            RuntimeCommand::McpRecall {
+                ancestry,
+                request,
+                reply,
+            } => {
+                let _ = reply.send(self.mcp_recall(&ancestry, request));
             }
             RuntimeCommand::MailReachable(pids) => {
                 self.reachable = pids.into_iter().collect();
@@ -1047,6 +1117,108 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         Ok(mcp::InboxReply { messages: out })
     }
 
+    fn mcp_remember(
+        &mut self,
+        ancestry: &[Pid],
+        request: mcp::RememberRequest,
+    ) -> Result<mcp::RememberReply, mcp::ErrorReply> {
+        let me = self.caller(ancestry)?;
+        let author = self.mailbox.alias(&me).unwrap_or("agent").to_owned();
+        let cwd = self
+            .registry
+            .get(&me)
+            .map(|a| a.cwd().as_str().to_owned())
+            .unwrap_or_default();
+        let project = self.projects.project_of(&cwd);
+        let now = self.clock.now();
+        match self.memories.remember(
+            &project,
+            &author,
+            &request.kind,
+            &request.title,
+            &request.detail,
+            &request.files,
+            now,
+        ) {
+            Ok(entry) => {
+                if let Some(store) = self.memory_store.as_mut() {
+                    store.save(&entry);
+                }
+                info!(
+                    event = "memory.stored",
+                    author = %author,
+                    kind = entry.kind.as_str(),
+                    files = entry.files.len()
+                );
+                self.telemetry.record_memory();
+                self.memory_dirty = true;
+                Ok(memory::remember_reply(&entry))
+            }
+            Err(e) => {
+                info!(event = "memory.rejected", reason = e.code());
+                Err(memory::remember_error(&e))
+            }
+        }
+    }
+
+    fn mcp_recall(
+        &mut self,
+        ancestry: &[Pid],
+        request: mcp::RecallRequest,
+    ) -> Result<mcp::RecallReply, mcp::ErrorReply> {
+        let me = self.caller(ancestry)?;
+        let cwd = self
+            .registry
+            .get(&me)
+            .map(|a| a.cwd().as_str().to_owned())
+            .unwrap_or_default();
+        let project = self.projects.project_of(&cwd);
+        let query = request
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+            .map(str::to_owned);
+
+        let mut sessions = Vec::new();
+        for agent in self.registry.agents().filter(|a| !a.is_dead()) {
+            if self.projects.project_of(agent.cwd().as_str()) == project {
+                let alias = self.mailbox.alias(&agent.id()).unwrap_or("?");
+                sessions.push(memory::recall_session(agent, alias));
+            }
+        }
+        sessions.sort_by(|a, b| a.alias.cmp(&b.alias));
+
+        let memories: Vec<mcp::RecallEntry> = match &query {
+            Some(q) => {
+                let hits = self
+                    .memory_store
+                    .as_mut()
+                    .and_then(|s| s.search(&project, q, SEARCH_LIMIT))
+                    .unwrap_or_else(|| self.memories.search(&project, q, SEARCH_LIMIT));
+                hits.iter().map(|e| memory::recall_entry(e, true)).collect()
+            }
+            None => self
+                .memories
+                .for_project(&project)
+                .into_iter()
+                .take(20)
+                .map(|e| memory::recall_entry(e, false))
+                .collect(),
+        };
+        info!(
+            event = "memory.recalled",
+            has_query = query.is_some(),
+            results = memories.len()
+        );
+        Ok(mcp::RecallReply {
+            project: mail::project_name(&project),
+            query,
+            sessions,
+            memories,
+        })
+    }
+
     fn flush_diff(&mut self) {
         self.sync_mail();
         self.deliver_mail();
@@ -1055,6 +1227,14 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         {
             self.mail_dirty = false;
             if !publisher.publish(ServerMsg::Mail(mail::mail_state(&self.mailbox))) {
+                self.drop_publisher();
+            }
+        }
+        if self.memory_dirty
+            && let Some(publisher) = self.publisher.as_mut()
+        {
+            self.memory_dirty = false;
+            if !publisher.publish(memory::memory_msg(&self.memories)) {
                 self.drop_publisher();
             }
         }

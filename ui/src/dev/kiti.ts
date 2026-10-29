@@ -33,6 +33,8 @@ export type KitiDev = {
   mail(id: string): string | null;
   /** Sobres dibujados entre oficinas (ADR 0017). */
   envelopes(): number;
+  /** Recuerdos de proyecto cargados (ADR 0018). */
+  memory(): number;
 };
 
 declare global {
@@ -72,6 +74,7 @@ export function installDevHooks(
     board: (id) => getWorld()?.board(id) ?? null,
     mail: (id) => getWorld()?.mail(id) ?? null,
     envelopes: () => getWorld()?.envelopes() ?? 0,
+    memory: () => store.getState().memories.length,
     kill: (idOrIndex) => {
       const id = /^\d+$/.test(idOrIndex) ? ids()[Number(idOrIndex)] : idOrIndex;
       if (id) store.getState().requestKill(id);

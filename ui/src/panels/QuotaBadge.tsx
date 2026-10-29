@@ -32,15 +32,16 @@ type Props = { store: KitiStore; now: () => number };
  */
 export function QuotaBadge({ store, now }: Props) {
   const quotas = useStore(store, (st) => st.quotas);
-  const [, repaint] = useState(0);
-  const t = now();
+  const [tick, setTick] = useState(0);
+  const t = Math.max(now(), tick);
   const next = nextReset([...quotas.values()].flat(), t);
   useEffect(() => {
     if (next === undefined) return;
     // setTimeout no admite más de ~24,8 días; la cuota llega antes.
-    const id = setTimeout(() => repaint((n) => n + 1), Math.min(next - t, 2 ** 31 - 1));
+    const delay = Math.min(Math.max(0, next - now()), 2 ** 31 - 1);
+    const id = setTimeout(() => setTick(next), delay);
     return () => clearTimeout(id);
-  }, [next, t]);
+  }, [next, now]);
   if (quotas.size === 0) return null;
   return (
     <span className={s.quotas}>

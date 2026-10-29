@@ -5,6 +5,7 @@
 
 pub mod alerts;
 pub mod mail;
+pub mod memory;
 pub mod projection;
 pub mod runtime;
 pub mod scanner;

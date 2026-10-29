@@ -47,10 +47,21 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
     st.view.selectedId ? st.agents.agents.get(st.view.selectedId) : undefined,
   );
   const git = useStore(store, (st) => (agent?.project ? st.git.get(agent.project) : undefined));
+  const memories = useStore(store, (st) => st.memories);
   const terminal = useStore(store, (st) => (agent ? st.terminals.get(agent.pid) : undefined));
   // Con la terminal abierta, su cabecera ya dice qué agente es: el panel no tapa oficinas.
   const terminalOpen = useStore(store, (st) => st.openTerminalId !== undefined);
   if (!agent || terminalOpen) return null;
+  const projectMemories = memories.filter((m) => m.project === agent.project).slice(0, 3);
+  const tasks = agent.tasks ?? [];
+  const completedTasks = tasks.filter((t) => t.status === "completed").length;
+  const activeTask = tasks.find((t) => t.status === "inProgress" || t.status === "pending");
+  const tasksText =
+    tasks.length > 0
+      ? [`${completedTasks}/${tasks.length} hechas`, ...(activeTask ? [activeTask.text] : [])].join(
+          " · ",
+        )
+      : undefined;
   const gitText = git
     ? [
         git.branch ?? "HEAD separado",
@@ -94,10 +105,34 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
             <dd>{agent.activity}</dd>
           </>
         )}
+        {agent.initialPrompt && agent.initialPrompt !== agent.lastPrompt && (
+          <>
+            <dt>objetivo</dt>
+            <dd>{agent.initialPrompt}</dd>
+          </>
+        )}
         {agent.lastPrompt && (
           <>
             <dt>último pedido</dt>
             <dd>{agent.lastPrompt}</dd>
+          </>
+        )}
+        {tasksText && (
+          <>
+            <dt>tareas</dt>
+            <dd>{tasksText}</dd>
+          </>
+        )}
+        {agent.touchedFiles && agent.touchedFiles.length > 0 && (
+          <>
+            <dt>archivos</dt>
+            <dd>{agent.touchedFiles.join(", ")}</dd>
+          </>
+        )}
+        {projectMemories.length > 0 && (
+          <>
+            <dt>memoria</dt>
+            <dd>{projectMemories.map((m) => `[${m.kind}] ${m.title}`).join(" · ")}</dd>
           </>
         )}
         {agent.model && (

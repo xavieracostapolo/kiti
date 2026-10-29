@@ -5,6 +5,7 @@
 //! transición la usa. La ACL del Hito 4 la añadirá si la telemetría la necesita.
 
 use super::ids::{ToolName, ToolUseKey};
+use super::memory::TaskItem;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Signal {
@@ -38,11 +39,19 @@ pub struct AgentInfo {
     pub title: Option<String>,
     pub activity: Option<String>,
     pub prompt: Option<String>,
+    /// Archivo modificado en este paso (`Edit`, `Write`…), para la memoria de sesión (ADR 0018).
+    pub touched_file: Option<String>,
+    /// Lista de tareas (`TodoWrite`), para la memoria de sesión (ADR 0018).
+    pub tasks: Option<Vec<TaskItem>>,
 }
 
 impl AgentInfo {
     pub fn is_empty(&self) -> bool {
-        self.title.is_none() && self.activity.is_none() && self.prompt.is_none()
+        self.title.is_none()
+            && self.activity.is_none()
+            && self.prompt.is_none()
+            && self.touched_file.is_none()
+            && self.tasks.is_none()
     }
 }
 

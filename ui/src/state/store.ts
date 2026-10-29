@@ -10,6 +10,7 @@ import type {
   CoreMetrics,
   GitInfo,
   MailState,
+  MemoryItem,
   Provider,
   QuotaWindow,
   ServerMsg,
@@ -38,6 +39,8 @@ export type KitiState = {
   quotas: ReadonlyMap<Provider, readonly QuotaWindow[]>;
   /** Mensajes entre agentes (ADR 0017); `undefined` hasta que el core manda el primero. */
   mail: MailState | undefined;
+  /** Recuerdos de los proyectos (ADR 0018), del más reciente al más antiguo. */
+  memories: readonly MemoryItem[];
   /** Panel de mensajes abierto. */
   mailOpen: boolean;
   setMailOpen(open: boolean): void;
@@ -97,6 +100,7 @@ export function createKitiStore() {
     quotas: new Map(),
     git: new Map(),
     mail: undefined,
+    memories: [],
     mailOpen: false,
     setMailOpen(mailOpen) {
       if (get().mailOpen !== mailOpen) set({ mailOpen });
@@ -171,6 +175,10 @@ export function createKitiStore() {
       if (msg.type === "Mail") {
         const { type: _, ...mail } = msg;
         set({ mail });
+        return;
+      }
+      if (msg.type === "Memory") {
+        set({ memories: msg.memories });
         return;
       }
       if (msg.type === "Quota") {

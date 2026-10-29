@@ -11,4 +11,8 @@ mailsTotal: number,
 /**
  * Mensajes aún sin entregar (por aprobar, en cola o retenidos).
  */
-mailPending: number, };
+mailPending: number, 
+/**
+ * Recuerdos de proyecto guardados (ADR 0018).
+ */
+memoriesTotal: number, };

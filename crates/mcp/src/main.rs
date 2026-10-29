@@ -30,6 +30,28 @@ struct SendArgs {
     reply_to: Option<u64>,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct RememberArgs {
+    /// Tipo de recuerdo: `decision` (decisión de arquitectura), `gotcha` (trampa o restricción),
+    /// `handoff` (relevo para la siguiente sesión) o `note` (nota técnica).
+    kind: String,
+    /// Título corto (hasta 120 caracteres) para el índice del proyecto.
+    title: String,
+    /// Detalle conciso (hasta 600 caracteres) con la decisión, causa o siguiente paso.
+    detail: String,
+    /// Archivos relacionados (nombres o rutas relativas).
+    #[serde(default)]
+    files: Vec<String>,
+}
+
+#[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
+struct RecallArgs {
+    /// Palabras clave a buscar con FTS5 BM25. Si se omite, devuelve el pulso de las sesiones del
+    /// proyecto y solo el índice de títulos (sin llenar el contexto).
+    #[serde(default)]
+    query: Option<String>,
+}
+
 #[derive(Clone)]
 struct Kiti {
     api: Arc<dyn Api>,
@@ -101,6 +123,44 @@ impl Kiti {
             run(move || api.inbox())
                 .await
                 .map(|r| text::inbox(&r))
+                .map_err(|e| text::error(&e)),
+        )
+    }
+
+    #[tool(
+        description = "Guarda un recuerdo estructurado en la memoria del proyecto en SQLite \
+        (`decision`, `gotcha`, `handoff` o `note`) para que no se pierda al compactar la \
+        conversación ni al cambiar de agente."
+    )]
+    async fn kiti_remember(&self, Parameters(args): Parameters<RememberArgs>) -> CallToolResult {
+        let api = Arc::clone(&self.api);
+        let request = kiti_protocol::mcp::RememberRequest {
+            kind: args.kind,
+            title: args.title,
+            detail: args.detail,
+            files: args.files,
+        };
+        reply(
+            run(move || api.remember(&request))
+                .await
+                .map(|r| text::remembered(&r))
+                .map_err(|e| text::error(&e)),
+        )
+    }
+
+    #[tool(
+        description = "Consulta la memoria del proyecto sin inflar el contexto. Sin `query`, \
+        devuelve el pulso actual (objetivo, archivos tocados y tareas pendientes de las sesiones \
+        del proyecto) y el índice de títulos. Con `query`, busca con FTS5 BM25 y devuelve el \
+        detalle de los recuerdos más relevantes."
+    )]
+    async fn kiti_recall(&self, Parameters(args): Parameters<RecallArgs>) -> CallToolResult {
+        let api = Arc::clone(&self.api);
+        let request = kiti_protocol::mcp::RecallRequest { query: args.query };
+        reply(
+            run(move || api.recall(&request))
+                .await
+                .map(|r| text::recalled(&r))
                 .map_err(|e| text::error(&e)),
         )
     }
@@ -182,6 +242,35 @@ mod tests {
         fn inbox(&self) -> Result<mcp::InboxReply, ApiError> {
             Ok(mcp::InboxReply { messages: vec![] })
         }
+
+        fn remember(&self, request: &mcp::RememberRequest) -> Result<mcp::RememberReply, ApiError> {
+            Ok(mcp::RememberReply {
+                id: 7,
+                project: "kiti".into(),
+                kind: request.kind.clone(),
+                title: request.title.clone(),
+            })
+        }
+
+        fn recall(&self, request: &mcp::RecallRequest) -> Result<mcp::RecallReply, ApiError> {
+            Ok(mcp::RecallReply {
+                project: "kiti".into(),
+                query: request.query.clone(),
+                sessions: vec![],
+                memories: vec![mcp::RecallEntry {
+                    id: 7,
+                    kind: "decision".into(),
+                    title: "SQLite FTS5".into(),
+                    detail: request
+                        .query
+                        .as_ref()
+                        .map(|_| "Búsqueda BM25 en < 1 ms.".into()),
+                    files: vec!["memory_sqlite.rs".into()],
+                    author: "agy-2".into(),
+                    created_at: 100,
+                }],
+            })
+        }
     }
 
     fn text_of(r: &CallToolResult) -> String {
@@ -231,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn expone_las_tres_herramientas() {
+    fn expone_las_cinco_herramientas() {
         let kiti = Kiti::new(Arc::new(Fake::default()));
         let mut names: Vec<String> = kiti
             .tool_router
@@ -240,6 +329,42 @@ mod tests {
             .map(|t| t.name.to_string())
             .collect();
         names.sort();
-        assert_eq!(names, ["kiti_agents", "kiti_inbox", "kiti_send"]);
+        assert_eq!(
+            names,
+            [
+                "kiti_agents",
+                "kiti_inbox",
+                "kiti_recall",
+                "kiti_remember",
+                "kiti_send"
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn remember_y_recall_en_dos_pasos() {
+        let kiti = Kiti::new(Arc::new(Fake::default()));
+        let saved = kiti
+            .kiti_remember(Parameters(RememberArgs {
+                kind: "decision".into(),
+                title: "SQLite FTS5".into(),
+                detail: "Búsqueda BM25 en < 1 ms.".into(),
+                files: vec!["memory_sqlite.rs".into()],
+            }))
+            .await;
+        assert!(text_of(&saved).contains("id 7"));
+
+        let index = kiti
+            .kiti_recall(Parameters(RecallArgs { query: None }))
+            .await;
+        assert!(text_of(&index).contains("SQLite FTS5"));
+        assert!(!text_of(&index).contains("Búsqueda BM25 en < 1 ms."));
+
+        let full = kiti
+            .kiti_recall(Parameters(RecallArgs {
+                query: Some("sqlite".into()),
+            }))
+            .await;
+        assert!(text_of(&full).contains("Búsqueda BM25 en < 1 ms."));
     }
 }

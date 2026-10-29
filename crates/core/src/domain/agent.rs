@@ -6,6 +6,7 @@ use super::events::DomainEvent;
 use super::ids::{
     AgentId, ProcessIdentity, Provider, SessionId, Timestamp, ToolName, ToolUseKey, WorkingDir,
 };
+use super::memory::{TASKS_MAX, TOUCHED_MAX, TaskItem};
 use super::signal::{AgentInfo, Signal};
 use super::stale::StalePolicy;
 use super::status::{Status, StatusKind, StatusReason, TrafficLight};
@@ -71,7 +72,10 @@ pub struct Agent {
     last_tool: Option<ToolName>,
     title: Option<String>,
     activity: Option<String>,
+    initial_prompt: Option<String>,
     last_prompt: Option<String>,
+    touched_files: std::collections::VecDeque<String>,
+    tasks: Vec<TaskItem>,
     session: Option<SessionId>,
     stats: AgentStats,
     /// Últimos cambios de estado `(estado, desde)`, el más reciente al final.
@@ -103,7 +107,10 @@ impl Agent {
             last_tool: None,
             title: None,
             activity: None,
+            initial_prompt: None,
             last_prompt: None,
+            touched_files: std::collections::VecDeque::new(),
+            tasks: Vec::new(),
             session: None,
             stats: AgentStats::default(),
             history: std::collections::VecDeque::from([(StatusKind::Idle, now)]),
@@ -152,6 +159,18 @@ impl Agent {
 
     pub fn last_prompt(&self) -> Option<&str> {
         self.last_prompt.as_deref()
+    }
+
+    pub fn initial_prompt(&self) -> Option<&str> {
+        self.initial_prompt.as_deref()
+    }
+
+    pub fn touched_files(&self) -> &std::collections::VecDeque<String> {
+        &self.touched_files
+    }
+
+    pub fn tasks(&self) -> &[TaskItem] {
+        &self.tasks
     }
 
     pub fn stats(&self) -> &AgentStats {
@@ -214,6 +233,10 @@ impl Agent {
             AgentInput::SessionFile(activity) => self.on_session_file(*activity, now, &mut ev),
             AgentInput::Info(info) => {
                 let mut changed = false;
+                if info.prompt.is_some() && self.initial_prompt.is_none() {
+                    self.initial_prompt.clone_from(&info.prompt);
+                    changed = true;
+                }
                 for (field, value) in [
                     (&mut self.title, &info.title),
                     (&mut self.activity, &info.activity),
@@ -221,6 +244,24 @@ impl Agent {
                 ] {
                     if value.is_some() && field != value {
                         field.clone_from(value);
+                        changed = true;
+                    }
+                }
+                if let Some(file) = &info.touched_file
+                    && !file.is_empty()
+                    && self.touched_files.back() != Some(file)
+                {
+                    self.touched_files.retain(|f| f != file);
+                    self.touched_files.push_back(file.clone());
+                    while self.touched_files.len() > TOUCHED_MAX {
+                        self.touched_files.pop_front();
+                    }
+                    changed = true;
+                }
+                if let Some(tasks) = &info.tasks {
+                    let capped: Vec<TaskItem> = tasks.iter().take(TASKS_MAX).cloned().collect();
+                    if self.tasks != capped {
+                        self.tasks = capped;
                         changed = true;
                     }
                 }
@@ -266,7 +307,10 @@ impl Agent {
                 // Conversación nueva (arranque, /clear, resume): su título y pedido llegarán.
                 self.title = None;
                 self.activity = None;
+                self.initial_prompt = None;
                 self.last_prompt = None;
+                self.touched_files.clear();
+                self.tasks.clear();
                 self.pending_tools.clear();
                 self.exit_expected = false;
                 ev.push(DomainEvent::SessionStarted { id: self.id });
@@ -749,6 +793,7 @@ mod tests {
             title: title.map(Into::into),
             activity: activity.map(Into::into),
             prompt: prompt.map(Into::into),
+            ..AgentInfo::default()
         })
     }
 
@@ -838,5 +883,55 @@ mod tests {
             a.apply(&AgentInput::Signal(signal), Timestamp(T0.0 + 100 + i));
         }
         assert_eq!(a.history().len(), HISTORY_MAX);
+    }
+
+    #[test]
+    fn recuerda_objetivo_inicial_archivos_tocados_y_tareas_de_la_sesion() {
+        use crate::domain::memory::TaskStatus;
+
+        let mut a = working();
+        a.apply(&info(None, None, Some("implementa memoria SQLite")), t(1));
+        a.apply(&info(None, None, Some("sí, continúa")), t(2));
+        assert_eq!(a.initial_prompt(), Some("implementa memoria SQLite"));
+        assert_eq!(a.last_prompt(), Some("sí, continúa"));
+
+        for file in ["a.rs", "b.rs", "a.rs"] {
+            a.apply(
+                &AgentInput::Info(AgentInfo {
+                    touched_file: Some(file.into()),
+                    ..AgentInfo::default()
+                }),
+                t(3),
+            );
+        }
+        assert_eq!(
+            a.touched_files().iter().cloned().collect::<Vec<_>>(),
+            vec!["b.rs", "a.rs"]
+        );
+
+        let tasks = vec![
+            TaskItem {
+                text: "Dominio".into(),
+                status: TaskStatus::Completed,
+            },
+            TaskItem {
+                text: "SQLite".into(),
+                status: TaskStatus::InProgress,
+            },
+        ];
+        a.apply(
+            &AgentInput::Info(AgentInfo {
+                tasks: Some(tasks.clone()),
+                ..AgentInfo::default()
+            }),
+            t(4),
+        );
+        assert_eq!(a.tasks(), &tasks);
+
+        // SessionStart limpia la memoria de la sesión.
+        sig(&mut a, Signal::SessionStart, t(5));
+        assert_eq!(a.initial_prompt(), None);
+        assert!(a.touched_files().is_empty());
+        assert!(a.tasks().is_empty());
     }
 }

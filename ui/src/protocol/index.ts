@@ -16,6 +16,8 @@ export type { MailMode } from "./generated/MailMode";
 export type { MailState } from "./generated/MailState";
 export type { MailThread } from "./generated/MailThread";
 export type { MailThreadState } from "./generated/MailThreadState";
+export type { MemoryItem } from "./generated/MemoryItem";
+export type { MemoryKind } from "./generated/MemoryKind";
 export type { Provider } from "./generated/Provider";
 export type { QuotaWindow } from "./generated/QuotaWindow";
 export type { ServerMsg } from "./generated/ServerMsg";
@@ -23,6 +25,8 @@ export type { Source } from "./generated/Source";
 export type { Status } from "./generated/Status";
 export type { StatusKind } from "./generated/StatusKind";
 export type { StatusReason } from "./generated/StatusReason";
+export type { TaskItem } from "./generated/TaskItem";
+export type { TaskStatus } from "./generated/TaskStatus";
 export type { TerminalInfo } from "./generated/TerminalInfo";
 export type { UiMetrics } from "./generated/UiMetrics";
 

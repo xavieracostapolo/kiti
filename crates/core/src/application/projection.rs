@@ -2,7 +2,7 @@
 //!
 //! Trunca las cadenas a 256 caracteres antes de serializar hacia la UI.
 
-use crate::domain::{Agent, Provider, RegistryDiff, Status, StatusKind, StatusReason};
+use crate::domain::{Agent, Provider, RegistryDiff, Status, StatusKind, StatusReason, TaskStatus};
 use crate::ports::ProjectResolver;
 use kiti_protocol as proto;
 
@@ -73,7 +73,23 @@ pub fn project_agent(a: &Agent, projects: &mut dyn ProjectResolver) -> proto::Ag
         session_id: a.session().map(|s| truncate_str(s.as_str())),
         title: a.title().map(truncate_str),
         activity: a.activity().map(truncate_str),
+        initial_prompt: a.initial_prompt().map(truncate_str),
         last_prompt: a.last_prompt().map(truncate_str),
+        touched_files: (!a.touched_files().is_empty())
+            .then(|| a.touched_files().iter().map(|f| truncate_str(f)).collect()),
+        tasks: (!a.tasks().is_empty()).then(|| {
+            a.tasks()
+                .iter()
+                .map(|t| proto::TaskItem {
+                    text: truncate_str(&t.text),
+                    status: match t.status {
+                        TaskStatus::Pending => proto::TaskStatus::Pending,
+                        TaskStatus::InProgress => proto::TaskStatus::InProgress,
+                        TaskStatus::Completed => proto::TaskStatus::Completed,
+                    },
+                })
+                .collect()
+        }),
         model: a.stats().model.clone(),
         context_pct: a.stats().context_pct,
         cost_cents: a.stats().cost_cents,

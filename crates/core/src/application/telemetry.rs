@@ -15,6 +15,7 @@ pub struct Telemetry {
     pub ipc_flush_total: AtomicU64,
     pub metrics_msgs_total: AtomicU64,
     pub mails_total: AtomicU64,
+    pub memories_total: AtomicU64,
     hook_to_publish_hist: Mutex<Histogram<u64>>,
     last_sample_time: Mutex<Instant>,
     last_sample_events: AtomicU64,
@@ -31,6 +32,7 @@ impl Telemetry {
             ipc_flush_total: AtomicU64::new(0),
             metrics_msgs_total: AtomicU64::new(0),
             mails_total: AtomicU64::new(0),
+            memories_total: AtomicU64::new(0),
             hook_to_publish_hist: Mutex::new(hist),
             last_sample_time: Mutex::new(Instant::now()),
             last_sample_events: AtomicU64::new(0),
@@ -44,6 +46,15 @@ impl Telemetry {
     /// Un `kiti_send` aceptado (ADR 0017).
     pub fn record_mail(&self) {
         self.mails_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Un `kiti_remember` aceptado (ADR 0018).
+    pub fn record_memory(&self) {
+        self.memories_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn set_memories_total(&self, total: u64) {
+        self.memories_total.store(total, Ordering::Relaxed);
     }
 
     pub fn record_publish_latency_ms(&self, ms: u64) {
@@ -94,6 +105,7 @@ impl Telemetry {
             cpu_percent,
             mails_total: self.mails_total.load(Ordering::Relaxed),
             mail_pending,
+            memories_total: self.memories_total.load(Ordering::Relaxed),
         }
     }
 }

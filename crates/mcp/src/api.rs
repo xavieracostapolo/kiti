@@ -21,6 +21,8 @@ pub trait Api: Send + Sync + 'static {
     fn agents(&self) -> Result<mcp::AgentsReply, ApiError>;
     fn send(&self, request: &mcp::SendRequest) -> Result<mcp::SendReply, ApiError>;
     fn inbox(&self) -> Result<mcp::InboxReply, ApiError>;
+    fn remember(&self, request: &mcp::RememberRequest) -> Result<mcp::RememberReply, ApiError>;
+    fn recall(&self, request: &mcp::RecallRequest) -> Result<mcp::RecallReply, ApiError>;
 }
 
 pub struct HttpApi {
@@ -98,5 +100,15 @@ impl Api for HttpApi {
 
     fn inbox(&self) -> Result<mcp::InboxReply, ApiError> {
         self.call("inbox", b"{}")
+    }
+
+    fn remember(&self, request: &mcp::RememberRequest) -> Result<mcp::RememberReply, ApiError> {
+        let body = serde_json::to_vec(request).map_err(|_| ApiError::Unavailable)?;
+        self.call("remember", &body)
+    }
+
+    fn recall(&self, request: &mcp::RecallRequest) -> Result<mcp::RecallReply, ApiError> {
+        let body = serde_json::to_vec(request).map_err(|_| ApiError::Unavailable)?;
+        self.call("recall", &body)
     }
 }

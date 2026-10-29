@@ -5,8 +5,8 @@ use serde::Deserialize;
 use super::clip;
 pub use super::{AclError, HookEvent};
 use crate::domain::{
-    AgentInfo, Pid, SessionActivity, SessionId, Signal, Timestamp, ToolName, ToolOutcome,
-    ToolUseKey,
+    AgentInfo, Pid, SessionActivity, SessionId, Signal, TASKS_MAX, TaskItem, TaskStatus, Timestamp,
+    ToolName, ToolOutcome, ToolUseKey,
 };
 
 /// Lista blanca de campos (ADR 0005 §7 y 0009): de `tool_input` solo se leen los campos que
@@ -78,17 +78,57 @@ fn activity(tool: &str, input: Option<&ToolInput>) -> String {
     clip(&text, MAX_TEXT)
 }
 
+fn touched_file(tool: &str, input: Option<&ToolInput>) -> Option<String> {
+    match tool {
+        "Edit" | "MultiEdit" | "Write" | "NotebookEdit" => input
+            .and_then(|i| i.file_path.as_deref())
+            .map(file_name)
+            .filter(|f| !f.is_empty())
+            .map(|f| clip(f, 80)),
+        _ => None,
+    }
+}
+
+fn tasks_of(tool: &str, input: Option<&ToolInput>) -> Option<Vec<TaskItem>> {
+    if tool != "TodoWrite" {
+        return None;
+    }
+    let todos = input.and_then(|i| i.todos.as_ref())?;
+    let items: Vec<TaskItem> = todos
+        .iter()
+        .filter_map(|t| {
+            let text = t
+                .content
+                .as_deref()
+                .or(t.active_form.as_deref())
+                .map(|s| clip(s, MAX_TEXT))
+                .filter(|s| !s.is_empty())?;
+            let status = match t.status.as_deref() {
+                Some("completed") => TaskStatus::Completed,
+                Some("in_progress") => TaskStatus::InProgress,
+                _ => TaskStatus::Pending,
+            };
+            Some(TaskItem { text, status })
+        })
+        .take(TASKS_MAX)
+        .collect();
+    Some(items)
+}
+
 fn info_of(name: &str, p: &Payload) -> AgentInfo {
+    let tool = match name {
+        "PreToolUse" => p.tool_name.as_deref(),
+        _ => None,
+    };
     AgentInfo {
         title: p.session_title.as_deref().map(|t| clip(t, MAX_TEXT)),
-        activity: match (name, p.tool_name.as_deref()) {
-            ("PreToolUse", Some(tool)) => Some(activity(tool, p.tool_input.as_ref())),
-            _ => None,
-        },
+        activity: tool.map(|t| activity(t, p.tool_input.as_ref())),
         prompt: match name {
             "UserPromptSubmit" => p.prompt.as_deref().map(|t| clip(t, MAX_TEXT)),
             _ => None,
         },
+        touched_file: tool.and_then(|t| touched_file(t, p.tool_input.as_ref())),
+        tasks: tool.and_then(|t| tasks_of(t, p.tool_input.as_ref())),
     }
 }
 

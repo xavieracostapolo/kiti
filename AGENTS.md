@@ -16,7 +16,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 20 en `main`. El último, "Mensajes entre agentes", está en el [ADR 0017](docs/decisiones/0017-mensajes-entre-agentes/README.md).
+- **Fase:** Hitos 1 a 21 en `main`. El último, "Memoria de proyecto y de sesión", está en el [ADR 0018](docs/decisiones/0018-memoria-de-proyecto/README.md).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -46,6 +46,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 | [0015](docs/decisiones/0015-cuota/README.md) | Cuota de uso: Claude por su status line (`rate_limits`), Antigravity por `agy -p /usage` tras cada turno (mínimo 30 s; 5 min sin turnos); chip en la barra, reinicio al 100 % a su hora y aviso al bajar del 20 % semanal |
 | [0016](docs/decisiones/0016-tablero-de-oficina/README.md) | Tablero en el zoom cercano: modelo, contexto y coste (status line de Claude), git del proyecto y la última hora |
 | [0017](docs/decisiones/0017-mensajes-entre-agentes/README.md) | Mensajes entre agentes: `kiti-mcp` (MCP por stdio) con `kiti_agents`, `kiti_send` y `kiti_inbox`; entrega en su terminal tmux; automático por defecto, con límites |
+| [0018](docs/decisiones/0018-memoria-de-proyecto/README.md) | Memoria de proyecto y de sesión: objetivo inicial, archivos tocados y tareas por hooks, más recuerdos persistentes en SQLite (`FTS5` `bm25`) con `kiti_remember` y `kiti_recall` en dos pasos |
 
 ## Decisiones tomadas (no repetir)
 
@@ -192,6 +193,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **18. Cuota:** cuánto queda del plan de Claude (5 h y semana) y de Antigravity, en la barra superior, con aviso al bajar del 20 % semanal. Se actualiza en tiempo real: Antigravity tras cada turno y las ventanas vuelven al 100 % al reiniciarse.
 - [x] **19. Tablero de la oficina:** en el zoom cercano, modelo, contexto y coste de la sesión, git del proyecto y la última hora.
 - [x] **20. Mensajes entre agentes:** los agentes se escriben a través de Kiti con `kiti-mcp`, sea cual sea su proveedor; panel de mensajes, sobres en el mapa y modos automático y manual.
+- [x] **21. Memoria de proyecto y de sesión:** objetivo inicial, archivos tocados y tareas capturados automáticamente por hooks; recuerdos de proyecto (`decision`, `gotcha`, `handoff`, `note`) en SQLite (`WAL` + `FTS5` `bm25`) con `kiti_remember` y `kiti_recall` en dos pasos (índice ligero y búsqueda bajo demanda).
 - [x] **UX (PR #17):** distribuciones del mapa (dinámica, horizontal y vertical), botones `+`, `−` y encuadrar, animaciones de trabajo y decoración por oficina.
 - [ ] **Después:** soporte para Windows.
 

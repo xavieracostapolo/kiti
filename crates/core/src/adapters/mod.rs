@@ -15,6 +15,7 @@ mod hook_config;
 pub mod hooks;
 #[cfg(feature = "killer")]
 mod killer;
+pub mod memory_sqlite;
 #[cfg(any(feature = "scanner", feature = "killer"))]
 mod process_read;
 mod projects;

@@ -67,6 +67,67 @@ pub fn error(e: &ApiError) -> String {
     }
 }
 
+pub fn remembered(r: &mcp::RememberReply) -> String {
+    format!(
+        "Guardado en la memoria de {} (id {}, {}): «{}».",
+        r.project, r.id, r.kind, r.title
+    )
+}
+
+pub fn recalled(r: &mcp::RecallReply) -> String {
+    let mut out = format!("Memoria del proyecto {}:\n", r.project);
+    if r.query.is_none() && !r.sessions.is_empty() {
+        out.push_str("\nSesiones vivas en este proyecto:\n");
+        for s in &r.sessions {
+            let title = s
+                .title
+                .as_deref()
+                .map(|t| format!(" «{t}»"))
+                .unwrap_or_default();
+            out.push_str(&format!(
+                "- {} ({}, {}){}\n",
+                s.alias, s.provider, s.status, title
+            ));
+            if let Some(goal) = &s.initial_prompt {
+                out.push_str(&format!("  objetivo: {goal}\n"));
+            }
+            if !s.touched_files.is_empty() {
+                out.push_str(&format!("  archivos: {}\n", s.touched_files.join(", ")));
+            }
+            if !s.pending_tasks.is_empty() {
+                out.push_str(&format!("  tareas: {}\n", s.pending_tasks.join(" · ")));
+            }
+        }
+    }
+    if r.memories.is_empty() {
+        match &r.query {
+            Some(q) => out.push_str(&format!("\nNo hay recuerdos para «{q}».")),
+            None => out.push_str("\nAún no hay recuerdos guardados en este proyecto."),
+        }
+        return out.trim_end().to_owned();
+    }
+    match &r.query {
+        Some(q) => out.push_str(&format!("\nRecuerdos para «{q}»:\n")),
+        None => out
+            .push_str("\nÍndice de recuerdos (pasa `query` a kiti_recall para leer el detalle):\n"),
+    }
+    for m in &r.memories {
+        let files = if m.files.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", m.files.join(", "))
+        };
+        out.push_str(&format!(
+            "- #{} [{}] {} (por {}){}\n",
+            m.id, m.kind, m.title, m.author, files
+        ));
+        if let Some(detail) = &m.detail {
+            out.push_str(&format!("  {detail}\n"));
+        }
+    }
+    out.trim_end().to_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -87,10 +87,22 @@ pub struct AgentState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub activity: Option<String>,
+    /// Primer pedido de la sesión (ADR 0018): conserva el objetivo inicial aunque luego haya "sí".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub initial_prompt: Option<String>,
     /// Último pedido del usuario, recortado.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub last_prompt: Option<String>,
+    /// Archivos modificados durante la sesión (`Edit`, `Write`…), ADR 0018.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub touched_files: Option<Vec<String>>,
+    /// Checklist de tareas (`TodoWrite`), ADR 0018.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tasks: Option<Vec<TaskItem>>,
     /// Modelo de la sesión (ADR 0016).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -115,6 +127,49 @@ pub struct AgentState {
 pub struct StatusSpan {
     pub kind: StatusKind,
     pub since: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum TaskStatus {
+    Pending,
+    InProgress,
+    Completed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TaskItem {
+    pub text: String,
+    pub status: TaskStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum MemoryKind {
+    Decision,
+    Gotcha,
+    Handoff,
+    Note,
+}
+
+/// Un recuerdo guardado en la memoria de un proyecto (ADR 0018).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MemoryItem {
+    pub id: u64,
+    pub project: String,
+    pub kind: MemoryKind,
+    pub title: String,
+    pub detail: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+    pub author: String,
+    pub created_at: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -161,6 +216,9 @@ pub struct CoreMetrics {
     /// Mensajes aún sin entregar (por aprobar, en cola o retenidos).
     #[serde(default)]
     pub mail_pending: u32,
+    /// Recuerdos de proyecto guardados (ADR 0018).
+    #[serde(default)]
+    pub memories_total: u64,
 }
 
 /// Stream core -> UI. El primer mensaje es siempre `Snapshot`; `seq` es monotónico.
@@ -197,6 +255,10 @@ pub enum ServerMsg {
     /// Mensajes entre agentes (ADR 0017): el estado completo al cambiar algo y tras cada
     /// Snapshot.
     Mail(MailState),
+    /// Recuerdos de los proyectos (ADR 0018): se envía al cambiar y tras cada Snapshot.
+    Memory {
+        memories: Vec<MemoryItem>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -417,6 +479,74 @@ pub mod mcp {
         pub messages: Vec<InboxMessage>,
     }
 
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RememberRequest {
+        pub kind: String,
+        pub title: String,
+        pub detail: String,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub files: Vec<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RememberReply {
+        pub id: u64,
+        pub project: String,
+        pub kind: String,
+        pub title: String,
+    }
+
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RecallRequest {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub query: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RecallSession {
+        pub alias: String,
+        pub provider: String,
+        pub status: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub title: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub initial_prompt: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub last_prompt: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub touched_files: Vec<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub pending_tasks: Vec<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RecallEntry {
+        pub id: u64,
+        pub kind: String,
+        pub title: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub detail: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        pub files: Vec<String>,
+        pub author: String,
+        pub created_at: u64,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RecallReply {
+        pub project: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub query: Option<String>,
+        pub sessions: Vec<RecallSession>,
+        pub memories: Vec<RecallEntry>,
+    }
+
     /// Cuerpo de las respuestas 4xx: `code` estable y `message` legible para el modelo.
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     pub struct ErrorReply {
@@ -492,7 +622,10 @@ mod tests {
             session_id: Some("s-1".into()),
             title: Some("Hito 11".into()),
             activity: None,
+            initial_prompt: None,
             last_prompt: None,
+            touched_files: None,
+            tasks: None,
             model: None,
             context_pct: None,
             cost_cents: None,

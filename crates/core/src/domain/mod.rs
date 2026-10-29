@@ -6,6 +6,7 @@ mod alerts;
 mod events;
 mod ids;
 mod mailbox;
+mod memory;
 mod process;
 mod project;
 mod quota;
@@ -26,6 +27,10 @@ pub use ids::{
 pub use mailbox::{
     Delivery, HOP_STEP, MAX_TEXT, MailMode, Mailbox, Message, MessageId, MessageState,
     RATE_PER_HOUR, SendError, Sent, Thread, ThreadId, ThreadState,
+};
+pub use memory::{
+    KEEP_MEMORIES, MAX_DETAIL, MAX_MEMORY_FILES, MAX_TITLE, MemoryBook, MemoryEntry, MemoryId,
+    MemoryKind, RememberError, SEARCH_LIMIT, TASKS_MAX, TOUCHED_MAX, TaskItem, TaskStatus,
 };
 pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
 pub use project::{GitStatus, project_root};

@@ -144,4 +144,39 @@ describe("AgentPanel", () => {
     await userEvent.click(screen.getByTitle("Cerrar panel"));
     expect(store.getState().view.selectedId).toBeUndefined();
   });
+
+  it("muestra objetivo inicial, tareas, archivos tocados y memoria del proyecto", () => {
+    const store = setup({
+      ...base,
+      initialPrompt: "Implementar memoria en SQLite",
+      lastPrompt: "sí, continúa",
+      touchedFiles: ["memory.rs", "memory_sqlite.rs"],
+      tasks: [
+        { text: "Dominio puro", status: "completed" },
+        { text: "Adaptador SQLite FTS5", status: "inProgress" },
+      ],
+    });
+    act(() =>
+      store.getState().receive({
+        type: "Memory",
+        memories: [
+          {
+            id: 1,
+            project: "/Users/dev/billing",
+            kind: "decision",
+            title: "Usar SQLite FTS5 BM25",
+            detail: "Por latencia < 1 ms",
+            files: ["memory_sqlite.rs"],
+            author: "agy-2",
+            createdAt: NOW,
+          },
+        ],
+      }),
+    );
+    expect(screen.getByText("Implementar memoria en SQLite")).toBeTruthy();
+    expect(screen.getByText("sí, continúa")).toBeTruthy();
+    expect(screen.getByText("1/2 hechas · Adaptador SQLite FTS5")).toBeTruthy();
+    expect(screen.getByText("memory.rs, memory_sqlite.rs")).toBeTruthy();
+    expect(screen.getByText("[decision] Usar SQLite FTS5 BM25")).toBeTruthy();
+  });
 });

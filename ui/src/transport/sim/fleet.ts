@@ -103,6 +103,13 @@ export class SimFleet {
       state.model = index % 3 === 0 ? "Sonnet 5.5" : "Opus 5.5";
       state.contextPct = ((index * 23) % 90) + 5;
       state.costCents = 30 + ((index * 47) % 400);
+      // Memoria de sesión (ADR 0018): objetivo inicial, archivos tocados y tareas.
+      state.initialPrompt = config.prompts[index % config.prompts.length] as string;
+      state.touchedFiles = ["src/domain/memory.rs", "src/adapters/memory_sqlite.rs"];
+      state.tasks = [
+        { text: "Definir modelo de dominio y puertos", status: "completed" },
+        { text: "Conectar FTS5 BM25 con kiti-mcp", status: "inProgress" },
+      ];
     }
     return {
       state,

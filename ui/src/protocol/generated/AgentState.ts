@@ -3,6 +3,7 @@ import type { AgentId } from "./AgentId";
 import type { Provider } from "./Provider";
 import type { Status } from "./Status";
 import type { StatusSpan } from "./StatusSpan";
+import type { TaskItem } from "./TaskItem";
 
 export type AgentState = { id: AgentId, provider: Provider, pid: number, cwd: string, startedAt: number, status: Status, lastTool?: string, lastEventAt: number, 
 /**
@@ -22,9 +23,21 @@ title?: string,
  */
 activity?: string, 
 /**
+ * Primer pedido de la sesión (ADR 0018): conserva el objetivo inicial aunque luego haya "sí".
+ */
+initialPrompt?: string, 
+/**
  * Último pedido del usuario, recortado.
  */
 lastPrompt?: string, 
+/**
+ * Archivos modificados durante la sesión (`Edit`, `Write`…), ADR 0018.
+ */
+touchedFiles?: Array<string>, 
+/**
+ * Checklist de tareas (`TodoWrite`), ADR 0018.
+ */
+tasks?: Array<TaskItem>, 
 /**
  * Modelo de la sesión (ADR 0016).
  */

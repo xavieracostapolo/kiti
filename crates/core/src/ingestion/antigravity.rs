@@ -133,6 +133,22 @@ pub fn parse_hook(body: &[u8], event: Option<&str>) -> Result<HookEvent, AclErro
                 .map(|t| clip(t, MAX_TEXT)),
             _ => None,
         },
+        touched_file: match (name.as_str(), &p.tool_call) {
+            ("PreToolUse", Some(call)) => call.name.as_deref().and_then(|t| {
+                let is_write = t.contains("write") || t.contains("replace") || t.contains("edit");
+                is_write.then_some(())?;
+                call.args
+                    .path
+                    .as_deref()
+                    .or(call.args.target_file.as_deref())
+                    .or(call.args.absolute_path.as_deref())
+                    .map(file_name)
+                    .filter(|f| !f.is_empty())
+                    .map(|f| clip(f, 80))
+            }),
+            _ => None,
+        },
+        tasks: None,
     };
     Ok(HookEvent {
         session: SessionId::new(conversation),

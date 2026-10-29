@@ -27,6 +27,7 @@ export function applyMsg(state: AgentsState, msg: ServerMsg): AgentsState {
     case "Quota":
     case "Git":
     case "Mail":
+    case "Memory":
       return state;
   }
 }

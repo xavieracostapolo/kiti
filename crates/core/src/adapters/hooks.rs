@@ -204,6 +204,34 @@ async fn handle_mcp(
             .mcp_inbox(chain)
             .await
             .map(|r| json_reply(StatusCode::OK, &r)),
+        "remember" => match serde_json::from_slice::<kiti_protocol::mcp::RememberRequest>(&body) {
+            Ok(req) => ctx
+                .runtime
+                .mcp_remember(chain, req)
+                .await
+                .map(|r| json_reply(StatusCode::OK, &r)),
+            Err(_) => {
+                return mcp_error(
+                    StatusCode::BAD_REQUEST,
+                    "bad_request",
+                    "se esperaba {\"kind\", \"title\", \"detail\", \"files\"?}",
+                );
+            }
+        },
+        "recall" => match serde_json::from_slice::<kiti_protocol::mcp::RecallRequest>(&body) {
+            Ok(req) => ctx
+                .runtime
+                .mcp_recall(chain, req)
+                .await
+                .map(|r| json_reply(StatusCode::OK, &r)),
+            Err(_) => {
+                return mcp_error(
+                    StatusCode::BAD_REQUEST,
+                    "bad_request",
+                    "se esperaba {\"query\"?}",
+                );
+            }
+        },
         _ => {
             return mcp_error(
                 StatusCode::NOT_FOUND,

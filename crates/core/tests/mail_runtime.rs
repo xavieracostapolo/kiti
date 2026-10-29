@@ -11,7 +11,7 @@ use kiti_core::domain::{
 };
 use kiti_core::ports::{AgentKiller, DiffPublisher, KillOutcome, KillTarget, MailCourier};
 use kiti_core::testing::ManualClock;
-use kiti_protocol::mcp::SendRequest;
+use kiti_protocol::mcp::{RecallRequest, RememberRequest, SendRequest};
 use kiti_protocol::{MailMessageState, MailMode, ServerMsg, Source};
 
 #[derive(Clone)]
@@ -236,4 +236,107 @@ async fn en_manual_espera_al_usuario_y_los_errores_tienen_codigo() {
     assert_eq!(err.code, "self");
     let err = h.mcp_send(from(10), send("agy-3", "x")).await.unwrap_err();
     assert_eq!(err.code, "unknown_recipient");
+}
+
+#[tokio::test(start_paused = true)]
+async fn recuerda_y_recupera_pulso_indice_y_detalle_del_proyecto() {
+    let (h, _, sink, _) = setup().await;
+    // El agente claude-1 (pid 10, /Users/dev/tienda-web) tiene un prompt inicial, un archivo y una tarea.
+    let mut info = kiti_core::domain::AgentInfo {
+        prompt: Some("Refactorizar pasarela de pagos".into()),
+        touched_file: Some("src/payments.rs".into()),
+        tasks: Some(vec![
+            kiti_core::domain::TaskItem {
+                text: "Configurar webhooks".into(),
+                status: kiti_core::domain::TaskStatus::Completed,
+            },
+            kiti_core::domain::TaskItem {
+                text: "Validar firma HMAC".into(),
+                status: kiti_core::domain::TaskStatus::InProgress,
+            },
+        ]),
+        ..Default::default()
+    };
+    h.hook_from(
+        Provider::Claude,
+        kiti_core::ingestion::HookEvent {
+            session: kiti_core::domain::SessionId::new("s-1"),
+            cwd: "/Users/dev/tienda-web".into(),
+            name: "UserPromptSubmit".into(),
+            signal: kiti_core::domain::Signal::PromptSubmit,
+            info: std::mem::take(&mut info),
+        },
+        from(10),
+        Timestamp(1_100),
+    )
+    .await;
+
+    let rem = h
+        .mcp_remember(
+            from(10),
+            RememberRequest {
+                kind: "gotcha".into(),
+                title: "Webhooks de Stripe requieren raw body".into(),
+                detail: "No parsear JSON antes de verificar la firma HMAC.".into(),
+                files: vec!["src/payments.rs".into()],
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(rem.id, 1);
+    assert_eq!(rem.project, "tienda-web");
+    settle().await;
+
+    // 1. Recall sin query devuelve el pulso de sesiones y el índice ligero (detail = None)
+    let pulse = h
+        .mcp_recall(from(10), RecallRequest { query: None })
+        .await
+        .unwrap();
+    assert_eq!(pulse.sessions.len(), 1);
+    assert_eq!(
+        pulse.sessions[0].initial_prompt.as_deref(),
+        Some("Refactorizar pasarela de pagos")
+    );
+    assert_eq!(pulse.sessions[0].touched_files, vec!["src/payments.rs"]);
+    assert_eq!(
+        pulse.sessions[0].pending_tasks,
+        vec!["[en curso] Validar firma HMAC"]
+    );
+    assert_eq!(pulse.memories.len(), 1);
+    assert_eq!(
+        pulse.memories[0].title,
+        "Webhooks de Stripe requieren raw body"
+    );
+    assert!(pulse.memories[0].detail.is_none());
+
+    // 2. Recall con query devuelve el detalle completo
+    let search = h
+        .mcp_recall(
+            from(10),
+            RecallRequest {
+                query: Some("HMAC".into()),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(search.memories.len(), 1);
+    assert_eq!(
+        search.memories[0].detail.as_deref(),
+        Some("No parsear JSON antes de verificar la firma HMAC.")
+    );
+
+    // 3. El estado se publica a la UI por ServerMsg::Memory
+    let mem_msg = sink
+        .0
+        .lock()
+        .unwrap()
+        .iter()
+        .rev()
+        .find_map(|m| match m {
+            ServerMsg::Memory { memories } => Some(memories.clone()),
+            _ => None,
+        })
+        .expect("ningún ServerMsg::Memory");
+    assert_eq!(mem_msg.len(), 1);
+    assert_eq!(mem_msg[0].title, "Webhooks de Stripe requieren raw body");
 }

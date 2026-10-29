@@ -34,6 +34,22 @@ pub trait MailCourier: Send + 'static {
     fn deliver(&mut self, pid: crate::domain::Pid, text: String, ids: Vec<u64>);
 }
 
+/// Persistencia y búsqueda `FTS5 BM25` de los recuerdos del proyecto (ADR 0018).
+pub trait MemoryStore: Send + 'static {
+    /// Persiste un recuerdo recién creado.
+    fn save(&mut self, entry: &crate::domain::MemoryEntry);
+    /// Busca recuerdos de `project` por relevancia (`FTS5 bm25`). `None` usa la búsqueda en
+    /// memoria de `MemoryBook`.
+    fn search(
+        &mut self,
+        _project: &str,
+        _query: &str,
+        _limit: usize,
+    ) -> Option<Vec<crate::domain::MemoryEntry>> {
+        None
+    }
+}
+
 /// Proyecto (raíz git o carpeta) de un `cwd` (ADR 0009). Puede consultar el disco y guardar
 /// en caché: se llama al proyectar cada agente.
 pub trait ProjectResolver: Send + 'static {

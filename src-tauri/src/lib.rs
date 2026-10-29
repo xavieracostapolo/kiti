@@ -11,6 +11,7 @@ use kiti_core::adapters::conversations::{ConversationIndex, HiddenConversations}
 use kiti_core::adapters::hooks::{
     hook_router, load_or_create_token, mcp_router, run_hook_pump, serve_hooks,
 };
+use kiti_core::adapters::memory_sqlite::SqliteMemoryStore;
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
 use kiti_core::adapters::{GitProjects, SysinfoScanner, SystemClock, UnixKiller};
@@ -1017,6 +1018,15 @@ pub fn run() {
                             tmux: mail_tmux.clone(),
                             runtime: handle.clone(),
                         });
+                    let runtime = match app.path().app_data_dir() {
+                        Ok(dir) => {
+                            let store = SqliteMemoryStore::new(dir.join("memory.db"));
+                            let initial = store.load_all();
+                            info!(event = "memory.loaded", count = initial.len());
+                            runtime.with_memories(initial, store)
+                        }
+                        Err(_) => runtime,
+                    };
                     start_mail_reachable(mail_tmux, handle.clone());
                     if let Ok(dir) = app.path().app_data_dir() {
                         let mode = saved_mail_mode(&dir.join("mail-mode"));

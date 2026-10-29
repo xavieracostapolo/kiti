@@ -37,6 +37,7 @@ export function DebugPanel({ metrics, store, transport }: Props) {
             "core.agents": core.agents,
             "core.mails_total": core.mailsTotal,
             "core.mail_pending": core.mailPending,
+            "core.memories_total": core.memoriesTotal,
           }
         : { core: "sin datos (modo sim del navegador)" };
       setText(JSON.stringify({ ...coreText, ...metrics.snapshot() }, null, 1));
