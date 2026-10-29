@@ -160,6 +160,9 @@ The design is documented in ADRs (in Spanish), from the [stack choice](docs/deci
 
 ## Roadmap
 
+What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
+
+
 - [x] Simulated office, native shell, real processes, hooks for Claude Code, Codex and Gemini
 - [x] Transcript tailer, menu bar, embedded terminal, persistent `tmux` sessions
 - [x] Project zones, resumable conversations, notifications

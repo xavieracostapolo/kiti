@@ -160,6 +160,9 @@ El diseño está en ADRs, desde la [elección del stack](docs/decisiones/0001-st
 
 ## Roadmap
 
+Lo que cambió en cada versión está en [CHANGELOG.md](CHANGELOG.md).
+
+
 - [x] Oficina simulada, shell nativo, procesos reales y hooks de Claude Code, Codex y Gemini
 - [x] Tailer de transcripts, barra de menú, terminal embebida y sesiones persistentes en `tmux`
 - [x] Zonas por proyecto, conversaciones para retomar y avisos

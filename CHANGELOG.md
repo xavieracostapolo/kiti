@@ -1,0 +1,42 @@
+# Changelog
+
+All notable changes to Kiti are recorded here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow [Semantic Versioning](https://semver.org/).
+
+Every pull request with a change people can see adds a line under **Unreleased**. When a version is tagged, that section becomes the version's section and its text opens the GitHub release notes ([docs/release.md](docs/release.md)).
+
+## [Unreleased]
+
+### Added
+
+- Three map layouts, dynamic (centered rows), horizontal and vertical, picked from the top bar or with `?layout=` in the demo.
+- `+`, `−` and fit buttons in the corner of the map.
+- Working agents are animated, and each office gets its own decor.
+- `CHANGELOG.md`, the history of every release.
+
+### Fixed
+
+- The office board read the wrong repository when Kiti ran inside a git hook that exports `GIT_DIR`.
+
+## [0.2.0] - 2026-10-27
+
+### Added
+
+- **Usage quota.** The top bar shows how much of your Claude plan (5-hour and weekly windows) and of your Antigravity quota is left, and Kiti notifies you once when a weekly limit drops to 20 % or less. For Claude, run `mise run statusline:install` from a clone; `statusline:uninstall` restores your status line. For Antigravity, Kiti reads `agy -p /usage` every 5 minutes, which uses no tokens.
+- **Office board.** At the closest zoom, each office shows the model, context used and session cost (Claude), the project's git branch, changes and commits to push or pull, and a timeline of the last hour.
+- Stable download link: `releases/latest/download/Kiti_universal.dmg` always points to the newest version.
+
+## [0.1.0] - 2026-10-26
+
+First public release: a pixel-art virtual office for macOS where every room is a running coding agent. Universal build (Apple Silicon and Intel) with an ad-hoc signature.
+
+### Added
+
+- Detects Claude Code, Codex CLI, Antigravity CLI and Gemini CLI, with a traffic light per agent driven by their hooks.
+- Offices grouped by project, readable from far away, with status filters and `/` search.
+- Embedded terminal on persistent `tmux` sessions, resumable Claude and Antigravity conversations, and «Ir a su terminal» for agents opened in Ghostty or Terminal.app.
+- Menu bar counters and macOS notifications that open the office on click.
+- Pixel art from Kenney, 0 frames at rest, built for 20 or more agents.
+
+[Unreleased]: https://github.com/xavieracostapolo/kiti/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/xavieracostapolo/kiti/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/xavieracostapolo/kiti/releases/tag/v0.1.0
