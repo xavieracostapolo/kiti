@@ -33,7 +33,7 @@ export const TILES = {
   paintingB: ["indoors", 21, 12],
   plantA: ["indoors", 16, 0],
   plantB: ["indoors", 17, 0],
-  roundTable: ["indoors", 6, 0],
+  sideTable: ["indoors", 7, 0],
   paintingAltA: ["indoors", 18, 12],
   paintingAltB: ["indoors", 19, 12],
 } as const satisfies Record<string, TileRef>;

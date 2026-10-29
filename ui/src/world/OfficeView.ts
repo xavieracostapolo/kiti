@@ -225,9 +225,10 @@ export class OfficeView {
     const textH = lines.length * lineH;
     this.boardText.text = lines.join("\n");
     this.boardText.position.set(BOARD.pad, BOARD.pad);
+    const boxW = Math.max(BOARD.width, Math.ceil(this.boardText.width) + 2 * BOARD.pad);
     // Última hora: tramos del color del semáforo; el gris de "inactivo" se atenúa.
     const barY = BOARD.pad + textH + (lines.length ? 2 : 0);
-    const barW = BOARD.width - 2 * BOARD.pad;
+    const barW = boxW - 2 * BOARD.pad;
     this.boardTimeline.rect(BOARD.pad, barY, barW, BOARD.bar).fill({ color: PAL.lampOff });
     for (const seg of timeline(agent.history, this.now())) {
       const x = BOARD.pad + seg.from * barW;
@@ -237,7 +238,10 @@ export class OfficeView {
         .fill({ color: STATUS_COLOR[seg.kind], alpha: seg.kind === "idle" ? 0.45 : 1 });
     }
     const height = barY + BOARD.bar + BOARD.pad;
-    this.boardBg.rect(0, 0, BOARD.width, height).fill({ color: PAL.housing, alpha: 0.85 });
+    this.boardBg
+      .roundRect(0, 0, boxW, height, 3)
+      .fill({ color: PAL.housing, alpha: 0.88 })
+      .stroke({ color: PAL.zoneBorder, width: 1, alpha: 0.7 });
   }
 
   /** Avanza un paso de animación del personaje y el monitor al recibir actividad real/simulada. */
