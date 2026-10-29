@@ -5,6 +5,7 @@ mod agent;
 mod alerts;
 mod events;
 mod ids;
+mod mailbox;
 mod process;
 mod project;
 mod quota;
@@ -21,6 +22,10 @@ pub use events::DomainEvent;
 pub use ids::{
     AgentId, ParseAgentIdError, Pid, ProcessIdentity, ProcessStartTime, Provider, SessionId,
     Timestamp, ToolName, ToolUseKey, WorkingDir,
+};
+pub use mailbox::{
+    Delivery, HOP_STEP, MAX_TEXT, MailMode, Mailbox, Message, MessageId, MessageState,
+    RATE_PER_HOUR, SendError, Sent, Thread, ThreadId, ThreadState,
 };
 pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
 pub use project::{GitStatus, project_root};

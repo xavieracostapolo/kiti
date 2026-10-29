@@ -23,6 +23,8 @@ export type Params = {
   conversations: boolean;
   /** Cuota de uso falsa de Claude y Antigravity en el modo sim (ADR 0015). */
   quota: boolean;
+  /** Mensajes entre agentes falsos en el modo sim (ADR 0017). */
+  mail: boolean;
 };
 
 const MAX_AGENTS = 200;
@@ -46,6 +48,7 @@ export function parseParams(search: string): Params {
     terminals: q.get("terminals") === "1",
     conversations: q.get("conversations") === "1",
     quota: q.get("quota") === "1",
+    mail: q.get("mail") === "1",
   };
   if (layout === "dynamic" || layout === "horizontal" || layout === "vertical") {
     params.layoutMode = layout;

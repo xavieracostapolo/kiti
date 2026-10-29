@@ -69,6 +69,8 @@ describe("store", () => {
       hookToPublishMsP95: 1,
       rssBytes: 32_000_000,
       cpuPercent: 0.1,
+      mailsTotal: 0,
+      mailPending: 0,
     });
     expect(store.getState().agents).toBe(agents);
     expect(store.getState().coreMetrics?.rssBytes).toBe(32_000_000);

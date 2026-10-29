@@ -58,6 +58,8 @@ describe("applyMsg", () => {
       hookToPublishMsP95: 0,
       rssBytes: 0,
       cpuPercent: 0,
+      mailsTotal: 0,
+      mailPending: 0,
     };
     expect(applyMsg(s0, metrics)).toBe(s0);
   });

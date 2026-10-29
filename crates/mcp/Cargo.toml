@@ -1,0 +1,20 @@
+[package]
+name = "kiti-mcp"
+version = "0.1.0"
+description = "kiti-mcp: servidor MCP por stdio para que los agentes se envíen mensajes a través de Kiti (ADR 0017)"
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "kiti-mcp"
+path = "src/main.rs"
+
+[dependencies]
+kiti-protocol.workspace = true
+rmcp.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["io-std", "rt-multi-thread"] }
+# Sin TLS: solo HTTP a 127.0.0.1.
+ureq.workspace = true

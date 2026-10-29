@@ -168,6 +168,48 @@ impl Tmux {
         })
     }
 
+    /// Escribe `text` en la sesión del proceso `pid` y pulsa Enter (mensajes entre agentes,
+    /// ADR 0017). Va como un pegado: si la app pidió *bracketed paste* (Claude, Codex,
+    /// Antigravity), los saltos de línea no envían el mensaje a trozos.
+    pub fn type_into(&self, pid: u32, text: &str) -> std::io::Result<()> {
+        use std::io::Write;
+        let session = self
+            .list()
+            .into_iter()
+            .find(|s| s.pid == pid)
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "sin sesión"))?;
+        let buffer = format!("kiti-mail-{pid}");
+        let mut child = Command::new(&self.bin)
+            .args(self.base_args())
+            .args(["load-buffer", "-b", &buffer, "-"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(text.as_bytes())?;
+        }
+        let out = child.wait_with_output()?;
+        if !out.status.success() {
+            return Err(std::io::Error::other(
+                String::from_utf8_lossy(&out.stderr).trim().to_owned(),
+            ));
+        }
+        self.checked(&[
+            "paste-buffer",
+            "-p",
+            "-d",
+            "-b",
+            &buffer,
+            "-t",
+            &session.name,
+        ])?;
+        // La app tiene que procesar el pegado antes del Enter, o este cae dentro del texto.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        self.checked(&["send-keys", "-t", &session.name, "Enter"])?;
+        Ok(())
+    }
+
     /// Cliente de tmux para ver la sesión dentro de un PTY de Kiti.
     pub fn attach_spec(&self, name: &str, cols: u16, rows: u16) -> LaunchSpec {
         let mut args = self.base_args();

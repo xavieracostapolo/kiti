@@ -2,6 +2,9 @@
 //!
 //! Responde `204` vacío en cuanto valida la petición y encola el cuerpo con `try_send`: nunca
 //! bloquea al agente ni le devuelve decisiones. La ACL se aplica después, fuera del handler.
+//!
+//! `POST /v1/mcp/{agents,send,inbox}` (ADR 0017) es la API de `kiti-mcp`: con los mismos
+//! controles, pero responde JSON con datos (nunca decisiones de un hook).
 
 use std::io::Write;
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -46,6 +49,30 @@ fn reject(reason: &'static str, status: StatusCode) -> StatusCode {
     status
 }
 
+/// Controles comunes a hooks y MCP: host exacto, sin navegador, token y JSON.
+fn authorize(token: &str, host: &str, headers: &HeaderMap) -> Result<(), StatusCode> {
+    let header_str = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
+    // Host exacto: corta el DNS rebinding (un dominio ajeno que resuelve a 127.0.0.1).
+    if header_str(header::HOST) != Some(host) {
+        return Err(reject("host", StatusCode::MISDIRECTED_REQUEST));
+    }
+    // Un CLI no envía Origin ni Sec-Fetch-*; un navegador sí.
+    if headers.contains_key(header::ORIGIN)
+        || headers.keys().any(|k| k.as_str().starts_with("sec-fetch-"))
+    {
+        return Err(reject("origin", StatusCode::FORBIDDEN));
+    }
+    let bearer = header_str(header::AUTHORIZATION).and_then(|v| v.strip_prefix("Bearer "));
+    if !bearer.is_some_and(|t| constant_time_eq::constant_time_eq(t.as_bytes(), token.as_bytes())) {
+        return Err(reject("token", StatusCode::UNAUTHORIZED));
+    }
+    // Exigir JSON obliga a un navegador a un preflight CORS que nunca se responde.
+    if !header_str(header::CONTENT_TYPE).is_some_and(|c| c.starts_with("application/json")) {
+        return Err(reject("content_type", StatusCode::UNSUPPORTED_MEDIA_TYPE));
+    }
+    Ok(())
+}
+
 async fn handle(
     State(ctx): State<Ctx>,
     UrlPath(provider): UrlPath<String>,
@@ -53,25 +80,8 @@ async fn handle(
     body: Bytes,
 ) -> StatusCode {
     let header_str = |name: header::HeaderName| headers.get(name).and_then(|v| v.to_str().ok());
-    // Host exacto: corta el DNS rebinding (un dominio ajeno que resuelve a 127.0.0.1).
-    if header_str(header::HOST) != Some(ctx.host.as_str()) {
-        return reject("host", StatusCode::MISDIRECTED_REQUEST);
-    }
-    // Un CLI no envía Origin ni Sec-Fetch-*; un navegador sí.
-    if headers.contains_key(header::ORIGIN)
-        || headers.keys().any(|k| k.as_str().starts_with("sec-fetch-"))
-    {
-        return reject("origin", StatusCode::FORBIDDEN);
-    }
-    let bearer = header_str(header::AUTHORIZATION).and_then(|v| v.strip_prefix("Bearer "));
-    if !bearer
-        .is_some_and(|t| constant_time_eq::constant_time_eq(t.as_bytes(), ctx.token.as_bytes()))
-    {
-        return reject("token", StatusCode::UNAUTHORIZED);
-    }
-    // Exigir JSON obliga a un navegador a un preflight CORS que nunca se responde.
-    if !header_str(header::CONTENT_TYPE).is_some_and(|c| c.starts_with("application/json")) {
-        return reject("content_type", StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    if let Err(status) = authorize(&ctx.token, &ctx.host, &headers) {
+        return status;
     }
     // La status line de Claude (ADR 0015) entra como un evento más de Claude.
     let (provider, forced_event) = if provider == "statusline" {
@@ -118,6 +128,107 @@ pub fn hook_router(token: String, port: u16, tx: mpsc::Sender<HookRequest>) -> R
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(2),
+        ))
+        .with_state(ctx)
+}
+
+#[derive(Clone)]
+struct McpCtx {
+    token: String,
+    host: String,
+    runtime: crate::application::RuntimeHandle,
+}
+
+type JsonReply = (StatusCode, [(header::HeaderName, &'static str); 1], Vec<u8>);
+
+fn json_reply(status: StatusCode, value: &impl serde::Serialize) -> JsonReply {
+    (
+        status,
+        [(header::CONTENT_TYPE, "application/json")],
+        serde_json::to_vec(value).unwrap_or_default(),
+    )
+}
+
+fn mcp_error(status: StatusCode, code: &str, message: &str) -> JsonReply {
+    json_reply(
+        status,
+        &kiti_protocol::mcp::ErrorReply {
+            code: code.to_owned(),
+            message: message.to_owned(),
+        },
+    )
+}
+
+async fn handle_mcp(
+    State(ctx): State<McpCtx>,
+    UrlPath(tool): UrlPath<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> JsonReply {
+    if let Err(status) = authorize(&ctx.token, &ctx.host, &headers) {
+        return mcp_error(status, "unauthorized", "petición rechazada");
+    }
+    // Sin el PID de quien llama no se sabe qué agente es: nunca se acepta un remitente declarado.
+    let Some(ppid) = headers
+        .get("x-kiti-ppid")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u32>().ok())
+    else {
+        return mcp_error(StatusCode::BAD_REQUEST, "no_ppid", "falta X-Kiti-Ppid");
+    };
+    let chain = tokio::task::spawn_blocking(move || ancestry(ppid))
+        .await
+        .unwrap_or_default();
+    let result = match tool.as_str() {
+        "agents" => ctx
+            .runtime
+            .mcp_agents(chain)
+            .await
+            .map(|r| json_reply(StatusCode::OK, &r)),
+        "send" => match serde_json::from_slice::<kiti_protocol::mcp::SendRequest>(&body) {
+            Ok(req) => ctx
+                .runtime
+                .mcp_send(chain, req)
+                .await
+                .map(|r| json_reply(StatusCode::OK, &r)),
+            Err(_) => {
+                return mcp_error(
+                    StatusCode::BAD_REQUEST,
+                    "bad_request",
+                    "se esperaba {\"to\", \"text\", \"replyTo\"?}",
+                );
+            }
+        },
+        "inbox" => ctx
+            .runtime
+            .mcp_inbox(chain)
+            .await
+            .map(|r| json_reply(StatusCode::OK, &r)),
+        _ => {
+            return mcp_error(
+                StatusCode::NOT_FOUND,
+                "unknown_tool",
+                "herramienta desconocida",
+            );
+        }
+    };
+    result.unwrap_or_else(|e| json_reply(StatusCode::UNPROCESSABLE_ENTITY, &e))
+}
+
+/// API de `kiti-mcp` (ADR 0017). Se une al router de los hooks con `merge`.
+pub fn mcp_router(token: String, port: u16, runtime: crate::application::RuntimeHandle) -> Router {
+    let ctx = McpCtx {
+        token,
+        host: format!("127.0.0.1:{port}"),
+        runtime,
+    };
+    Router::new()
+        .route("/v1/mcp/{tool}", post(handle_mcp))
+        .layer(DefaultBodyLimit::max(64 * 1024))
+        .layer(ConcurrencyLimitLayer::new(16))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(5),
         ))
         .with_state(ctx)
 }

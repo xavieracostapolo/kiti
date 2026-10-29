@@ -16,7 +16,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 19 en `main`. El último, "Tablero de la oficina", está en el [ADR 0016](docs/decisiones/0016-tablero-de-oficina/README.md).
+- **Fase:** Hitos 1 a 20 en `main`. El último, "Mensajes entre agentes", está en el [ADR 0017](docs/decisiones/0017-mensajes-entre-agentes/README.md).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -45,6 +45,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 | [0014](docs/decisiones/0014-antigravity/README.md) | Antigravity CLI (`agy`, sucesor de Gemini CLI) como proveedor: hooks por comando, amarillo desde su base de datos, retomar con `--conversation` |
 | [0015](docs/decisiones/0015-cuota/README.md) | Cuota de uso: Claude por su status line (`rate_limits`), Antigravity por `agy -p /usage`; chip en la barra y aviso al bajar del 20 % semanal |
 | [0016](docs/decisiones/0016-tablero-de-oficina/README.md) | Tablero en el zoom cercano: modelo, contexto y coste (status line de Claude), git del proyecto y la última hora |
+| [0017](docs/decisiones/0017-mensajes-entre-agentes/README.md) | Mensajes entre agentes: `kiti-mcp` (MCP por stdio) con `kiti_agents`, `kiti_send` y `kiti_inbox`; entrega en su terminal tmux; automático por defecto, con límites |
 
 ## Decisiones tomadas (no repetir)
 
@@ -190,6 +191,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **17. Antigravity CLI:** cuarto proveedor (`agy`), con semáforo, permiso, título, último pedido, lanzar y retomar conversaciones.
 - [x] **18. Cuota:** cuánto queda del plan de Claude (5 h y semana) y de Antigravity, en la barra superior, con aviso al bajar del 20 % semanal.
 - [x] **19. Tablero de la oficina:** en el zoom cercano, modelo, contexto y coste de la sesión, git del proyecto y la última hora.
+- [x] **20. Mensajes entre agentes:** los agentes se escriben a través de Kiti con `kiti-mcp`, sea cual sea su proveedor; panel de mensajes, sobres en el mapa y modos automático y manual.
 - [x] **UX (PR #17):** distribuciones del mapa (dinámica, horizontal y vertical), botones `+`, `−` y encuadrar, animaciones de trabajo y decoración por oficina.
 - [ ] **Después:** soporte para Windows.
 
@@ -237,6 +239,8 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run hooks:install-gemini # solo si usas Gemini CLI
   mise run hooks:install-antigravity # Antigravity CLI (agy), ADR 0014
   mise run statusline:install   # la status line de Claude pasa por Kiti para leer la cuota (ADR 0015)
+  mise run mcp:install   # registra kiti-mcp en Claude, Antigravity y Codex: mensajes entre agentes (ADR 0017)
+  mise run mcp:uninstall # lo quita
   mise run statusline:uninstall # deja tu status line como estaba
   mise run hooks:uninstall # quita los hooks de Kiti de ~/.claude/settings.json (los tuyos quedan)
   mise run app:build     # release sin empaquetar: target/release/kiti-app
@@ -245,7 +249,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
-- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas), `quota=1` (cuota falsa de Claude y Antigravity), `layout=dynamic|horizontal|vertical` (distribución del mapa). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant`, `dimmed` y `board`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas), `quota=1` (cuota falsa de Claude y Antigravity), `mail=1` (mensajes entre agentes falsos), `layout=dynamic|horizontal|vertical` (distribución del mapa). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant`, `dimmed`, `board`, `mail` y `envelopes`. El panel de debug se abre con `Cmd+Shift+D`.
 - **CHANGELOG:** todo PR con un cambio visible para el usuario añade una línea en `## [Unreleased]` de [CHANGELOG.md](CHANGELOG.md) (Added, Changed, Fixed o Removed; en inglés, como las notas de release).
 - **Releases:** antes del tag, la sección `[Unreleased]` pasa a `## [X.Y.Z] - AAAA-MM-DD` y se actualizan los enlaces del final. Un tag `vX.Y.Z` compila Kiti.app universal y crea el release en borrador (`.github/workflows/release.yml`): firmada y notarizada si están los secrets de Apple, con firma ad-hoc si no. Secrets y pasos en [docs/release.md](docs/release.md).
 - Los recursos gráficos son de Kenney.nl (CC0), en `ui/public/assets/kenney/` con sus licencias (ADR 0013).

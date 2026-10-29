@@ -43,7 +43,10 @@ impl TestPublisher {
 
 impl DiffPublisher for TestPublisher {
     fn publish(&mut self, msg: ServerMsg) -> bool {
-        self.messages.lock().unwrap().push(msg);
+        // Los mensajes entre agentes tienen su propio test (mail_runtime.rs).
+        if !matches!(msg, ServerMsg::Mail(_)) {
+            self.messages.lock().unwrap().push(msg);
+        }
         true
     }
 }

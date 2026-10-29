@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/protocol", "crates/core", "crates/forwarder", "src-tauri"]
+members = ["crates/protocol", "crates/core", "crates/forwarder", "crates/mcp", "src-tauri"]
 
 [workspace.package]
 edition = "2024"
@@ -35,3 +35,6 @@ tower-http = { version = "0.7.1", features = ["timeout"] }
 getrandom = "0.4.3"
 constant_time_eq = "0.6.1"
 portable-pty = "0.9.0"
+# Solo en crates/mcp (ADR 0017): servidor MCP por stdio.
+rmcp = { version = "3.8.0", default-features = false, features = ["server", "macros", "transport-io"] }
+ureq = { version = "3.5.0", default-features = false }

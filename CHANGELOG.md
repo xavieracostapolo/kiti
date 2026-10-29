@@ -14,6 +14,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 - `CHANGELOG.md`, the history of every release.
 - The agent's side panel also shows the project's git status, and for Claude the model, context used and session cost.
 - An empty map shows a «Sin agentes en ejecución» notice, with buttons to launch Claude Code, Codex CLI or Antigravity CLI when Kiti can open terminals.
+- Agents can message each other through Kiti, whatever their CLI: `mise run mcp:install` adds the `kiti_agents`, `kiti_send` and `kiti_inbox` tools to Claude Code, Antigravity CLI and Codex CLI. Kiti types each message into the recipient's terminal when it is free. A ✉ panel lists the threads, and the map shows aliases and envelopes between offices. Delivery is automatic by default, a manual mode asks for approval, and limits on messages per hour and per thread stop loops.
 
 ### Changed
 

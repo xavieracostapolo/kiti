@@ -4,6 +4,7 @@
 //! coalescencia de diffs y métricas de rendimiento.
 
 pub mod alerts;
+pub mod mail;
 pub mod projection;
 pub mod runtime;
 pub mod scanner;

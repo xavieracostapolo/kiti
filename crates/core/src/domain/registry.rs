@@ -136,6 +136,17 @@ impl AgentRegistry {
             .map(Agent::id)
     }
 
+    /// Primer agente vivo, de cualquier proveedor, entre `ancestry` (del más cercano al más
+    /// lejano): quién llama a `kiti-mcp` (ADR 0017).
+    pub fn agent_in_ancestry(&self, ancestry: &[Pid]) -> Option<AgentId> {
+        ancestry.iter().find_map(|pid| {
+            self.agents
+                .values()
+                .find(|a| !a.is_dead() && a.id().pid == *pid)
+                .map(Agent::id)
+        })
+    }
+
     /// Enlaza la sesión con su agente (y desenlaza otras sesiones del mismo proceso, que tras
     /// un `/clear` ya no volverán), y aplica los hooks que esperaban.
     fn link(&mut self, session: &SessionId, id: AgentId, now: Timestamp) -> Events {
@@ -812,6 +823,20 @@ mod tests {
         assert_eq!(kind_of(&reg, &b), Some(StatusKind::Idle));
     }
 
+    #[test]
+    fn el_agente_que_llama_se_busca_entre_sus_ancestros() {
+        let mut reg = AgentRegistry::new();
+        let codex = DetectedAgent {
+            provider: Provider::Codex,
+            ..claude_at(20, "/w/x")
+        };
+        reg.reconcile(&[claude_at(10, "/w/y"), codex], Timestamp(1));
+        // kiti-mcp (901) → codex (20) → zsh (5)
+        let found = reg.agent_in_ancestry(&[Pid(901), Pid(20), Pid(5)]).unwrap();
+        assert_eq!(found.pid, Pid(20));
+        assert_eq!(found.provider, Provider::Codex);
+        assert_eq!(reg.agent_in_ancestry(&[Pid(901), Pid(5)]), None);
+    }
     #[test]
     fn un_ancestro_de_otro_cli_no_cuenta() {
         let mut reg = AgentRegistry::new();

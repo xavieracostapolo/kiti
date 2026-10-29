@@ -8,6 +8,7 @@ import type {
   FocusResult,
   Hello,
   KillResult,
+  MailCommand,
   Provider,
   ServerMsg,
   TerminalInfo,
@@ -54,6 +55,10 @@ export class TauriTransport implements Transport {
 
   async setDebugStream(on: boolean): Promise<void> {
     await invoke<void>("set_debug_stream", { on });
+  }
+
+  async mailAction(command: MailCommand): Promise<void> {
+    await invoke<void>("mail_action", { command });
   }
 
   reportUiMetrics(m: UiMetrics): void {

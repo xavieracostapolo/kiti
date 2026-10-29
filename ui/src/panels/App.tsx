@@ -10,6 +10,7 @@ import { CloseOfficeDialog } from "./CloseOfficeDialog";
 import { ConversationPanel } from "./ConversationPanel";
 import { DebugPanel } from "./DebugPanel";
 import { EmptyState } from "./EmptyState";
+import { MailPanel } from "./MailPanel";
 import { NativeCloseOffice } from "./NativeCloseOffice";
 import { OfficeTooltip } from "./OfficeTooltip";
 import s from "./panels.module.css";
@@ -124,6 +125,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
         {...(conversations ? { onResume: resume, onArchive: archive } : {})}
       />
       {terminals && <TerminalPanel store={store} api={terminals} />}
+      <MailPanel store={store} now={now} act={(c) => void transport.mailAction(c)} />
       <OfficeTooltip store={store} now={now} />
       {transport.killConfirmation === "in-app" ? (
         <CloseOfficeDialog store={store} killAgent={killAgent} />

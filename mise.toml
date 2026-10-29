@@ -64,6 +64,36 @@ run = "cargo build -q --release -p kiti-forwarder && cargo run -q -p kiti-core -
 description = "Restaura tu status line de Claude original"
 run = "cargo run -q -p kiti-core --example hooks -- uninstall-statusline"
 
+[tasks."mcp:install"]
+description = "Registra kiti-mcp (mensajes entre agentes, ADR 0017) en Claude, Antigravity y Codex"
+run = """
+cargo build -q --release -p kiti-mcp
+mkdir -p ~/.kiti/bin
+# Copia y renombra: sobrescribir un binario en uso mataría a los kiti-mcp ya abiertos.
+cp target/release/kiti-mcp ~/.kiti/bin/.kiti-mcp.new && mv -f ~/.kiti/bin/.kiti-mcp.new ~/.kiti/bin/kiti-mcp
+MCP="$HOME/.kiti/bin/kiti-mcp"
+if command -v claude >/dev/null; then
+  claude mcp remove -s user kiti >/dev/null 2>&1 || true
+  claude mcp add -s user kiti -- "$MCP" && echo "Claude Code: listo"
+fi
+if command -v agy >/dev/null; then
+  agy mcp add kiti "$MCP" && echo "Antigravity: listo"
+fi
+if command -v codex >/dev/null; then
+  codex mcp remove kiti >/dev/null 2>&1 || true
+  codex mcp add kiti -- "$MCP" && echo "Codex: listo"
+fi
+echo "Los agentes que ya estaban abiertos lo verán al reiniciarlos."
+"""
+
+[tasks."mcp:uninstall"]
+description = "Quita kiti-mcp de Claude, Antigravity y Codex"
+run = """
+command -v claude >/dev/null && claude mcp remove -s user kiti || true
+command -v agy >/dev/null && agy mcp remove kiti || true
+command -v codex >/dev/null && codex mcp remove kiti || true
+"""
+
 [tasks."hooks:uninstall"]
 description = "Quita los hooks de Kiti de ~/.claude/settings.json (deja los tuyos intactos)"
 run = "cargo run -q -p kiti-core --example hooks -- uninstall"

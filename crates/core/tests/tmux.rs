@@ -114,3 +114,28 @@ fn cuando_el_agente_termina_la_sesion_desaparece() {
             .unwrap();
     assert!(until(|| t.0.list().iter().all(|x| x.name != s.name)));
 }
+
+#[test]
+fn escribe_un_mensaje_de_varias_lineas_en_la_sesion_de_un_pid() {
+    let Some(t) = tmux() else { return };
+    let out = std::env::temp_dir().join(format!(
+        "kiti-type-{}-{}.txt",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    ));
+    let s =
+        t.0.new_session(
+            &std::env::temp_dir(),
+            &format!("exec cat > {}", out.display()),
+            "codex",
+            80,
+            24,
+        )
+        .unwrap();
+    t.0.type_into(s.pid, "[Kiti] hola\nmundo").unwrap();
+    assert!(until(|| std::fs::read_to_string(&out).is_ok_and(|x| x
+        .contains("[Kiti] hola")
+        && x.contains("mundo\n"))));
+    assert!(t.0.type_into(999_999, "x").is_err());
+    let _ = std::fs::remove_file(out);
+}

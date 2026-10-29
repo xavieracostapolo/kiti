@@ -219,6 +219,12 @@
           "markdownDescription": "Enables the list_terminals command without any pre-configured scope."
         },
         {
+          "description": "Enables the mail_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-mail-action",
+          "markdownDescription": "Enables the mail_action command without any pre-configured scope."
+        },
+        {
           "description": "Enables the report_ui_metrics command without any pre-configured scope.",
           "type": "string",
           "const": "allow-report-ui-metrics",
@@ -301,6 +307,12 @@
           "type": "string",
           "const": "deny-list-terminals",
           "markdownDescription": "Denies the list_terminals command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the mail_action command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-mail-action",
+          "markdownDescription": "Denies the mail_action command without any pre-configured scope."
         },
         {
           "description": "Denies the report_ui_metrics command without any pre-configured scope.",
