@@ -194,10 +194,9 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 ## Pendientes de verificar
 
 - Probar a mano el diálogo nativo de "Cerrar oficina" en la app (confirmar y cancelar).
-- El `argv` real de Gemini con npx y Homebrew, y su ruta de chats en la 0.65.0.
 - La ruta del cask de Claude y los subcomandos de Codex que no son agentes.
-- El evento de Claude al denegar un permiso, y los errores de agente en Codex y Gemini.
-- Si Gemini pide confirmación para los hooks de usuario y de qué depende el hash de confianza de Codex.
+- El evento de Claude al denegar un permiso, y los errores de agente en Codex.
+- De qué depende el hash de confianza de los hooks de Codex.
 - Que el *pinch* del trackpad funcione en WKWebView con la cámara propia (prueba manual en el Hito 1).
 
 ## Reglas para agentes
