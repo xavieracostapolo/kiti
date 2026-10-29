@@ -44,6 +44,7 @@ Use the simulators and the fixtures in `fixtures/sim/`. You do not need a real a
 
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org) (`feat:`, `fix:`, `docs:`, `ci:`…). commitlint checks them.
 - Keep one topic per pull request and fill in the template.
+- Add a line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) for any change users can see.
 - CI must be green: lint, Rust (clippy and tests on macOS), UI unit and E2E tests.
 
 ## License
