@@ -4,7 +4,7 @@ Guía para cualquier agente (Claude Code, Codex, Gemini u otros) que trabaje en 
 
 ## Qué es Kiti
 
-App de escritorio con estética de videojuego 2D cenital (pixel art, estilo Gather.town o Stardew Valley). Muestra una **oficina virtual donde cada sala es un agente de código en ejecución** en la máquina: Claude Code, Codex CLI o Gemini CLI. El objetivo es tener todos los agentes centralizados en una sola vista.
+App de escritorio con estética de videojuego 2D cenital (pixel art, estilo Gather.town o Stardew Valley). Muestra una **oficina virtual donde cada sala es un agente de código en ejecución** en la máquina: Claude Code, Codex CLI, Antigravity CLI o Gemini CLI. El objetivo es tener todos los agentes centralizados en una sola vista.
 
 Funciones del MVP:
 - Ver solo los agentes que están en ejecución.
@@ -12,7 +12,7 @@ Funciones del MVP:
 - Semáforo de estado por oficina.
 - Cerrar una oficina, lo que termina el proceso del agente pidiendo confirmación antes.
 
-Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzamiento de agentes.
+Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal embebida y lanzamiento de agentes, sesiones persistentes, conversaciones para retomar, avisos, filtro, cuota, tablero de oficina y distribuciones del mapa.
 
 ## Estado actual
 
@@ -23,7 +23,7 @@ Más adelante se añadirán paneles de detalle, logs, terminal embebida y lanzam
   - Las capturas usan `steps=357` en lugar de `steps=120`: con `seed=42` es el primer paso en el que conviven los cinco colores.
   - El p95 del delta de rAF en WebKit mide 17 ms (60 fps reales) porque WebKit redondea los timestamps a ms enteros; el test tolera 1 ms.
   - Falta verificar a mano el diálogo nativo de cierre (Playwright no lo controla). Hasta el Hito 11 el botón no lo abría (ver ADR 0009).
-- **Siguiente paso:** Hito 3, procesos reales (ver [Roadmap](#roadmap)).
+- **Siguiente paso:** soporte para Windows (ver [Roadmap](#roadmap)). Releases publicados: v0.1.0 y v0.2.0 (firma ad-hoc, [docs/release.md](docs/release.md)).
 
 ## Índice de ADRs
 
@@ -71,7 +71,7 @@ kiti/
   fixtures/sim/       # perfiles y conformidad compartidos por los dos simuladores
   crates/protocol/    # kiti-protocol: DTOs + PROTOCOL_VERSION + ts-rs (solo serde y ts-rs)
   crates/core/        # kiti-core, Rust puro y SIN Tauri: domain / application / ports / adapters / sim
-  crates/forwarder/   # kiti-hook: reenvía los hooks de Codex y Gemini; no depende de nada del repo
+  crates/forwarder/   # kiti-hook: reenvía los hooks de Codex, Antigravity y Gemini; no depende de nada del repo
   src-tauri/          # capa fina: commands, Channel hacia la UI, capabilities y tracing
   ui/                 # Vite + TS + PixiJS (+ React para paneles); funciona sin Tauri en modo sim
   docs/decisiones/    # ADRs numerados
@@ -93,6 +93,7 @@ Reglas de arquitectura:
 [claude]  --hook http------------------> [core: HookServer (axum, 127.0.0.1, /v1/hooks)]
 [codex]   --hook command--> [kiti-hook] --> [core: HookServer]
 [gemini]  --hook command--> [kiti-hook] --> [core: HookServer]
+[agy]     --hook command--> [kiti-hook] --> [core: HookServer]
 [procesos] --sysinfo cada 2 s----------> [core: ProcessScanner]
 [~/.claude/sessions/*.json] --notify---> [core: ClaudeSessionsWatcher]
 [*.jsonl] --notify (FSEvents)----------> [core: TranscriptTailer]
@@ -110,7 +111,7 @@ Reglas de arquitectura:
 // Generado por ts-rs desde crates/protocol (ADR 0004)
 type AgentState = {
   id: string;                 // "{provider}:{pid}:{start_ms}", opaco
-  provider: "claude" | "codex" | "gemini";
+  provider: "claude" | "codex" | "gemini" | "antigravity";
   pid: number;
   cwd: string;
   startedAt: number;
@@ -189,6 +190,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **17. Antigravity CLI:** cuarto proveedor (`agy`), con semáforo, permiso, título, último pedido, lanzar y retomar conversaciones.
 - [x] **18. Cuota:** cuánto queda del plan de Claude (5 h y semana) y de Antigravity, en la barra superior, con aviso al bajar del 20 % semanal.
 - [x] **19. Tablero de la oficina:** en el zoom cercano, modelo, contexto y coste de la sesión, git del proyecto y la última hora.
+- [x] **UX (PR #17):** distribuciones del mapa (dinámica, horizontal y vertical), botones `+`, `−` y encuadrar, animaciones de trabajo y decoración por oficina.
 - [ ] **Después:** soporte para Windows.
 
 ## Pendientes de verificar
@@ -243,6 +245,6 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
-- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas), `quota=1` (cuota falsa de Claude y Antigravity). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant`, `dimmed` y `board`. El panel de debug se abre con `Cmd+Shift+D`.
-- **Releases:** un tag `vX.Y.Z` firma, notariza y publica Kiti.app en borrador (`.github/workflows/release.yml`). Secrets y pasos en [docs/release.md](docs/release.md).
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas), `quota=1` (cuota falsa de Claude y Antigravity), `layout=dynamic|horizontal|vertical` (distribución del mapa). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant`, `dimmed` y `board`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Releases:** un tag `vX.Y.Z` compila Kiti.app universal y crea el release en borrador (`.github/workflows/release.yml`): firmada y notarizada si están los secrets de Apple, con firma ad-hoc si no. Secrets y pasos en [docs/release.md](docs/release.md).
 - Los recursos gráficos son de Kenney.nl (CC0), en `ui/public/assets/kenney/` con sus licencias (ADR 0013).

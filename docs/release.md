@@ -16,7 +16,7 @@ Un tag `vX.Y.Z` crea un **release en borrador** con el DMG (dos copias: `Kiti_X.
 
 Un PR que toque el workflow o la configuración del bundle compila con firma ad-hoc y sube el resultado como artefacto, para comprobar que el build funciona.
 
-La v0.1.0 salió con firma ad-hoc: la cuenta no está en el Apple Developer Program.
+La v0.1.0 y la v0.2.0 salieron con firma ad-hoc: la cuenta no está en el Apple Developer Program.
 
 ## Secrets del repositorio (para firmar con Developer ID)
 
