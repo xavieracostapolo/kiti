@@ -29,7 +29,7 @@ pub use mailbox::{
 };
 pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
 pub use project::{GitStatus, project_root};
-pub use quota::{LOW as QUOTA_LOW, QuotaAlert, QuotaPolicy, QuotaWindow};
+pub use quota::{LOW as QUOTA_LOW, QuotaAlert, QuotaPolicy, QuotaRefresh, QuotaWindow};
 pub use registry::{AgentRegistry, RegistryDiff};
 pub use signal::{AgentInfo, Signal, ToolOutcome};
 pub use stale::StalePolicy;

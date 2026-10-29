@@ -318,6 +318,15 @@ pub async fn run_hook_pump<C: crate::ports::Clock>(
                 continue;
             }
         };
+        // Fin de turno de Antigravity: su cuota se pide, así que se pide ya (ADR 0015).
+        if req.provider == Provider::Antigravity
+            && matches!(
+                event.signal,
+                crate::domain::Signal::Stop | crate::domain::Signal::Failure
+            )
+        {
+            runtime.kick_quota();
+        }
         // Leer la cadena de procesos es bloqueante (sysinfo): fuera del runtime async.
         let chain = match req.ppid {
             Some(ppid) => tokio::task::spawn_blocking(move || ancestry(ppid))

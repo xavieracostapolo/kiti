@@ -29,3 +29,15 @@ export function summarize(windows: readonly QuotaWindow[]): QuotaSummary {
   if (weekly !== undefined) summary.weekly = weekly;
   return summary;
 }
+
+/** Lo que queda ahora: una ventana cuya hora de reinicio ya pasó está entera otra vez. */
+export function current(windows: readonly QuotaWindow[], now: number): QuotaWindow[] {
+  return windows.map((w) =>
+    w.resetsAt > 0 && w.resetsAt <= now ? { ...w, remainingPct: 100 } : w,
+  );
+}
+
+/** El próximo reinicio que aún no ha pasado (para volver a pintar justo entonces). */
+export function nextReset(windows: readonly QuotaWindow[], now: number): number | undefined {
+  return min(windows.map((w) => w.resetsAt).filter((t) => t > now));
+}

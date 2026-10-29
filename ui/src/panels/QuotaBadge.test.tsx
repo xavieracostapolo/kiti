@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { act, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createKitiStore } from "../state/store";
 import { fakeQuota } from "../transport/sim/fakeQuota";
 import { QuotaBadge } from "./QuotaBadge";
@@ -37,5 +37,28 @@ describe("QuotaBadge", () => {
     expect(detail.textContent).toContain(
       "Claude and GPT models · semana: queda 18 % · se reinicia en 4 d 2 h",
     );
+  });
+
+  it("al llegar la hora de reinicio el chip se actualiza solo, sin otra lectura", () => {
+    vi.useFakeTimers({ now: 0 });
+    try {
+      const store = createKitiStore();
+      render(<QuotaBadge store={store} now={Date.now} />);
+      act(() => {
+        for (const msg of fakeQuota(0)) store.getState().receive(msg);
+      });
+      expect(
+        screen.getByRole("button", { name: "Cuota de Claude: 5 h 72 %, sem 40 %" }),
+      ).toBeTruthy();
+      // La ventana de 5 h de Claude se reinicia a las 3 h.
+      act(() => {
+        vi.advanceTimersByTime(3 * 3_600_000);
+      });
+      expect(
+        screen.getByRole("button", { name: "Cuota de Claude: 5 h 100 %, sem 40 %" }),
+      ).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

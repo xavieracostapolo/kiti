@@ -400,3 +400,41 @@ mod mcp {
         assert_eq!(body["code"], "unknown_sender");
     }
 }
+
+#[tokio::test(start_paused = true)]
+async fn el_fin_de_turno_de_antigravity_pide_refrescar_su_cuota() {
+    use kiti_core::adapters::hooks::{HookRequest, run_hook_pump};
+    use kiti_core::application::{Runtime, Telemetry};
+    use kiti_core::sim::SimKiller;
+    use kiti_core::testing::ManualClock;
+    use kiti_protocol::Source;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    let clock = ManualClock::new(10_000);
+    let runtime = Runtime::spawn(
+        SimKiller,
+        clock.clone(),
+        Arc::new(Telemetry::new()),
+        Source::Live,
+        "test",
+    );
+    let (tx, rx) = mpsc::channel(8);
+    tokio::spawn(run_hook_pump(rx, runtime.clone(), clock));
+    let send = |event: &str| HookRequest {
+        provider: Provider::Antigravity,
+        ppid: None,
+        event: Some(event.into()),
+        body:
+            r#"{"conversationId":"c-1","workspacePaths":["/w/tienda"],"fullyIdle":true,"error":""}"#
+                .into(),
+    };
+    // Empezar un turno no cambia la cuota: no pide nada.
+    tx.send(send("PreToolUse")).await.unwrap();
+    let early = tokio::time::timeout(Duration::from_millis(50), runtime.quota_kicked()).await;
+    assert!(early.is_err(), "solo el fin de turno pide refrescar");
+    tx.send(send("Stop")).await.unwrap();
+    tokio::time::timeout(Duration::from_millis(50), runtime.quota_kicked())
+        .await
+        .expect("el Stop de Antigravity debía pedir refrescar la cuota");
+}
