@@ -205,6 +205,8 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - El evento de Claude al denegar un permiso, y los errores de agente en Codex.
 - De qué depende el hash de confianza de los hooks de Codex.
 - Que el *pinch* del trackpad funcione en WKWebView con la cámara propia (prueba manual en el Hito 1).
+- Que Antigravity envíe el hook `Stop` al terminar un turno: en los logs del 2026-10-29 y 2026-10-30 llegaron `PreInvocation`, `PreToolUse` y `PostToolUse`, pero ningún `Stop`. Sin él, su cuota solo se refresca cada 5 min (ADR 0015).
+- `kiti_agents` mostró cruzados los títulos de dos agentes de Claude del mismo proyecto (`/kiti`): el de una conversación aparecía en la otra. Sin investigar.
 
 ## Reglas para agentes
 

@@ -46,6 +46,13 @@ Un agente efímero que lleve más de N horas sin `kiti_done` (por defecto 4) sal
 - **Permisos:** el agente hereda el modo de permisos que el usuario fije para las tareas (por defecto `auto`). Nunca `bypassPermissions`.
 - **Lo que no puede hacer:** merge ni borrar ramas. Eso queda para el usuario o para un rol fijo con su aprobación explícita.
 
+### Aprobaciones del usuario
+
+Las aprobaciones (merge, borrar ramas, gastar cuota) no viajan como mensajes entre agentes. En la prueba del 2026-10-30, el clasificador de permisos de Claude Code bloqueó un `gh pr merge` y un `gh pr create` de un agente efímero porque la aprobación le llegaba de otro agente, no del usuario. Es lo correcto: un mensaje no puede probar que el usuario aprobó algo. Por eso:
+
+- El tablero de tareas tiene un botón **Aprobar** por acción sensible. Kiti lo registra con la hora y se lo comunica al agente.
+- Mientras eso no exista, las acciones sensibles las hace el agente al que el usuario se lo aprobó en su propia conversación.
+
 ### Roles fijos
 
 Solo son fijos los roles que duran más que una tarea; por ahora, **publicación** (docs, CI y merge con el visto bueno del usuario). Todo lo demás (implementar, revisar, regenerar capturas, medir memoria) es efímero.
