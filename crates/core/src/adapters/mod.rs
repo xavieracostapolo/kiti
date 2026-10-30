@@ -29,6 +29,7 @@ pub mod statusline;
 pub mod tail;
 #[cfg(feature = "pty")]
 pub mod tmux;
+pub mod worktree;
 
 pub use clock::SystemClock;
 #[cfg(feature = "killer")]
