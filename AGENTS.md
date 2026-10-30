@@ -47,6 +47,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 | [0016](docs/decisiones/0016-tablero-de-oficina/README.md) | Tablero en el zoom cercano: modelo, contexto y coste (status line de Claude), git del proyecto y la última hora |
 | [0017](docs/decisiones/0017-mensajes-entre-agentes/README.md) | Mensajes entre agentes: `kiti-mcp` (MCP por stdio) con `kiti_agents`, `kiti_send` y `kiti_inbox`; entrega en su terminal tmux; automático por defecto, con límites |
 | [0018](docs/decisiones/0018-memoria-de-proyecto/README.md) | Memoria de proyecto y de sesión: objetivo inicial, archivos tocados y tareas por hooks, más recuerdos persistentes en SQLite (`FTS5` `bm25`) con `kiti_remember` y `kiti_recall` en dos pasos |
+| [0019](docs/decisiones/0019-agentes-efimeros/README.md) | Propuesta: agentes efímeros por tarea con `kiti_spawn` y `kiti_done` (worktree y rama propios, se cierran al entregar), tablero de tareas y mensajes en disco |
 
 ## Decisiones tomadas (no repetir)
 
