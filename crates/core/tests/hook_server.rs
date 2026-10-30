@@ -336,6 +336,8 @@ mod mcp {
             .await;
         h.register_agent(agent(Provider::Codex, 4_000_000), Timestamp(1))
             .await;
+        // Sin tmux: desbloquea el reparto de alias.
+        h.mail_reachable(Vec::new()).await;
         h
     }
 

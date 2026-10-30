@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use kiti_core::adapters::alias_file::FileAliasStore;
 use kiti_core::adapters::antigravity::{AgyConversation, AntigravityStore};
 use kiti_core::adapters::claude_settings::{install_file, is_installed_file};
 use kiti_core::adapters::conversations::{ConversationIndex, HiddenConversations};
@@ -838,7 +839,11 @@ impl MailCourier for TmuxCourier {
 
 /// Cada 3 s, qué agentes viven en sesiones tmux de Kiti: a esos se les puede escribir.
 fn start_mail_reachable(tmux: Option<Tmux>, runtime: RuntimeHandle) {
-    let Some(tmux) = tmux else { return };
+    let Some(tmux) = tmux else {
+        // Sin tmux no hay sesiones: avisa una vez para que el core empiece a repartir alias.
+        tauri::async_runtime::spawn(async move { runtime.mail_reachable(Vec::new()).await });
+        return;
+    };
     tauri::async_runtime::spawn(async move {
         let mut ticker = tokio::time::interval(Duration::from_secs(3));
         loop {
@@ -847,15 +852,15 @@ fn start_mail_reachable(tmux: Option<Tmux>, runtime: RuntimeHandle) {
                 return;
             }
             let t = tmux.clone();
-            let pids = tokio::task::spawn_blocking(move || {
+            let sessions = tokio::task::spawn_blocking(move || {
                 t.list()
                     .into_iter()
-                    .map(|s| kiti_core::domain::Pid(s.pid))
+                    .map(|s| (kiti_core::domain::Pid(s.pid), s.name))
                     .collect::<Vec<_>>()
             })
             .await
             .unwrap_or_default();
-            runtime.mail_reachable(pids).await;
+            runtime.mail_reachable(sessions).await;
         }
     });
 }
@@ -1020,6 +1025,9 @@ pub fn run() {
                         });
                     let runtime = match app.path().app_data_dir() {
                         Ok(dir) => {
+                            let aliases = FileAliasStore::new(dir.join("aliases.json"));
+                            let initial = aliases.load();
+                            let runtime = runtime.with_aliases(initial, aliases);
                             let store = SqliteMemoryStore::new(dir.join("memory.db"));
                             let initial = store.load_all();
                             info!(event = "memory.loaded", count = initial.len());

@@ -182,8 +182,8 @@ mod tests {
         let mut mb = Mailbox::default();
         let a = id(Provider::Claude, 1);
         let b = id(Provider::Codex, 2);
-        mb.join(a);
-        mb.join(b);
+        mb.join_process(a);
+        mb.join_process(b);
         mb.send(a, "codex-1", "¿revisas?", None, Timestamp(1))
             .unwrap();
         mb.send(a, "codex-1", "es la rama fix", None, Timestamp(2))
@@ -200,8 +200,8 @@ mod tests {
         let mut mb = Mailbox::default();
         let a = id(Provider::Claude, 1);
         let b = id(Provider::Antigravity, 2);
-        mb.join(a);
-        mb.join(b);
+        mb.join_process(a);
+        mb.join_process(b);
         mb.send(a, "agy-1", "primero", None, Timestamp(1)).unwrap();
         mb.send(b, "claude-1", "segundo", None, Timestamp(5))
             .unwrap();
