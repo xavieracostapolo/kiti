@@ -3,6 +3,8 @@
 //! Commands, Channel IPC, diálogo nativo de confirmación y observabilidad con tracing.
 //! Toda la lógica vive en `kiti-core`; aquí solo se conecta con Tauri.
 
+mod tasks;
+
 use std::time::Duration;
 
 use kiti_core::adapters::alias_file::FileAliasStore;
@@ -76,7 +78,7 @@ pub struct Conversations {
     index: Mutex<ConversationIndex>,
     projects: Mutex<GitProjects>,
     /// Las que el usuario archivó: no vuelven a salir.
-    hidden: Mutex<HiddenConversations>,
+    hidden: Arc<Mutex<HiddenConversations>>,
     /// Antigravity CLI (ADR 0014): `~/.gemini/antigravity-cli`.
     agy: AntigravityStore,
     /// Las de Antigravity de la última lista (para retomar) y su último pedido por id y fecha.
@@ -976,6 +978,15 @@ pub fn run() {
                 system: System::new(),
                 pid: Pid::from_u32(std::process::id()),
             };
+            // Conversaciones archivadas (ADR 0009): las comparten la lista de conversaciones
+            // cerradas y el cierre de las tareas (ADR 0019).
+            let hidden = app.path().home_dir().ok().map(|home| {
+                let file = app.path().app_data_dir().map_or_else(
+                    |_| home.join(".kiti/hidden-conversations.json"),
+                    |dir| dir.join("hidden-conversations.json"),
+                );
+                Arc::new(Mutex::new(HiddenConversations::load(file)))
+            });
             // Todo se arranca dentro del runtime de tokio de Tauri: fuera de él, tokio::spawn
             // entra en pánico.
             let handle = match std::env::var("KITI_SIM") {
@@ -1014,6 +1025,17 @@ pub fn run() {
                         Source::Live,
                         env!("CARGO_PKG_VERSION"),
                     );
+                    let runtime = match (app.path().home_dir().ok(), hidden.clone()) {
+                        (Some(home), Some(hidden)) => {
+                            runtime.with_launcher(tasks::TmuxTaskLauncher::new(
+                                mail_tmux.clone(),
+                                &home,
+                                hidden,
+                                user_shell(),
+                            ))
+                        }
+                        _ => runtime,
+                    };
                     let runtime = runtime
                         .with_monitor(monitor)
                         .with_projects(GitProjects::default())
@@ -1083,16 +1105,13 @@ pub fn run() {
                 .is_err()
                 .then(|| app.path().home_dir().ok())
                 .flatten()
-                .map(|home| {
-                    let hidden = app.path().app_data_dir().map_or_else(
-                        |_| home.join(".kiti/hidden-conversations.json"),
-                        |dir| dir.join("hidden-conversations.json"),
-                    );
+                .zip(hidden)
+                .map(|(home, hidden)| {
                     Arc::new(Conversations {
                         dir: home.join(".claude/projects"),
                         index: Mutex::default(),
                         projects: Mutex::default(),
-                        hidden: Mutex::new(HiddenConversations::load(hidden)),
+                        hidden,
                         agy: AntigravityStore::new(home.join(".gemini/antigravity-cli")),
                         agy_last: Mutex::default(),
                         agy_prompts: Mutex::default(),

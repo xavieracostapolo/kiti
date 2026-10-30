@@ -227,6 +227,12 @@ impl Tmux {
             .filter(|p| !p.as_os_str().is_empty())
     }
 
+    /// Termina la sesión `name` y el agente que corre en ella. `false` si ya no existía.
+    pub fn kill_session(&self, name: &str) -> bool {
+        self.run(&["kill-session", "-t", &format!("={name}")])
+            .is_ok_and(|o| o.status.success())
+    }
+
     pub fn kill_server(&self) {
         let _ = self.run(&["kill-server"]);
     }
