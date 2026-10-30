@@ -75,6 +75,8 @@ pub struct Task {
     pub worktree: Option<PathBuf>,
     pub session: Option<String>,
     pub pid: Option<Pid>,
+    /// Archivo con el encargo, que se borra al cerrar.
+    pub brief_path: Option<PathBuf>,
     pub state: TaskState,
     pub created_at: Timestamp,
     pub running_since: Option<Timestamp>,
@@ -90,6 +92,15 @@ pub struct NewTask {
     pub provider: Provider,
     pub model: String,
     pub branch: String,
+}
+
+/// Dónde quedó una tarea lanzada.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placement {
+    pub worktree: PathBuf,
+    pub session: String,
+    pub pid: Pid,
+    pub brief_path: PathBuf,
 }
 
 /// Por qué no se puede lanzar otra tarea ahora.
@@ -161,6 +172,7 @@ impl TaskBook {
             worktree: None,
             session: None,
             pid: None,
+            brief_path: None,
             state: TaskState::Launching,
             created_at: now,
             running_since: None,
@@ -185,9 +197,7 @@ impl TaskBook {
     pub fn launched(
         &mut self,
         id: TaskId,
-        worktree: PathBuf,
-        session: String,
-        pid: Pid,
+        placed: Placement,
         now: Timestamp,
     ) -> Result<(), TaskError> {
         let t = self.get_mut(id)?;
@@ -195,9 +205,10 @@ impl TaskBook {
             return Err(TaskError::InvalidTransition);
         }
         t.state = TaskState::Running;
-        t.worktree = Some(worktree);
-        t.session = Some(session);
-        t.pid = Some(pid);
+        t.worktree = Some(placed.worktree);
+        t.session = Some(placed.session);
+        t.pid = Some(placed.pid);
+        t.brief_path = Some(placed.brief_path);
         t.running_since = Some(now);
         self.dirty = true;
         Ok(())
@@ -264,6 +275,11 @@ impl TaskBook {
         })
     }
 
+    /// Fuerza a republicar el tablero (p. ej. cuando el agente de la tarea recibe su alias).
+    pub fn touch(&mut self) {
+        self.dirty = true;
+    }
+
     pub fn tasks(&self) -> impl Iterator<Item = &Task> {
         self.tasks.iter()
     }
@@ -310,10 +326,18 @@ mod tests {
         }
     }
 
+    fn placed(pid: u32) -> Placement {
+        Placement {
+            worktree: "/wt".into(),
+            session: "kiti-1".into(),
+            pid: Pid(pid),
+            brief_path: "/tasks/1.md".into(),
+        }
+    }
+
     fn run(book: &mut TaskBook, branch: &str, pid: u32, now: u64) -> TaskId {
         let id = book.begin(new_task(branch), Timestamp(now)).unwrap();
-        book.launched(id, "/wt".into(), "kiti-1".into(), Pid(pid), Timestamp(now))
-            .unwrap();
+        book.launched(id, placed(pid), Timestamp(now)).unwrap();
         id
     }
 
@@ -406,11 +430,10 @@ mod tests {
             book.finish(id, Ok(None), Timestamp(2)),
             Err(TaskError::InvalidTransition)
         );
-        book.launched(id, "/wt".into(), "kiti-1".into(), Pid(10), Timestamp(2))
-            .unwrap();
+        book.launched(id, placed(10), Timestamp(2)).unwrap();
         // Running no vuelve a lanzarse ni a fallar al lanzar.
         assert_eq!(
-            book.launched(id, "/wt".into(), "kiti-1".into(), Pid(10), Timestamp(3)),
+            book.launched(id, placed(10), Timestamp(3)),
             Err(TaskError::InvalidTransition)
         );
         assert_eq!(
