@@ -21,6 +21,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 ### Changed
 
+- `mise run app:bundle` also reinstalls `kiti-mcp` and `kiti-hook` in `~/.kiti/bin`, so a rebuilt app does not leave agents with stale binaries.
 - `kiti_agents` shows each agent's Kiti tmux session and PID, so an alias can be matched to its terminal.
 - A message's envelope stays on the map for 3 seconds after delivery, moving from the sender's office to the recipient's, so delivery is visible even when it is instant.
 - The layout buttons in the top bar are icons only (⊞ ⊟ ☷), with a tooltip, so the bar fits on narrower windows.
