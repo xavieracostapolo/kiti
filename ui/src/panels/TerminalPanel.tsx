@@ -40,18 +40,26 @@ export function TerminalPanel({ store, api }: Props) {
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(el);
+    fit.fit();
+    let active = true;
+    let observer: ResizeObserver | undefined;
     const resize = () => {
       fit.fit();
       void api.resize(id, term.cols, term.rows);
     };
-    resize();
-    const observer = new ResizeObserver(resize);
-    observer.observe(el);
     const input = term.onData((data) => void api.input(id, data));
-    void api.attach(id, (bytes) => term.write(bytes));
+    void api
+      .attach(id, (bytes) => term.write(bytes))
+      .then(() => {
+        if (!active) return;
+        resize();
+        observer = new ResizeObserver(resize);
+        observer.observe(el);
+      });
     term.focus();
     return () => {
-      observer.disconnect();
+      active = false;
+      observer?.disconnect();
       input.dispose();
       term.dispose();
     };
