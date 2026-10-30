@@ -1,6 +1,7 @@
 //! Adapters de los ports (ADR 0002 §5). Los que traen dependencias (sysinfo, y más adelante
 //! axum y notify) van detrás de *features*.
 
+pub mod alias_file;
 #[cfg(target_os = "macos")]
 pub mod antigravity;
 pub mod claude_settings;

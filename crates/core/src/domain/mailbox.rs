@@ -3,9 +3,10 @@
 //! El remitente nunca lo declara el mensaje: el runtime lo resuelve por el proceso y llama a
 //! `send` con su `AgentId`. El destinatario se nombra por su alias (`claude-1`, `agy-2`…).
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 
-use super::ids::{AgentId, Provider, Timestamp};
+use super::alias::{AliasBook, AliasEntry, AliasKey};
+use super::ids::{AgentId, Timestamp};
 
 /// Caracteres como máximo por mensaje.
 pub const MAX_TEXT: usize = 4000;
@@ -133,19 +134,11 @@ pub struct Mailbox {
     paused: bool,
     next_message: u64,
     next_thread: u64,
-    aliases: HashMap<AgentId, String>,
+    aliases: AliasBook,
+    keys: HashMap<AgentId, AliasKey>,
     messages: VecDeque<Message>,
     threads: BTreeMap<ThreadId, Thread>,
     sends: HashMap<AgentId, VecDeque<Timestamp>>,
-}
-
-fn alias_prefix(provider: Provider) -> &'static str {
-    match provider {
-        Provider::Claude => "claude",
-        Provider::Codex => "codex",
-        Provider::Gemini => "gemini",
-        Provider::Antigravity => "agy",
-    }
 }
 
 /// Quita los caracteres de control (salvo salto de línea y tabulador): el texto acaba escrito
@@ -176,43 +169,70 @@ impl Mailbox {
         self.paused
     }
 
-    /// Alias de un agente vivo, asignándole uno si aún no tiene: el número libre más bajo de
-    /// su proveedor.
-    pub fn join(&mut self, id: AgentId) -> &str {
-        if !self.aliases.contains_key(&id) {
-            let prefix = alias_prefix(id.provider);
-            let n = (1..)
-                .find(|n| {
-                    let candidate = format!("{prefix}-{n}");
-                    !self.aliases.values().any(|a| *a == candidate)
-                })
-                .unwrap_or(1);
-            self.aliases.insert(id, format!("{prefix}-{n}"));
+    /// Alias de un agente vivo, asignándole uno si aún no tiene. El alias pertenece a `key`
+    /// (ver `AliasBook`): la misma clave recupera el suyo.
+    pub fn join(&mut self, id: AgentId, key: AliasKey, now: Timestamp) -> &str {
+        if !self.keys.contains_key(&id) {
+            self.aliases.assign(&key, id.provider, now);
+            self.keys.insert(id, key.clone());
         }
-        &self.aliases[&id]
+        self.aliases.get(&self.keys[&id]).unwrap_or_default()
+    }
+
+    /// Solo tests: agente fuera de tmux.
+    #[cfg(test)]
+    pub(crate) fn join_process(&mut self, id: AgentId) -> &str {
+        self.join(id, AliasKey::Process(id), Timestamp(0))
+    }
+
+    /// Clave estable con la que `id` tiene su alias.
+    pub fn key_of(&self, id: &AgentId) -> Option<&AliasKey> {
+        self.keys.get(id)
+    }
+
+    /// Cambia la clave de `id` (su proceso apareció en una sesión tmux de Kiti). Si la clave
+    /// nueva no existía, hereda el alias actual sin renombrar; si existía (relanzado en la
+    /// misma sesión), toma el alias guardado de esa sesión.
+    pub fn rekey(&mut self, id: &AgentId, key: AliasKey, now: Timestamp) -> bool {
+        let Some(old) = self.keys.get(id).cloned() else {
+            return false;
+        };
+        if old == key {
+            return false;
+        }
+        if !self.aliases.rekey(&old, key.clone()) {
+            self.aliases.forget(&old);
+            self.aliases.assign(&key, id.provider, now);
+        }
+        self.keys.insert(*id, key);
+        true
     }
 
     pub fn alias(&self, id: &AgentId) -> Option<&str> {
-        self.aliases.get(id).map(String::as_str)
+        self.aliases.get(self.keys.get(id)?)
     }
 
     /// Agentes con alias, en cualquier orden.
     pub fn members(&self) -> impl Iterator<Item = (&AgentId, &str)> {
-        self.aliases.iter().map(|(id, a)| (id, a.as_str()))
+        self.keys
+            .iter()
+            .filter_map(|(id, k)| Some((id, self.aliases.get(k)?)))
     }
 
     pub fn resolve(&self, alias: &str) -> Option<AgentId> {
         let alias = alias.trim();
-        self.aliases
-            .iter()
+        self.members()
             .find(|(_, a)| a.eq_ignore_ascii_case(alias))
             .map(|(id, _)| *id)
     }
 
-    /// El agente murió: libera su alias y descarta lo que esperaba entregarle.
-    pub fn leave(&mut self, id: &AgentId) -> bool {
-        let had = self.aliases.remove(id).is_some();
-        let mut changed = had;
+    /// El agente murió: libera su alias (reservado 24 h para su clave) y descarta lo que
+    /// esperaba entregarle.
+    pub fn leave(&mut self, id: &AgentId, now: Timestamp) -> bool {
+        let mut changed = false;
+        if let Some(key) = self.keys.remove(id) {
+            changed = self.aliases.release(&key, now);
+        }
         for m in self.messages.iter_mut().filter(|m| m.to == *id) {
             if matches!(
                 m.state,
@@ -224,6 +244,36 @@ impl Mailbox {
         }
         self.sends.remove(id);
         changed
+    }
+
+    /// Libera los alias vivos cuya clave no está en `wanted` y que ningún agente usa (filas
+    /// restauradas de un arranque anterior). Reversible: la misma clave los recupera.
+    pub fn release_unbound(&mut self, wanted: &HashSet<AliasKey>, now: Timestamp) -> bool {
+        let bound: HashSet<&AliasKey> = self.keys.values().collect();
+        let stale: Vec<AliasKey> = self
+            .aliases
+            .live()
+            .map(|(k, _)| k.clone())
+            .filter(|k| !wanted.contains(k) && !bound.contains(k))
+            .collect();
+        let changed = !stale.is_empty();
+        for k in stale {
+            self.aliases.release(&k, now);
+        }
+        changed
+    }
+
+    /// Borra las reservas de alias caducadas.
+    pub fn prune_aliases(&mut self, now: Timestamp) -> bool {
+        self.aliases.prune(now)
+    }
+
+    pub fn alias_entries(&self) -> Vec<AliasEntry> {
+        self.aliases.entries()
+    }
+
+    pub fn restore_aliases(&mut self, entries: Vec<AliasEntry>) {
+        self.aliases.restore(entries);
     }
 
     pub fn send(
@@ -313,7 +363,7 @@ impl Mailbox {
         };
         self.next_message += 1;
         let id = MessageId(self.next_message);
-        let to_alias = self.aliases[&to].clone();
+        let to_alias = self.alias(&to).unwrap_or_default().to_owned();
         self.messages.push_back(Message {
             id,
             thread,
@@ -544,7 +594,7 @@ impl Mailbox {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ids::{Pid, ProcessStartTime};
+    use crate::domain::ids::{Pid, ProcessStartTime, Provider};
     use proptest::prelude::*;
 
     fn agent(provider: Provider, pid: u32) -> AgentId {
@@ -567,21 +617,22 @@ mod tests {
         let mut mb = Mailbox::default();
         let a = claude(1);
         let b = codex(2);
-        mb.join(a);
-        mb.join(b);
+        mb.join_process(a);
+        mb.join_process(b);
         (mb, a, b)
     }
 
     #[test]
     fn alias_corto_por_proveedor_con_el_numero_libre_mas_bajo() {
         let mut mb = Mailbox::default();
-        assert_eq!(mb.join(claude(10)), "claude-1");
-        assert_eq!(mb.join(claude(11)), "claude-2");
-        assert_eq!(mb.join(agent(Provider::Antigravity, 12)), "agy-1");
+        assert_eq!(mb.join_process(claude(10)), "claude-1");
+        assert_eq!(mb.join_process(claude(11)), "claude-2");
+        assert_eq!(mb.join_process(agent(Provider::Antigravity, 12)), "agy-1");
         // Es estable mientras vive.
-        assert_eq!(mb.join(claude(10)), "claude-1");
-        mb.leave(&claude(10));
-        assert_eq!(mb.join(claude(13)), "claude-1");
+        assert_eq!(mb.join_process(claude(10)), "claude-1");
+        mb.leave(&claude(10), Timestamp(5));
+        // Reservado 24 h: el siguiente no hereda claude-1.
+        assert_eq!(mb.join_process(claude(13)), "claude-3");
         assert_eq!(mb.resolve("CLAUDE-2"), Some(claude(11)));
         assert_eq!(mb.resolve("claude-9"), None);
     }
@@ -799,7 +850,7 @@ mod tests {
     fn si_muere_el_destinatario_se_descarta_lo_suyo_y_su_alias_queda_libre() {
         let (mut mb, a, b) = two();
         mb.send(a, "codex-1", "x", None, Timestamp(1)).unwrap();
-        assert!(mb.leave(&b));
+        assert!(mb.leave(&b, Timestamp(5)));
         assert!(mb.take_deliveries(|_| true).is_empty());
         assert_eq!(mb.resolve("codex-1"), None);
         assert_eq!(

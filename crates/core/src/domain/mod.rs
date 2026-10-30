@@ -3,6 +3,7 @@
 
 mod agent;
 mod alerts;
+mod alias;
 mod events;
 mod ids;
 mod mailbox;
@@ -19,6 +20,7 @@ pub use agent::{
     Agent, AgentInput, AgentStats, DetectedAgent, Events, HISTORY_MAX, SessionActivity,
 };
 pub use alerts::{Alert, AlertKind, AlertPolicy};
+pub use alias::{AliasBook, AliasEntry, AliasKey, RESERVE_MS as ALIAS_RESERVE_MS};
 pub use events::DomainEvent;
 pub use ids::{
     AgentId, ParseAgentIdError, Pid, ProcessIdentity, ProcessStartTime, Provider, SessionId,

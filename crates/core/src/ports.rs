@@ -34,6 +34,12 @@ pub trait MailCourier: Send + 'static {
     fn deliver(&mut self, pid: crate::domain::Pid, text: String, ids: Vec<u64>);
 }
 
+/// Persistencia de los alias de los mensajes entre agentes (ADR 0017): el runtime guarda el
+/// libro entero cada vez que cambia.
+pub trait AliasStore: Send + 'static {
+    fn save(&mut self, entries: &[crate::domain::AliasEntry]);
+}
+
 /// Persistencia y búsqueda `FTS5 BM25` de los recuerdos del proyecto (ADR 0018).
 pub trait MemoryStore: Send + 'static {
     /// Persiste un recuerdo recién creado.

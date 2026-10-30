@@ -16,15 +16,16 @@ use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
-    AgentId, AgentInput, AgentRegistry, AgentStats, AlertPolicy, DetectedAgent, DomainEvent,
-    Events, GitStatus, Mailbox, MemoryBook, MemoryEntry, MessageId, Pid, Provider, QuotaPolicy,
-    QuotaWindow, SEARCH_LIMIT, SessionId, StalePolicy, StatusKind, ThreadId, Timestamp,
+    AgentId, AgentInput, AgentRegistry, AgentStats, AlertPolicy, AliasEntry, AliasKey,
+    DetectedAgent, DomainEvent, Events, GitStatus, Mailbox, MemoryBook, MemoryEntry, MessageId,
+    Pid, Provider, QuotaPolicy, QuotaWindow, SEARCH_LIMIT, SessionId, StalePolicy, StatusKind,
+    ThreadId, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
 use crate::ports::{
-    AgentKiller, AlertNotice, AlertSink, Clock, CwdProjects, DiffPublisher, KillError, KillOutcome,
-    KillTarget, MailCourier, MemoryStore, ProjectResolver, SelfMonitor,
+    AgentKiller, AlertNotice, AlertSink, AliasStore, Clock, CwdProjects, DiffPublisher, KillError,
+    KillOutcome, KillTarget, MailCourier, MemoryStore, ProjectResolver, SelfMonitor,
 };
 use kiti_protocol::mcp;
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
@@ -134,7 +135,8 @@ pub enum RuntimeCommand {
         reply: McpReply<mcp::RecallReply>,
     },
     /// PIDs de los agentes lanzados desde Kiti (sesiones tmux): a ellos se les puede escribir.
-    MailReachable(Vec<Pid>),
+    /// Pid del agente y nombre de su sesión tmux de Kiti.
+    MailReachable(Vec<(Pid, String)>),
     /// La escritura en la terminal falló: esos mensajes vuelven a la cola.
     MailUndeliver(Vec<u64>),
     Mail(MailAction),
@@ -391,8 +393,8 @@ impl RuntimeHandle {
     }
 
     /// Agentes a los que Kiti puede escribir (sesiones tmux).
-    pub async fn mail_reachable(&self, pids: Vec<Pid>) {
-        let _ = self.tx.send(RuntimeCommand::MailReachable(pids)).await;
+    pub async fn mail_reachable(&self, sessions: Vec<(Pid, String)>) {
+        let _ = self.tx.send(RuntimeCommand::MailReachable(sessions)).await;
     }
 
     pub async fn mail_undeliver(&self, ids: Vec<u64>) {
@@ -494,7 +496,12 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     mailbox: Mailbox,
     mail_dirty: bool,
     courier: Option<Box<dyn MailCourier>>,
-    reachable: std::collections::HashSet<Pid>,
+    /// Agentes en sesiones tmux de Kiti (pid → sesión). Hasta el primer `MailReachable` no se
+    /// reparten alias: la clave depende de él.
+    reachable: std::collections::HashMap<Pid, String>,
+    reachable_known: bool,
+    alias_store: Option<Box<dyn AliasStore>>,
+    alias_saved: Vec<AliasEntry>,
     /// A quién se escribió y cuándo: no se le vuelve a escribir hasta verlo trabajar.
     typed: std::collections::HashMap<AgentId, Timestamp>,
     /// Memoria de los proyectos (ADR 0018).
@@ -539,7 +546,10 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             mailbox: Mailbox::default(),
             mail_dirty: false,
             courier: None,
-            reachable: std::collections::HashSet::new(),
+            reachable: std::collections::HashMap::new(),
+            reachable_known: false,
+            alias_store: None,
+            alias_saved: Vec::new(),
             typed: std::collections::HashMap::new(),
             memories: MemoryBook::default(),
             memory_store: None,
@@ -576,6 +586,14 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     /// Quién escribe los mensajes en las terminales (ADR 0017). Sin él, solo hay `kiti_inbox`.
     pub fn with_courier(mut self, courier: impl MailCourier) -> Self {
         self.courier = Some(Box::new(courier));
+        self
+    }
+
+    /// Alias guardados de un arranque anterior y dónde persistirlos (ADR 0017).
+    pub fn with_aliases(mut self, initial: Vec<AliasEntry>, store: impl AliasStore) -> Self {
+        self.mailbox.restore_aliases(initial);
+        self.alias_saved = self.mailbox.alias_entries();
+        self.alias_store = Some(Box::new(store));
         self
     }
 
@@ -886,8 +904,10 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             } => {
                 let _ = reply.send(self.mcp_recall(&ancestry, request));
             }
-            RuntimeCommand::MailReachable(pids) => {
-                self.reachable = pids.into_iter().collect();
+            RuntimeCommand::MailReachable(sessions) => {
+                self.reachable = sessions.into_iter().collect();
+                self.reachable_known = true;
+                self.mail_dirty = true;
             }
             RuntimeCommand::MailUndeliver(ids) => {
                 let ids: Vec<MessageId> = ids.into_iter().map(MessageId).collect();
@@ -921,28 +941,64 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
 
     /// Alias para los agentes vivos; los que murieron sueltan el suyo y lo que se les debía.
     fn sync_mail(&mut self) {
-        let live: Vec<AgentId> = self
+        // La clave de un agente depende de si vive en tmux: hasta saberlo no hay alias.
+        if !self.reachable_known {
+            return;
+        }
+        let now = self.clock.now();
+        let live: Vec<(AgentId, AliasKey)> = self
             .registry
             .agents()
             .filter(|a| !a.is_dead())
             .map(|a| a.id())
+            .map(|id| {
+                let key = match self.reachable.get(&id.pid) {
+                    Some(session) => AliasKey::Tmux(session.clone()),
+                    None => AliasKey::Process(id),
+                };
+                (id, key)
+            })
             .collect();
-        for id in &live {
-            if self.mailbox.alias(id).is_none() {
-                self.mailbox.join(*id);
-                self.mail_dirty = true;
-            }
-        }
+        // Primero salen los que ya no viven: si un agente se relanzó en su sesión tmux, el
+        // viejo suelta la clave antes de que el nuevo la tome.
         let gone: Vec<AgentId> = self
             .mailbox
             .members()
             .map(|(id, _)| *id)
-            .filter(|id| !live.contains(id))
+            .filter(|id| !live.iter().any(|(l, _)| l == id))
             .collect();
         for id in gone {
-            self.mailbox.leave(&id);
+            self.mailbox.leave(&id, now);
             self.typed.remove(&id);
             self.mail_dirty = true;
+        }
+        for (id, key) in &live {
+            if self.mailbox.alias(id).is_none() {
+                self.mailbox.join(*id, key.clone(), now);
+                self.mail_dirty = true;
+            } else if self.mailbox.key_of(id) != Some(key)
+                && self.mailbox.rekey(id, key.clone(), now)
+            {
+                self.mail_dirty = true;
+            }
+        }
+        let wanted: std::collections::HashSet<AliasKey> =
+            live.into_iter().map(|(_, k)| k).collect();
+        if self.mailbox.release_unbound(&wanted, now) | self.mailbox.prune_aliases(now) {
+            self.mail_dirty = true;
+        }
+        self.save_aliases();
+    }
+
+    /// Persiste el libro de alias si cambió desde el último guardado.
+    fn save_aliases(&mut self) {
+        let Some(store) = self.alias_store.as_mut() else {
+            return;
+        };
+        let entries = self.mailbox.alias_entries();
+        if entries != self.alias_saved {
+            store.save(&entries);
+            self.alias_saved = entries;
         }
     }
 
@@ -962,7 +1018,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         };
         let (reachable, typed) = (&self.reachable, &self.typed);
         let deliveries = self.mailbox.take_deliveries(|id| {
-            reachable.contains(&id.pid)
+            reachable.contains_key(&id.pid)
                 && !typed.contains_key(id)
                 && registry
                     .get(id)
@@ -1012,7 +1068,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 agent,
                 alias,
                 &project,
-                self.reachable.contains(&agent.id().pid),
+                self.reachable.contains_key(&agent.id().pid),
             ));
         }
         peers.sort_by(|a, b| a.alias.cmp(&b.alias));
