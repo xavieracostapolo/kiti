@@ -32,6 +32,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 - The office board read the wrong repository when Kiti ran inside a git hook that exports `GIT_DIR`.
 - A tmux session started outside Kiti (`tmux -L kiti new-session`) gets its terminal in the office without reopening the window.
 - Kiti lists its tmux sessions correctly with tmux 3.8, and an embedded terminal resizes to its panel after attaching.
+- Project memory is shared by all git worktrees of a repository, search ignores accents and matches singular and plural forms, and the debug panel counts memories stored and recalled.
 
 ## [0.2.0] - 2026-10-27
 

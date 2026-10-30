@@ -66,6 +66,12 @@ pub trait MemoryStore: Send + 'static {
 /// en caché: se llama al proyectar cada agente.
 pub trait ProjectResolver: Send + 'static {
     fn project_of(&mut self, cwd: &str) -> String;
+
+    /// Repositorio principal del proyecto: igual que `project_of`, salvo que los worktrees
+    /// de git apuntan a la raíz de su repositorio (clave de la memoria, ADR 0018).
+    fn repo_of(&mut self, cwd: &str) -> String {
+        self.project_of(cwd)
+    }
 }
 
 /// Sin disco: cada carpeta es su propio proyecto (simulador y tests).

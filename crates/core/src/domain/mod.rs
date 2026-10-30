@@ -35,7 +35,7 @@ pub use memory::{
     MemoryKind, RememberError, SEARCH_LIMIT, TASKS_MAX, TOUCHED_MAX, TaskItem, TaskStatus,
 };
 pub use process::{ProcessSnapshot, Role, classify, dedupe_tree, is_candidate_exe};
-pub use project::{GitStatus, project_root};
+pub use project::{GitStatus, project_root, worktree_main_repo};
 pub use quota::{LOW as QUOTA_LOW, QuotaAlert, QuotaPolicy, QuotaRefresh, QuotaWindow};
 pub use registry::{AgentRegistry, RegistryDiff};
 pub use signal::{AgentInfo, Signal, ToolOutcome};
