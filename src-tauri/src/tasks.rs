@@ -287,6 +287,12 @@ mod tests {
                 std::process::Command::new("git")
                     .args(&args)
                     .current_dir(&repo)
+                    // lefthook exporta GIT_DIR y otras: nunca deben llegar al repo real.
+                    .env_remove("GIT_DIR")
+                    .env_remove("GIT_WORK_TREE")
+                    .env_remove("GIT_INDEX_FILE")
+                    .env_remove("GIT_COMMON_DIR")
+                    .env_remove("GIT_PREFIX")
                     .status()
                     .unwrap()
                     .success()
