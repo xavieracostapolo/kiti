@@ -665,3 +665,85 @@
   padding: 0;
   min-width: 0;
 }
+
+/* Tablero de tareas (ADR 0019): reutiliza el marco del panel de mensajes. */
+.taskList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 12px;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.taskRow {
+  border: 2px solid var(--edge);
+  border-left-width: 6px;
+  background: #1f2333;
+  padding: 8px 10px;
+  line-height: 1.5;
+}
+
+.taskRow[data-state="launching"],
+.taskRow[data-state="running"] {
+  border-left-color: #2f9e6a;
+}
+
+.taskRow[data-state="stuck"] {
+  border-left-color: #f5c542;
+}
+
+.taskRow[data-state="failed"] {
+  border-left-color: #d9534f;
+}
+
+.taskRow[data-state="done"] {
+  border-left-color: #7a8099;
+  opacity: 0.8;
+}
+
+.taskTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.taskState {
+  text-transform: uppercase;
+  font-size: 11px;
+}
+
+.taskRow[data-state="launching"] .taskState,
+.taskRow[data-state="running"] .taskState {
+  color: #37b57a;
+}
+
+.taskRow[data-state="stuck"] .taskState {
+  color: #f5c542;
+}
+
+.taskRow[data-state="failed"] .taskState {
+  color: #e8736f;
+}
+
+.taskRow[data-state="done"] .taskState {
+  color: #7a8099;
+}
+
+.taskMeta {
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.taskMeta a {
+  color: inherit;
+}
+
+.taskReason {
+  margin-top: 2px;
+  color: #e8736f;
+}

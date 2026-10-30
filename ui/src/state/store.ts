@@ -16,6 +16,7 @@ import type {
   QuotaWindow,
   ServerMsg,
   Source,
+  TaskInfo,
   TerminalInfo,
 } from "../protocol";
 import { type AgentsState, applyMsg, EMPTY_AGENTS } from "./agents";
@@ -40,6 +41,12 @@ export type KitiState = {
   quotas: ReadonlyMap<Provider, readonly QuotaWindow[]>;
   /** Mensajes entre agentes (ADR 0017); `undefined` hasta que el core manda el primero. */
   mail: MailState | undefined;
+  /** Tareas de los agentes efímeros (ADR 0019), tal como llegan del core. */
+  tasks: readonly TaskInfo[];
+  setTasks(tasks: readonly TaskInfo[]): void;
+  /** Panel del tablero de tareas abierto. */
+  tasksOpen: boolean;
+  setTasksOpen(open: boolean): void;
   /** Recuerdos de los proyectos (ADR 0018), del más reciente al más antiguo. */
   memories: readonly MemoryItem[];
   /** Panel de mensajes abierto. */
@@ -105,6 +112,14 @@ export function createKitiStore() {
     git: new Map(),
     mail: undefined,
     memories: [],
+    tasks: [],
+    setTasks(tasks) {
+      set({ tasks });
+    },
+    tasksOpen: false,
+    setTasksOpen(tasksOpen) {
+      if (get().tasksOpen !== tasksOpen) set({ tasksOpen });
+    },
     mailOpen: false,
     setMailOpen(mailOpen) {
       if (get().mailOpen !== mailOpen) set({ mailOpen });
@@ -187,6 +202,10 @@ export function createKitiStore() {
       if (msg.type === "Mail") {
         const { type: _, ...mail } = msg;
         set({ mail });
+        return;
+      }
+      if (msg.type === "Tasks") {
+        set({ tasks: msg.tasks });
         return;
       }
       if (msg.type === "Memory") {

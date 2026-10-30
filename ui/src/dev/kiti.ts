@@ -2,6 +2,7 @@
 
 import { type Counts, countsByKind } from "../state/agents";
 import type { KitiStore } from "../state/store";
+import { type TaskSummary, taskSummary } from "../state/tasks";
 import type { Metrics, MetricsSnapshot } from "../telemetry/metrics";
 import type { BenchResult, WorldHandle } from "../world/World";
 import type { Zoom } from "./params";
@@ -35,6 +36,8 @@ export type KitiDev = {
   envelopes(): number;
   /** Recuerdos de proyecto cargados (ADR 0018). */
   memory(): number;
+  /** Resumen del tablero de tareas (ADR 0019). */
+  tasks(): TaskSummary;
 };
 
 declare global {
@@ -45,7 +48,7 @@ declare global {
 
 export function installDevHooks(
   store: KitiStore,
-  sim: { advance(n: number): void } | undefined,
+  sim: { advance(n: number): void; now?(): number } | undefined,
   metrics: Metrics,
   getWorld: () => WorldHandle | undefined,
 ): KitiDev {
@@ -75,6 +78,7 @@ export function installDevHooks(
     mail: (id) => getWorld()?.mail(id) ?? null,
     envelopes: () => getWorld()?.envelopes() ?? 0,
     memory: () => store.getState().memories.length,
+    tasks: () => taskSummary(store.getState().tasks, sim?.now?.() ?? Date.now()),
     kill: (idOrIndex) => {
       const id = /^\d+$/.test(idOrIndex) ? ids()[Number(idOrIndex)] : idOrIndex;
       if (id) store.getState().requestKill(id);

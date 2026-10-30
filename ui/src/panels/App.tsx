@@ -14,6 +14,7 @@ import { MailPanel } from "./MailPanel";
 import { NativeCloseOffice } from "./NativeCloseOffice";
 import { OfficeTooltip } from "./OfficeTooltip";
 import s from "./panels.module.css";
+import { TaskBoard } from "./TaskBoard";
 import { TerminalPanel } from "./TerminalPanel";
 import { TopBar } from "./TopBar";
 import { WorldHost } from "./WorldHost";
@@ -126,6 +127,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
       />
       {terminals && <TerminalPanel store={store} api={terminals} world={() => world.current} />}
       <MailPanel store={store} now={now} act={(c) => void transport.mailAction(c)} />
+      <TaskBoard store={store} now={now} />
       <OfficeTooltip store={store} now={now} />
       {transport.killConfirmation === "in-app" ? (
         <CloseOfficeDialog store={store} killAgent={killAgent} />

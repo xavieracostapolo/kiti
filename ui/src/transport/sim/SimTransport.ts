@@ -18,6 +18,7 @@ import { fakeGit } from "./fakeGit";
 import { applyMailCommand, fakeMail } from "./fakeMail";
 import { fakeMemory } from "./fakeMemory";
 import { fakeQuota } from "./fakeQuota";
+import { fakeTasks } from "./fakeTasks";
 import { SimFleet, TICK_MS } from "./fleet";
 
 export type Schedule = (tick: () => void) => () => void;
@@ -38,6 +39,8 @@ export type SimOptions = {
   quota?: boolean;
   /** Mensajes entre agentes falsos (`?mail=1`, ADR 0017). */
   mail?: boolean;
+  /** Tareas falsas de agentes efímeros (`?tasks=1`, ADR 0019). */
+  tasks?: boolean;
 };
 
 const intervalSchedule: Schedule = (tick) => {
@@ -81,6 +84,9 @@ export class SimTransport implements Transport {
     if (this.opts.quota) for (const msg of fakeQuota(this.fleet.now)) onMsg(msg);
     for (const msg of fakeGit(this.fleet.snapshot())) onMsg(msg);
     onMsg(fakeMemory(this.fleet.snapshot(), this.fleet.now));
+    if (this.opts.tasks) {
+      onMsg({ type: "Tasks", tasks: fakeTasks(this.fleet.snapshot(), this.fleet.now) });
+    }
     if (this.opts.mail) {
       this.mail = fakeMail(this.fleet.snapshot(), this.fleet.now);
       onMsg({ type: "Mail", ...this.mail });
