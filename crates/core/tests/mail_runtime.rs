@@ -410,6 +410,71 @@ async fn un_recuerdo_guardado_en_un_worktree_lo_ve_el_repositorio_principal() {
     assert_eq!(reply.sessions.len(), 2);
 }
 
+struct NoStore;
+
+impl kiti_core::ports::MemoryStore for NoStore {
+    fn save(&mut self, _entry: &kiti_core::domain::MemoryEntry) {}
+    /// Como un FTS que no ve las claves nuevas: no debe usarse para responder.
+    fn search(
+        &mut self,
+        _project: &str,
+        _query: &str,
+        _limit: usize,
+    ) -> Option<Vec<kiti_core::domain::MemoryEntry>> {
+        Some(Vec::new())
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_recuerdo_antiguo_de_un_worktree_lo_encuentra_el_repositorio_principal() {
+    let old = kiti_core::domain::MemoryEntry {
+        id: kiti_core::domain::MemoryId(1),
+        project: "/Users/dev/tienda-web-rama".into(),
+        kind: kiti_core::domain::MemoryKind::Handoff,
+        title: "Viejo".into(),
+        detail: "Guardado desde el worktree".into(),
+        files: vec![],
+        author: "claude-9".into(),
+        created_at: Timestamp(1),
+    };
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        ManualClock::new(1_000),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_memories(vec![old], NoStore)
+            .with_projects(Worktrees)
+            .run(),
+    );
+    h.mail_reachable(Vec::new()).await;
+    h.register_agent(
+        agent(Provider::Claude, 10, "/Users/dev/tienda-web"),
+        Timestamp(1_000),
+    )
+    .await;
+    let reply = h
+        .mcp_recall(from(10), RecallRequest { query: None })
+        .await
+        .unwrap();
+    assert_eq!(reply.memories.len(), 1);
+    assert_eq!(reply.memories[0].title, "Viejo");
+    let found = h
+        .mcp_recall(
+            from(10),
+            RecallRequest {
+                query: Some("worktree".into()),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(found.memories.len(), 1);
+}
+
 #[tokio::test(start_paused = true)]
 async fn las_metricas_cuentan_recuerdos_guardados_y_consultados() {
     let telemetry = Arc::new(Telemetry::new());

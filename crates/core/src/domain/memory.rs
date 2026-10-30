@@ -161,6 +161,13 @@ impl MemoryBook {
         self.total_stored = self.entries.len() as u64;
     }
 
+    /// Reasigna el proyecto de cada recuerdo (p. ej. de la ruta de un worktree a su repositorio).
+    pub fn rekey(&mut self, mut key: impl FnMut(&str) -> String) {
+        for e in &mut self.entries {
+            e.project = key(&e.project);
+        }
+    }
+
     pub fn total(&self) -> u64 {
         self.total_stored
     }

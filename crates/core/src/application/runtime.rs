@@ -574,6 +574,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     /// Cómo agrupar oficinas por proyecto (ADR 0009). Por defecto, cada carpeta es uno.
     pub fn with_projects(mut self, projects: impl ProjectResolver) -> Self {
         self.projects = Box::new(projects);
+        self.rekey_memories();
         self
     }
 
@@ -600,9 +601,18 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     /// Almacén persistente de recuerdos (`SqliteMemoryStore`, ADR 0018) e hidratación inicial.
     pub fn with_memories(mut self, initial: Vec<MemoryEntry>, store: impl MemoryStore) -> Self {
         self.memories.load(initial);
+        self.rekey_memories();
         self.telemetry.set_memories_total(self.memories.total());
         self.memory_store = Some(Box::new(store));
         self
+    }
+
+    /// Los recuerdos guardados con la ruta de un worktree pasan a su repositorio principal.
+    /// Solo en memoria: `memory.db` no cambia. Idempotente, así que el orden de
+    /// `with_projects` y `with_memories` da igual.
+    fn rekey_memories(&mut self) {
+        let projects = &mut self.projects;
+        self.memories.rekey(|p| projects.repo_of(p));
     }
 
     /// Pasa los eventos por la política de avisos y entrega los que tocan.
@@ -1248,11 +1258,9 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
 
         let memories: Vec<mcp::RecallEntry> = match &query {
             Some(q) => {
-                let hits = self
-                    .memory_store
-                    .as_mut()
-                    .and_then(|s| s.search(&project, q, SEARCH_LIMIT))
-                    .unwrap_or_else(|| self.memories.search(&project, q, SEARCH_LIMIT));
+                // Siempre en memoria: el FTS de SQLite no conoce las claves por repositorio ni
+                // ignora tildes; `memory.db` solo persiste.
+                let hits = self.memories.search(&project, q, SEARCH_LIMIT);
                 hits.iter().map(|e| memory::recall_entry(e, true)).collect()
             }
             None => self
