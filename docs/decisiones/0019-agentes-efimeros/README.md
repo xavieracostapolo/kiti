@@ -35,7 +35,7 @@ En la sesión del 2026-10-29 y 2026-10-30 un agente orquestó varios para la cuo
 2. **Lanzamiento:** Kiti crea el worktree `<repo>-<id>` y la rama `<tipo>/<slug>` desde `origin/main`, y lanza el agente en una sesión tmux nueva con el modelo pedido (por defecto, el más barato del proveedor que sirva para la tarea). El primer mensaje del agente es el encargo.
 3. **Trabajo:** el agente sale en el mapa como una oficina hija de la de su orquestador, con la insignia de tarea.
 4. **Entrega:** el agente llama a `kiti_done` con el PR o el motivo del fallo. Kiti avisa al orquestador con un mensaje.
-5. **Cierre:** Kiti termina la sesión. Si el worktree está limpio y su rama está subida, lo borra; si no, lo deja y lo marca en el tablero.
+5. **Cierre:** Kiti termina la sesión y archiva la conversación del agente, para que no quede 7 días como oficina apagada (ADR 0009). Si el worktree está limpio y su rama está subida, lo borra; si no, lo deja y lo marca en el tablero.
 
 Un agente efímero que lleve más de N horas sin `kiti_done` (por defecto 4) sale en ámbar en el tablero; Kiti no lo cierra solo.
 
