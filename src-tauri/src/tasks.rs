@@ -8,40 +8,11 @@ use std::sync::{Arc, Mutex};
 
 use kiti_core::adapters::conversations::HiddenConversations;
 use kiti_core::adapters::tmux::Tmux;
+use kiti_core::adapters::worktree;
 use kiti_core::domain::{Pid, Provider, Task, worktree_main_repo};
 use kiti_core::ingestion::claude::parse_session_file;
 use kiti_core::ports::{CloseOutcome, LaunchSpec, Launched, TaskLauncher};
 use tracing::{info, warn};
-
-/// Worktrees de las tareas. Stub hasta que el encargo C esté en `main`: entonces este módulo se
-/// sustituye por `kiti_core::adapters::worktree`, que tiene las mismas firmas.
-mod worktree {
-    use std::path::{Path, PathBuf};
-
-    pub struct Worktree {
-        pub path: PathBuf,
-        // Se lee cuando entre la implementación real.
-        #[allow(dead_code)]
-        pub branch: String,
-    }
-
-    pub enum Removal {
-        // Lo devuelve la implementación real; el stub nunca borra.
-        #[allow(dead_code)]
-        Removed,
-        Kept(String),
-    }
-
-    pub fn create(_repo: &Path, _branch: &str) -> std::io::Result<Worktree> {
-        Err(std::io::Error::other(
-            "los worktrees de las tareas aún no están conectados",
-        ))
-    }
-
-    pub fn remove_if_safe(_repo: &Path, _worktree: &Path) -> Removal {
-        Removal::Kept("los worktrees de las tareas aún no están conectados".into())
-    }
-}
 
 pub struct TmuxTaskLauncher {
     tmux: Option<Tmux>,
@@ -212,11 +183,21 @@ impl TaskLauncher for TmuxTaskLauncher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kiti_core::adapters::git_status::GIT_ENV;
 
     fn temp(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("kiti-tasks-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    /// git sin las GIT_* que exporta lefthook: nunca debe tocar el repo real.
+    fn git_cmd() -> std::process::Command {
+        let mut git = std::process::Command::new("git");
+        for var in GIT_ENV {
+            git.env_remove(var);
+        }
+        git
     }
 
     #[test]
@@ -284,15 +265,9 @@ mod tests {
             vec!["commit", "-q", "--allow-empty", "-m", "init"],
         ] {
             assert!(
-                std::process::Command::new("git")
+                git_cmd()
                     .args(&args)
                     .current_dir(&repo)
-                    // lefthook exporta GIT_DIR y otras: nunca deben llegar al repo real.
-                    .env_remove("GIT_DIR")
-                    .env_remove("GIT_WORK_TREE")
-                    .env_remove("GIT_INDEX_FILE")
-                    .env_remove("GIT_COMMON_DIR")
-                    .env_remove("GIT_PREFIX")
                     .status()
                     .unwrap()
                     .success()

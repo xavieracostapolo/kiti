@@ -33,7 +33,7 @@ pub fn parse_porcelain_v2(out: &str) -> GitStatus {
 
 /// Variables con las que git ignora `-C`: las exporta un hook de git (Kiti lanzado desde uno, o
 /// los tests en `pre-push`), y entonces `status` describiría otro repositorio.
-pub(crate) const GIT_ENV: [&str; 4] = [
+pub const GIT_ENV: [&str; 4] = [
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",
