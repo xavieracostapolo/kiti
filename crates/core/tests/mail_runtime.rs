@@ -355,6 +355,61 @@ async fn recuerda_y_recupera_pulso_indice_y_detalle_del_proyecto() {
     assert_eq!(mem_msg[0].title, "Webhooks de Stripe requieren raw body");
 }
 
+/// Dos carpetas del mismo repositorio (principal y worktree) comparten `repo_of`.
+struct Worktrees;
+
+impl kiti_core::ports::ProjectResolver for Worktrees {
+    fn project_of(&mut self, cwd: &str) -> String {
+        cwd.to_owned()
+    }
+    fn repo_of(&mut self, cwd: &str) -> String {
+        cwd.replace("/tienda-web-rama", "/tienda-web")
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_recuerdo_guardado_en_un_worktree_lo_ve_el_repositorio_principal() {
+    let clock = ManualClock::new(1_000);
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        clock,
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_projects(Worktrees)
+            .run(),
+    );
+    h.mail_reachable(Vec::new()).await;
+    for a in [
+        agent(Provider::Claude, 10, "/Users/dev/tienda-web"),
+        agent(Provider::Codex, 20, "/Users/dev/tienda-web-rama"),
+    ] {
+        h.register_agent(a, Timestamp(1_000)).await;
+    }
+    h.mcp_remember(
+        from(20),
+        RememberRequest {
+            kind: "note".into(),
+            title: "Aprobación manual".into(),
+            detail: "Detalle".into(),
+            files: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let reply = h
+        .mcp_recall(from(10), RecallRequest { query: None })
+        .await
+        .unwrap();
+    assert_eq!(reply.memories.len(), 1);
+    assert_eq!(reply.memories[0].title, "Aprobación manual");
+    assert_eq!(reply.sessions.len(), 2);
+}
+
 fn process_key(provider: Provider, pid: u32) -> AliasKey {
     AliasKey::Process(kiti_core::domain::AgentId {
         provider,

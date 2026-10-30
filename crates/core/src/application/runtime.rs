@@ -1185,7 +1185,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             .get(&me)
             .map(|a| a.cwd().as_str().to_owned())
             .unwrap_or_default();
-        let project = self.projects.project_of(&cwd);
+        let project = self.projects.repo_of(&cwd);
         let now = self.clock.now();
         match self.memories.remember(
             &project,
@@ -1228,7 +1228,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             .get(&me)
             .map(|a| a.cwd().as_str().to_owned())
             .unwrap_or_default();
-        let project = self.projects.project_of(&cwd);
+        let project = self.projects.repo_of(&cwd);
         let query = request
             .query
             .as_deref()
@@ -1238,7 +1238,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
 
         let mut sessions = Vec::new();
         for agent in self.registry.agents().filter(|a| !a.is_dead()) {
-            if self.projects.project_of(agent.cwd().as_str()) == project {
+            if self.projects.repo_of(agent.cwd().as_str()) == project {
                 let alias = self.mailbox.alias(&agent.id()).unwrap_or("?");
                 sessions.push(memory::recall_session(agent, alias));
             }

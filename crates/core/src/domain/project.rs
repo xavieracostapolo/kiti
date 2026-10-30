@@ -25,9 +25,48 @@ pub fn project_root(cwd: &str, has_git: impl Fn(&Path) -> bool) -> String {
         .map_or_else(|| cwd.to_owned(), |dir| dir.to_string_lossy().into_owned())
 }
 
+/// Raíz del repositorio principal a partir del contenido del archivo `.git` de un worktree
+/// (`gitdir: <repo>/.git/worktrees/<nombre>`). `None` si no tiene esa forma (submódulos, etc.).
+pub fn worktree_main_repo(git_file: &str) -> Option<String> {
+    let gitdir = git_file.lines().find_map(|l| l.strip_prefix("gitdir:"))?;
+    let worktrees = Path::new(gitdir.trim()).parent()?;
+    if worktrees.file_name()? != "worktrees" {
+        return None;
+    }
+    let dot_git = worktrees.parent()?;
+    if dot_git.file_name()? != ".git" {
+        return None;
+    }
+    let repo = dot_git.parent()?;
+    repo.parent()?;
+    Some(repo.to_string_lossy().into_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn un_worktree_apunta_a_su_repositorio_principal() {
+        assert_eq!(
+            worktree_main_repo("gitdir: /Users/dev/tienda-web/.git/worktrees/rama-x\n"),
+            Some("/Users/dev/tienda-web".to_owned())
+        );
+    }
+
+    #[test]
+    fn un_gitdir_ajeno_a_worktrees_no_cuenta() {
+        assert_eq!(
+            worktree_main_repo("gitdir: /Users/dev/tienda-web/.git"),
+            None
+        );
+        assert_eq!(
+            worktree_main_repo("gitdir: /Users/dev/tienda-web/.git/modules/lib"),
+            None
+        );
+        assert_eq!(worktree_main_repo("basura"), None);
+        assert_eq!(worktree_main_repo(""), None);
+    }
 
     fn repos(roots: &'static [&'static str]) -> impl Fn(&Path) -> bool {
         move |dir| roots.iter().any(|r| Path::new(r) == dir)
