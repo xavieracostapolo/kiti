@@ -34,7 +34,35 @@ describe("taskSummary", () => {
   });
 });
 
+describe("taskSummary: borde de 24 h", () => {
+  const D = 24 * H;
+
+  it("justo a 24 h ya no cuenta; un milisegundo antes sí", () => {
+    const at = (ms: number) => [task({ state: "done", finishedAt: NOW - ms })];
+    expect(taskSummary(at(D), NOW).doneLast24h).toBe(0);
+    expect(taskSummary(at(D - 1), NOW).doneLast24h).toBe(1);
+  });
+
+  it("una hecha sin finishedAt usa la hora de creación", () => {
+    const tasks = [
+      task({ id: 1, state: "done", createdAt: NOW - H }),
+      task({ id: 2, state: "done", createdAt: NOW - 30 * H }),
+    ];
+    expect(taskSummary(tasks, NOW).doneLast24h).toBe(1);
+  });
+});
+
 describe("sortTasks", () => {
+  it("con empate de hora mantiene el orden de entrada y no muta la lista", () => {
+    const tasks = [
+      task({ id: 1, createdAt: 7 }),
+      task({ id: 2, createdAt: 7 }),
+      task({ id: 3, createdAt: 7 }),
+    ];
+    expect(sortTasks(tasks).map((t) => t.id)).toEqual([1, 2, 3]);
+    expect(tasks.map((t) => t.id)).toEqual([1, 2, 3]);
+  });
+
   it("primero las vivas y luego las terminadas, de la más nueva a la más vieja", () => {
     const tasks = [
       task({ id: 1, state: "done", createdAt: 5 }),
