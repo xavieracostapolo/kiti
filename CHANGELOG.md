@@ -19,6 +19,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 ### Changed
 
+- A message's envelope stays on the map for 3 seconds after delivery, moving from the sender's office to the recipient's, so delivery is visible even when it is instant.
 - The layout buttons in the top bar are icons only (⊞ ⊟ ☷), with a tooltip, so the bar fits on narrower windows.
 - Quota updates in real time: Antigravity's is read again as soon as one of its agents finishes a turn (at most every 30 s, and every 5 min without turns), and a window whose reset time has passed shows 100 % without waiting for a new reading.
 - Offices have a 2.5D diorama look, with depth and shadows; the terminal panel can be resized; and the status counters in the top bar shrink to just the number when they are zero.

@@ -23,7 +23,10 @@ export function waitingFor(mail: MailState | undefined, id: AgentId): number {
   return n;
 }
 
-export type Transit = { from: AgentId; to: AgentId; count: number };
+export type Transit = { from: AgentId; to: AgentId; count: number; progress: number };
+
+/** Lo entregado sigue en el mapa este rato, para que una entrega instantánea se vea. */
+export const MAIL_LINGER_MS = 3000;
 
 /** Parejas con mensajes en camino: un sobre entre sus dos oficinas. */
 export function inTransit(mail: MailState | undefined): Transit[] {
@@ -34,9 +37,72 @@ export function inTransit(mail: MailState | undefined): Transit[] {
     const key = `${m.from}>${m.to}`;
     const t = out.get(key);
     if (t) t.count++;
-    else out.set(key, { from: m.from, to: m.to, count: 1 });
+    else out.set(key, { from: m.from, to: m.to, count: 1, progress: 0.5 });
   }
   return [...out.values()];
+}
+
+/**
+ * Anota la hora en que la UI vio pasar cada mensaje a entregado. Sin estado anterior (primer
+ * estado del core) el historial no cuenta: solo se anima lo que ocurre con la UI abierta.
+ */
+export function markDelivered(
+  mail: MailState | undefined,
+  prev: MailState | undefined,
+  seen: Map<number, number>,
+  now: number,
+): void {
+  if (!mail || !prev) return;
+  const before = new Set<number>();
+  for (const m of allMessages(prev)) if (m.state === "delivered") before.add(m.id);
+  const alive = new Set<number>();
+  for (const m of allMessages(mail)) {
+    alive.add(m.id);
+    if (m.state === "delivered" && !before.has(m.id) && !seen.has(m.id)) seen.set(m.id, now);
+  }
+  for (const id of seen.keys()) if (!alive.has(id)) seen.delete(id);
+}
+
+/**
+ * Sobres en el mapa: los que esperan (a medio camino) y los entregados hace menos de
+ * `MAIL_LINGER_MS`, que van de la oficina del remitente a la del destinatario.
+ */
+export function visibleTransit(
+  mail: MailState | undefined,
+  now: number,
+  seen: ReadonlyMap<number, number>,
+): Transit[] {
+  const out = inTransit(mail);
+  if (!mail) return out;
+  const delivered = new Map<string, Transit>();
+  for (const m of allMessages(mail)) {
+    if (m.state !== "delivered") continue;
+    const at = seen.get(m.id);
+    if (at === undefined) continue;
+    const progress = (now - at) / MAIL_LINGER_MS;
+    if (progress < 0 || progress >= 1) continue;
+    const key = `${m.from}>${m.to}`;
+    const t = delivered.get(key);
+    if (t) {
+      t.count++;
+      t.progress = Math.min(t.progress, progress);
+    } else delivered.set(key, { from: m.from, to: m.to, count: 1, progress });
+  }
+  return [...out, ...delivered.values()];
+}
+
+/** ¿Queda un sobre entregado moviéndose? Solo entonces el mapa necesita frames. */
+export function hasLingering(
+  mail: MailState | undefined,
+  now: number,
+  seen: ReadonlyMap<number, number>,
+): boolean {
+  if (!mail) return false;
+  for (const m of allMessages(mail)) {
+    const at = seen.get(m.id);
+    if (m.state === "delivered" && at !== undefined && now - at < MAIL_LINGER_MS) return true;
+  }
+  return false;
 }
 
 /**

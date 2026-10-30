@@ -40,4 +40,12 @@ describe("fakeMail", () => {
     mail = applyMailCommand(mail, { kind: "pause", paused: true });
     expect(mail.paused).toBe(true);
   });
+
+  it("al reanudar las entregas, lo que estaba en cola pasa a entregado", () => {
+    let mail = applyMailCommand(start(), { kind: "pause", paused: true });
+    mail = applyMailCommand(mail, { kind: "pause", paused: false });
+    const states = mail.threads.flatMap((t) => t.messages.map((m) => m.state));
+    expect(states).not.toContain("queued");
+    expect(states).toContain("delivered");
+  });
 });
