@@ -227,6 +227,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 ## Cómo trabajar en este repo
 
 - Las nuevas decisiones de arquitectura van en `docs/decisiones/NNNN-titulo/README.md`, con el formato del ADR 0001.
+- **Agentes efímeros, no fijos (ADR 0019):** para repartir trabajo, lanza un agente por tarea con su worktree y su rama, y dale su ficha de rol de [docs/agentes/](docs/agentes/README.md) más un encargo concreto. El merge, borrar ramas y recompilar la app no se delegan.
 - Al cerrar un hito: márcalo en el roadmap, actualiza "Estado actual" y los comandos.
 - **Requisitos:** `mise`, `rustup` y `tmux` (opcional, para sesiones persistentes: `brew install tmux`) (Homebrew: `brew install mise rustup`; `rustup` es *keg-only*, así que añade `/opt/homebrew/opt/rustup/bin` al `PATH`). `rust-toolchain.toml` y `mise.toml` fijan las versiones.
 - **Comandos** (definidos en `mise.toml`):

@@ -53,9 +53,21 @@ Las aprobaciones (merge, borrar ramas, gastar cuota) no viajan como mensajes ent
 - El tablero de tareas tiene un botón **Aprobar** por acción sensible. Kiti lo registra con la hora y se lo comunica al agente.
 - Mientras eso no exista, las acciones sensibles las hace el agente al que el usuario se lo aprobó en su propia conversación.
 
-### Roles fijos
+### Sin agentes fijos: fichas de rol
 
-Solo son fijos los roles que duran más que una tarea; por ahora, **publicación** (docs, CI y merge con el visto bueno del usuario). Todo lo demás (implementar, revisar, regenerar capturas, medir memoria) es efímero.
+No hay agentes fijos (decisión del usuario del 2026-10-30). Cada rol es una **ficha** en [docs/agentes/](../../agentes/README.md):
+
+- [comun.md](../../agentes/comun.md): reglas comunes;
+- [implementar.md](../../agentes/implementar.md);
+- [documentar.md](../../agentes/documentar.md);
+- [revisar.md](../../agentes/revisar.md).
+
+Un agente efímero recibe su ficha más un encargo concreto, y con eso sabe qué hacer sin que el orquestador se lo explique cada vez. El merge, borrar ramas y recompilar la app los hace el orquestador con la aprobación del usuario.
+
+Por qué no un agente de publicación fijo:
+- no puede hacer merge con una aprobación reenviada;
+- espera sin hacer nada mientras acumula contexto (un agente fijo de esta prueba llegó a 483k tokens en Opus);
+- sus aprobaciones se perdían en los reinicios de Kiti.
 
 ### Tablero de tareas
 
@@ -85,7 +97,7 @@ Los mensajes pendientes (`Pending`, `Queued`, `Held`) y los hilos abiertos se gu
 
 ## Plan
 
-1. Mensajes en disco (pequeño; reutiliza el port de los alias).
+1. ~~Mensajes en disco~~: hecho en el PR #30 (`mailbox.json`).
 2. `TaskPolicy` pura (topes, estados, atasco) y `kiti_spawn` / `kiti_done` en `kiti-mcp`, con el lanzador en tmux.
 3. Worktrees: crear y limpiar con `git worktree`, con las comprobaciones de limpio y subido.
 4. Tablero de tareas en la UI, con maqueta antes (regla 5 de AGENTS.md).
