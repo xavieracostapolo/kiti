@@ -23,6 +23,7 @@ Con el ADR 0007, el PTY de cada agente pertenece a Kiti: si Kiti sale, el agente
 - **Ver la terminal:** `PtyManager` lanza `tmux attach-session -t kiti-N` como cliente. Al cerrar la ventana o salir de Kiti, solo muere el cliente.
 - **Reabrir Kiti:** `list_terminals` lee `tmux list-panes -a` con el formato `#{session_name} #{pane_pid} #{pane_start_path} #{@kiti_provider}`.
 - **Desde otra terminal:** `tmux -L kiti attach -t kiti-N`.
+- **Sesiones creadas fuera de Kiti** (`tmux -L kiti new-session …` con Kiti abierto): `list_terminals` solo se pedía al abrir la ventana, así que su oficina salía sin terminal. Ahora la UI vuelve a pedir la lista cuando aparece un agente cuyo PID no tiene terminal conocida. La decisión es pura (`ui/src/state/terminalRefresh.ts`, `decideTerminalRefresh`): cada PID se pide una sola vez, porque un agente de Ghostty nunca tendrá terminal en Kiti, y como mucho una petición cada 5 s. No hay sondeo continuo.
 - **Sin tmux:** se mantiene el PTY directo del ADR 0007 y la sesión termina al salir.
 - **Evitar duplicados:** si la carpeta elegida ya tiene una sesión `kiti-*`, un diálogo nativo ofrece abrirla o crear otra.
 - **Continuar conversación (Claude):** si `~/.claude/projects/<carpeta codificada>/` tiene conversaciones, el diálogo ofrece `claude --continue` o empezar una nueva. La codificación sustituye por `-` todo carácter no alfanumérico, como se observó en local.
