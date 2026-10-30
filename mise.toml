@@ -112,6 +112,12 @@ run = [
   "pnpm exec tauri build --bundles app",
   "rm -rf ~/Desktop/Kiti.app",
   "cp -R target/release/bundle/macos/Kiti.app ~/Desktop/",
+  "cargo build -q --release -p kiti-mcp -p kiti-forwarder",
+  "mkdir -p ~/.kiti/bin",
+  # Copia y renombra: sobrescribir un binario en uso mataría a los procesos ya abiertos.
+  "cp target/release/kiti-mcp ~/.kiti/bin/.kiti-mcp.new && mv -f ~/.kiti/bin/.kiti-mcp.new ~/.kiti/bin/kiti-mcp",
+  "if [ -e ~/.kiti/bin/kiti-hook ]; then cp target/release/kiti-hook ~/.kiti/bin/.kiti-hook.new && mv -f ~/.kiti/bin/.kiti-hook.new ~/.kiti/bin/kiti-hook; fi",
+  "echo 'kiti-mcp y kiti-hook actualizados: los agentes abiertos siguen con el anterior hasta reiniciar su sesión.'",
 ]
 
 [tasks."app:measure"]
