@@ -25,6 +25,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 ### Fixed
 
+- Messages waiting for an agent and open threads survive a Kiti restart.
 - Agent aliases for messages stay the same across Kiti restarts, and an agent relaunched in the same Kiti tmux session keeps its alias.
 - The office board's box fits its text instead of a fixed width.
 - The office board read the wrong repository when Kiti ran inside a git hook that exports `GIT_DIR`.

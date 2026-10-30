@@ -17,15 +17,15 @@ use crate::application::summary::Summary;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
     AgentId, AgentInput, AgentRegistry, AgentStats, AlertPolicy, AliasEntry, AliasKey,
-    DetectedAgent, DomainEvent, Events, GitStatus, Mailbox, MemoryBook, MemoryEntry, MessageId,
-    Pid, Provider, QuotaPolicy, QuotaWindow, SEARCH_LIMIT, SessionId, StalePolicy, StatusKind,
-    ThreadId, Timestamp,
+    DetectedAgent, DomainEvent, Events, GitStatus, MailSnapshot, Mailbox, MemoryBook, MemoryEntry,
+    MessageId, Pid, Provider, QuotaPolicy, QuotaWindow, SEARCH_LIMIT, SessionId, StalePolicy,
+    StatusKind, ThreadId, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
 use crate::ports::{
     AgentKiller, AlertNotice, AlertSink, AliasStore, Clock, CwdProjects, DiffPublisher, KillError,
-    KillOutcome, KillTarget, MailCourier, MemoryStore, ProjectResolver, SelfMonitor,
+    KillOutcome, KillTarget, MailCourier, MailStore, MemoryStore, ProjectResolver, SelfMonitor,
 };
 use kiti_protocol::mcp;
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
@@ -502,6 +502,8 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     reachable_known: bool,
     alias_store: Option<Box<dyn AliasStore>>,
     alias_saved: Vec<AliasEntry>,
+    mail_store: Option<Box<dyn MailStore>>,
+    mail_saved: MailSnapshot,
     /// A quién se escribió y cuándo: no se le vuelve a escribir hasta verlo trabajar.
     typed: std::collections::HashMap<AgentId, Timestamp>,
     /// Memoria de los proyectos (ADR 0018).
@@ -549,6 +551,8 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             reachable: std::collections::HashMap::new(),
             reachable_known: false,
             alias_store: None,
+            mail_store: None,
+            mail_saved: MailSnapshot::default(),
             alias_saved: Vec::new(),
             typed: std::collections::HashMap::new(),
             memories: MemoryBook::default(),
@@ -594,6 +598,15 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         self.mailbox.restore_aliases(initial);
         self.alias_saved = self.mailbox.alias_entries();
         self.alias_store = Some(Box::new(store));
+        self
+    }
+
+    /// Mensajes en espera e hilos abiertos de un arranque anterior y dónde persistirlos
+    /// (ADR 0017). Se reasignan a los agentes vivos por alias tras el primer reparto.
+    pub fn with_mail_store(mut self, initial: MailSnapshot, store: impl MailStore) -> Self {
+        self.mailbox.restore(initial);
+        self.mail_saved = self.mailbox.snapshot();
+        self.mail_store = Some(Box::new(store));
         self
     }
 
@@ -982,12 +995,32 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 self.mail_dirty = true;
             }
         }
+        if self.mailbox.has_restored() {
+            let r = self.mailbox.rebind_restored();
+            info!(event = "mail.restored", pending = r.kept);
+            if r.discarded > 0 {
+                info!(event = "mail.restored_discarded", count = r.discarded);
+            }
+            self.mail_dirty = true;
+        }
         let wanted: std::collections::HashSet<AliasKey> =
             live.into_iter().map(|(_, k)| k).collect();
         if self.mailbox.release_unbound(&wanted, now) | self.mailbox.prune_aliases(now) {
             self.mail_dirty = true;
         }
         self.save_aliases();
+    }
+
+    /// Persiste los mensajes en espera y los hilos abiertos si cambiaron.
+    fn save_mail(&mut self) {
+        let Some(store) = self.mail_store.as_mut() else {
+            return;
+        };
+        let snapshot = self.mailbox.snapshot();
+        if snapshot != self.mail_saved {
+            store.save(&snapshot);
+            self.mail_saved = snapshot;
+        }
     }
 
     /// Persiste el libro de alias si cambió desde el último guardado.
@@ -1278,6 +1311,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     fn flush_diff(&mut self) {
         self.sync_mail();
         self.deliver_mail();
+        self.save_mail();
         if self.mail_dirty
             && let Some(publisher) = self.publisher.as_mut()
         {

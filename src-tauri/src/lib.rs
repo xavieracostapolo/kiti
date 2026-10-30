@@ -12,6 +12,7 @@ use kiti_core::adapters::conversations::{ConversationIndex, HiddenConversations}
 use kiti_core::adapters::hooks::{
     hook_router, load_or_create_token, mcp_router, run_hook_pump, serve_hooks,
 };
+use kiti_core::adapters::mail_file::FileMailStore;
 use kiti_core::adapters::memory_sqlite::SqliteMemoryStore;
 use kiti_core::adapters::pty::{LaunchSpec, PtyManager};
 use kiti_core::adapters::tmux::{KITI_TMUX_CONF, Tmux};
@@ -1028,6 +1029,9 @@ pub fn run() {
                             let aliases = FileAliasStore::new(dir.join("aliases.json"));
                             let initial = aliases.load();
                             let runtime = runtime.with_aliases(initial, aliases);
+                            let mail = FileMailStore::new(dir.join("mailbox.json"));
+                            let initial = mail.load();
+                            let runtime = runtime.with_mail_store(initial, mail);
                             let store = SqliteMemoryStore::new(dir.join("memory.db"));
                             let initial = store.load_all();
                             info!(event = "memory.loaded", count = initial.len());

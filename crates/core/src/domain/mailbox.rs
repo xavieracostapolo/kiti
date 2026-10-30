@@ -128,8 +128,27 @@ pub struct Delivery {
     pub messages: Vec<Message>,
 }
 
+/// Lo que sobrevive a un reinicio (ADR 0017): mensajes sin entregar, hilos abiertos o
+/// pausados y los contadores de ids. Tipos simples; el serializado es del adaptador.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MailSnapshot {
+    pub next_message: u64,
+    pub next_thread: u64,
+    pub messages: Vec<Message>,
+    pub threads: Vec<Thread>,
+}
+
+/// Resultado de `rebind_restored`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Rebound {
+    pub kept: usize,
+    pub discarded: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct Mailbox {
+    /// Mensajes restaurados cuyos `AgentId` son de un proceso anterior: se reasignan por alias.
+    restored: HashSet<MessageId>,
     mode: MailMode,
     paused: bool,
     next_message: u64,
@@ -274,6 +293,86 @@ impl Mailbox {
 
     pub fn restore_aliases(&mut self, entries: Vec<AliasEntry>) {
         self.aliases.restore(entries);
+    }
+
+    fn is_waiting(state: MessageState) -> bool {
+        matches!(
+            state,
+            MessageState::Pending | MessageState::Queued | MessageState::Held
+        )
+    }
+
+    /// Lo que hay que guardar: mensajes en espera, hilos abiertos o pausados y contadores.
+    pub fn snapshot(&self) -> MailSnapshot {
+        MailSnapshot {
+            next_message: self.next_message,
+            next_thread: self.next_thread,
+            messages: self
+                .messages
+                .iter()
+                .filter(|m| Self::is_waiting(m.state))
+                .cloned()
+                .collect(),
+            threads: self
+                .threads
+                .values()
+                .filter(|t| matches!(t.state, ThreadState::Open | ThreadState::Paused))
+                .cloned()
+                .collect(),
+        }
+    }
+
+    /// Carga lo guardado de un arranque anterior. Sus `AgentId` ya no valen: hasta
+    /// `rebind_restored` los mensajes no se entregan.
+    pub fn restore(&mut self, snapshot: MailSnapshot) {
+        self.next_message = self.next_message.max(snapshot.next_message);
+        self.next_thread = self.next_thread.max(snapshot.next_thread);
+        for t in snapshot.threads {
+            self.threads.insert(t.id, t);
+        }
+        for m in snapshot.messages {
+            if !self.threads.contains_key(&m.thread) {
+                continue;
+            }
+            self.restored.insert(m.id);
+            self.messages.push_back(m);
+        }
+    }
+
+    pub fn has_restored(&self) -> bool {
+        !self.restored.is_empty()
+    }
+
+    /// Reasigna los mensajes restaurados a los agentes vivos con el mismo alias. Sin
+    /// destinatario vivo con ese alias, el mensaje se descarta. El remitente se reasigna si su
+    /// alias sigue vivo; si no, conserva su id viejo (solo se usa para mostrar).
+    pub fn rebind_restored(&mut self) -> Rebound {
+        let restored = std::mem::take(&mut self.restored);
+        let mut out = Rebound::default();
+        let by_alias: HashMap<String, AgentId> = self
+            .members()
+            .map(|(id, a)| (a.to_ascii_lowercase(), *id))
+            .collect();
+        for m in self
+            .messages
+            .iter_mut()
+            .filter(|m| restored.contains(&m.id))
+        {
+            match by_alias.get(&m.to_alias.to_ascii_lowercase()) {
+                Some(to) => {
+                    m.to = *to;
+                    if let Some(from) = by_alias.get(&m.from_alias.to_ascii_lowercase()) {
+                        m.from = *from;
+                    }
+                    out.kept += 1;
+                }
+                None => {
+                    m.state = MessageState::Discarded;
+                    out.discarded += 1;
+                }
+            }
+        }
+        out
     }
 
     pub fn send(
@@ -620,6 +719,70 @@ mod tests {
         mb.join_process(a);
         mb.join_process(b);
         (mb, a, b)
+    }
+
+    #[test]
+    fn snapshot_guarda_pendientes_e_hilos_abiertos_pero_no_lo_entregado() {
+        let (mut mb, a, b) = two();
+        mb.send(a, "codex-1", "uno", None, Timestamp(1)).unwrap();
+        mb.send(a, "codex-1", "dos", None, Timestamp(2)).unwrap();
+        mb.take_deliveries(|_| true);
+        let ya = mb.send(a, "codex-1", "tres", None, Timestamp(3)).unwrap();
+        mb.discard(ya.id);
+        let pending = mb.send(a, "codex-1", "cuatro", None, Timestamp(4)).unwrap();
+        mb.undeliver(&[MessageId(1)]);
+        let snap = mb.snapshot();
+        let ids: Vec<u64> = snap.messages.iter().map(|m| m.id.0).collect();
+        assert_eq!(ids, vec![1, pending.id.0]);
+        assert_eq!(snap.next_message, 4);
+        assert_eq!(snap.next_thread, 4);
+        assert!(snap.threads.iter().any(|t| t.id == pending.thread));
+
+        let mut fresh = Mailbox::default();
+        fresh.restore(snap.clone());
+        assert_eq!(fresh.pending(), 2);
+        assert!(fresh.thread(pending.thread).is_some());
+        // Los contadores siguen: no se reutilizan ids.
+        fresh.join_process(a);
+        fresh.join_process(b);
+        let next = fresh
+            .send(a, "codex-1", "cinco", None, Timestamp(9))
+            .unwrap();
+        assert_eq!(next.id.0, 5);
+    }
+
+    #[test]
+    fn rebind_reasigna_por_alias_y_descarta_si_no_hay_nadie() {
+        let (mut mb, a, b) = two();
+        mb.send(a, "codex-1", "para codex", None, Timestamp(1))
+            .unwrap();
+        let snap = mb.snapshot();
+        // Nuevo arranque: otros procesos con los mismos alias.
+        let mut fresh = Mailbox::default();
+        fresh.restore(snap.clone());
+        let (a2, b2) = (claude(11), codex(22));
+        fresh.join(a2, AliasKey::Tmux("s1".into()), Timestamp(5));
+        fresh.join(b2, AliasKey::Tmux("s2".into()), Timestamp(5));
+        assert!(fresh.has_restored());
+        let r = fresh.rebind_restored();
+        assert_eq!((r.kept, r.discarded), (1, 0));
+        let m = fresh.messages().next().unwrap();
+        assert_eq!((m.to, m.from), (b2, a2));
+        assert!(!fresh.has_restored());
+        let d = fresh.take_deliveries(|id| *id == b2);
+        assert_eq!(d.len(), 1);
+
+        // Sin ningún agente con ese alias: descartado.
+        let mut empty = Mailbox::default();
+        empty.restore(snap);
+        empty.join(a2, AliasKey::Tmux("s1".into()), Timestamp(5));
+        let r = empty.rebind_restored();
+        assert_eq!((r.kept, r.discarded), (0, 1));
+        assert_eq!(
+            empty.messages().next().unwrap().state,
+            MessageState::Discarded
+        );
+        let _ = (a, b);
     }
 
     #[test]
