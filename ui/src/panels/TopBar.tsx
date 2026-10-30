@@ -11,6 +11,7 @@ import { STATUS_LABEL as LABEL } from "./labels";
 import { MailChip } from "./MailPanel";
 import s from "./panels.module.css";
 import { QuotaBadge } from "./QuotaBadge";
+import { TaskChip } from "./TaskBoard";
 
 const ORDER: StatusKind[] = ["working", "waiting", "idle", "error", "dead"];
 
@@ -94,6 +95,7 @@ export function TopBar({ store, onLaunch, now }: Props) {
         {dormant > 0 && chip("dormant", dormant, PAL.dormant, "apagadas")}
       </span>
       <span className={s.spacer} />
+      <TaskChip store={store} />
       <MailChip store={store} />
       <QuotaBadge store={store} now={now ?? Date.now} />
       <div className={s.layoutGroup} role="radiogroup" aria-label="Modo de distribución">

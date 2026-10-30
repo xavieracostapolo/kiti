@@ -5,6 +5,7 @@ import { parseParams } from "./dev/params";
 import { App } from "./panels/App";
 import "./styles.css";
 import { createKitiStore } from "./state/store";
+import type { TaskInfo } from "./state/tasks";
 import { decideTerminalRefresh } from "./state/terminalRefresh";
 import { createMetrics } from "./telemetry/metrics";
 import { startUiReport } from "./telemetry/report";
@@ -25,7 +26,8 @@ async function bootstrap() {
 
   let transport: Transport;
   let getNow: () => number;
-  let simAdvancer: { advance(n: number): void } | undefined;
+  let simTasks: (() => TaskInfo[]) | undefined;
+  let simAdvancer: { advance(n: number): void; now?(): number } | undefined;
 
   if (isTauri) {
     const { installLogBridge } = await import("./transport/tauri/logBridge");
@@ -43,10 +45,12 @@ async function bootstrap() {
       conversations: params.conversations,
       quota: params.quota,
       mail: params.mail,
+      tasks: params.tasks,
     });
     transport = sim;
     getNow = () => sim.now();
     simAdvancer = sim;
+    simTasks = () => sim.tasks();
   }
 
   let world: WorldHandle | undefined;
@@ -64,6 +68,7 @@ async function bootstrap() {
       })
       .then((hello) => {
         store.getState().setSource(hello.source);
+        if (simTasks) store.getState().setTasks(simTasks());
         // Terminales de agentes lanzados antes de abrir esta ventana (ADR 0007).
         void transport.terminals?.list().then((list) => {
           store.getState().setTerminals(list);

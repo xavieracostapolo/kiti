@@ -14,6 +14,7 @@ describe("parseParams", () => {
       conversations: false,
       quota: false,
       mail: false,
+      tasks: false,
     });
   });
 
@@ -33,6 +34,7 @@ describe("parseParams", () => {
       conversations: false,
       quota: false,
       mail: false,
+      tasks: false,
     });
   });
 

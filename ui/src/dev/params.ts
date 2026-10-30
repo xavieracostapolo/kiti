@@ -25,6 +25,8 @@ export type Params = {
   quota: boolean;
   /** Mensajes entre agentes falsos en el modo sim (ADR 0017). */
   mail: boolean;
+  /** Tareas de agentes efímeros falsas en el modo sim (ADR 0019). */
+  tasks: boolean;
 };
 
 const MAX_AGENTS = 200;
@@ -49,6 +51,7 @@ export function parseParams(search: string): Params {
     conversations: q.get("conversations") === "1",
     quota: q.get("quota") === "1",
     mail: q.get("mail") === "1",
+    tasks: q.get("tasks") === "1",
   };
   if (layout === "dynamic" || layout === "horizontal" || layout === "vertical") {
     params.layoutMode = layout;
