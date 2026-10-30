@@ -16,7 +16,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 
 ## Estado actual
 
-- **Fase:** Hitos 1 a 21 en `main`. El último, "Memoria de proyecto y de sesión", está en el [ADR 0018](docs/decisiones/0018-memoria-de-proyecto/README.md).
+- **Fase:** Hitos 1 a 22 en `main`. El último, "Agentes efímeros con `kiti_spawn` y tablero de tareas", está en el [ADR 0019](docs/decisiones/0019-agentes-efimeros/README.md).
 - **Hecho en el Hito 2:** `kiti-core` (dominio DDD, reducer, registro, runtime actor con `Clock`, proyección, telemetría y `SimFleet`), `src-tauri` (Channel, commands con ACL, CSP, diálogo nativo, logs JSON con rotación, puente `ui_log`, RSS y CPU propios), `TauriTransport`, etiqueta "SIMULADO" y panel de debug con métricas del core. Resultados y medición en el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.md#resultados-del-hito-2).
 - **Trabajo compartido:** Gemini CLI también trabaja en este repo. Al empezar, revisa `git status` y `git log`: puede haber trabajo suyo sin commitear o recién commiteado.
 - **Pendientes que arrastra el proyecto:**
@@ -47,7 +47,7 @@ Ya hechos después del MVP (ver [Roadmap](#roadmap)): panel de detalle, terminal
 | [0016](docs/decisiones/0016-tablero-de-oficina/README.md) | Tablero en el zoom cercano: modelo, contexto y coste (status line de Claude), git del proyecto y la última hora |
 | [0017](docs/decisiones/0017-mensajes-entre-agentes/README.md) | Mensajes entre agentes: `kiti-mcp` (MCP por stdio) con `kiti_agents`, `kiti_send` y `kiti_inbox`; entrega en su terminal tmux; automático por defecto, con límites |
 | [0018](docs/decisiones/0018-memoria-de-proyecto/README.md) | Memoria de proyecto y de sesión: objetivo inicial, archivos tocados y tareas por hooks, más recuerdos persistentes en SQLite (`FTS5` `bm25`) con `kiti_remember` y `kiti_recall` en dos pasos |
-| [0019](docs/decisiones/0019-agentes-efimeros/README.md) | Propuesta: agentes efímeros por tarea con `kiti_spawn` y `kiti_done` (worktree y rama propios, se cierran al entregar), tablero de tareas y mensajes en disco |
+| [0019](docs/decisiones/0019-agentes-efimeros/README.md) | Agentes efímeros por tarea con `kiti_spawn` y `kiti_done` (worktree y rama propios, se cierran al entregar), tablero de tareas y mensajes en disco |
 
 ## Decisiones tomadas (no repetir)
 
@@ -195,6 +195,7 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 - [x] **19. Tablero de la oficina:** en el zoom cercano, modelo, contexto y coste de la sesión, git del proyecto y la última hora.
 - [x] **20. Mensajes entre agentes:** los agentes se escriben a través de Kiti con `kiti-mcp`, sea cual sea su proveedor; panel de mensajes, sobres en el mapa y modos automático y manual.
 - [x] **21. Memoria de proyecto y de sesión:** objetivo inicial, archivos tocados y tareas capturados automáticamente por hooks; recuerdos de proyecto (`decision`, `gotcha`, `handoff`, `note`) en SQLite (`WAL` + `FTS5` `bm25`) con `kiti_remember` y `kiti_recall` en dos pasos (índice ligero y búsqueda bajo demanda).
+- [x] **22. Agentes efímeros:** `kiti_spawn` lanza un agente por tarea con su worktree y rama, `kiti_done` lo cierra y limpia, y un tablero de tareas (⚙) los muestra; falta leer el PR y el CI con `gh` (ADR 0019).
 - [x] **UX (PR #17):** distribuciones del mapa (dinámica, horizontal y vertical), botones `+`, `−` y encuadrar, animaciones de trabajo y decoración por oficina.
 - [ ] **Después:** soporte para Windows.
 
@@ -256,12 +257,12 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
   mise run statusline:uninstall # deja tu status line como estaba
   mise run hooks:uninstall # quita los hooks de Kiti de ~/.claude/settings.json (los tuyos quedan)
   mise run app:build     # release sin empaquetar: target/release/kiti-app
-  mise run app:bundle    # Kiti.app y copia en el Escritorio (cierra Kiti antes)
+  mise run app:bundle    # Kiti.app y copia en el Escritorio (cierra Kiti antes); también reinstala kiti-mcp y kiti-hook en ~/.kiti/bin
   mise run app:measure   # RAM y CPU con 20 y 50 agentes simulados y en modo real
   mise run check         # fmt, clippy, cargo-deny, tests Rust, Biome, tsc, Vitest con cobertura y E2E
   ```
 
-- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas), `quota=1` (cuota falsa de Claude y Antigravity), `mail=1` (mensajes entre agentes falsos), `layout=dynamic|horizontal|vertical` (distribución del mapa). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant`, `dimmed`, `board`, `mail` y `envelopes`. El panel de debug se abre con `Cmd+Shift+D`.
+- **Parámetros de URL del modo sim:** `sim`, `seed`, `steps`, `freeze=1`, `anim=0`, `zoom=far|mid|near`, `focus=<id|índice>`, `terminals=1` (terminal falsa en el simulador), `conversations=1` (cuatro conversaciones cerradas falsas), `quota=1` (cuota falsa de Claude y Antigravity), `mail=1` (mensajes entre agentes falsos), `tasks=1` (tareas de agentes efímeros falsas), `layout=dynamic|horizontal|vertical` (distribución del mapa). En la consola, `window.__kiti` expone `step`, `focus`, `setZoom`, `metrics`, `counts`, `frames`, `bench`, `zones`, `dormant`, `dimmed`, `board`, `mail`, `envelopes` y `tasks`. El panel de debug se abre con `Cmd+Shift+D`.
 - **CHANGELOG:** todo PR con un cambio visible para el usuario añade una línea en `## [Unreleased]` de [CHANGELOG.md](CHANGELOG.md) (Added, Changed, Fixed o Removed; en inglés, como las notas de release).
 - **Releases:** antes del tag, la sección `[Unreleased]` pasa a `## [X.Y.Z] - AAAA-MM-DD` y se actualizan los enlaces del final. Un tag `vX.Y.Z` compila Kiti.app universal y crea el release en borrador (`.github/workflows/release.yml`): firmada y notarizada si están los secrets de Apple, con firma ad-hoc si no. Secrets y pasos en [docs/release.md](docs/release.md).
 - Los recursos gráficos son de Kenney.nl (CC0), en `ui/public/assets/kenney/` con sus licencias (ADR 0013).
