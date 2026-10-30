@@ -61,4 +61,53 @@ describe("QuotaBadge", () => {
       vi.useRealTimers();
     }
   });
+
+  it("los re-renders sin cambio de cuota no crean temporizadores nuevos", () => {
+    vi.useFakeTimers({ now: 0 });
+    try {
+      const store = createKitiStore();
+      const now = () => Date.now();
+      const { rerender } = render(<QuotaBadge store={store} now={now} />);
+      act(() => {
+        for (const msg of fakeQuota(0)) store.getState().receive(msg);
+      });
+      const spy = vi.spyOn(globalThis, "setTimeout");
+      expect(vi.getTimerCount()).toBe(1);
+      for (let i = 0; i < 5; i++) {
+        act(() => {
+          vi.advanceTimersByTime(10);
+        });
+        rerender(<QuotaBadge store={store} now={now} />);
+      }
+      expect(spy).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(1);
+    } finally {
+      vi.restoreAllMocks();
+      vi.useRealTimers();
+    }
+  });
+
+  it("si el temporizador dispara 1 ms antes del reinicio, el chip ya muestra 100 % y no hay otro", () => {
+    vi.useFakeTimers({ now: 0 });
+    try {
+      const store = createKitiStore();
+      render(<QuotaBadge store={store} now={Date.now} />);
+      act(() => {
+        for (const msg of fakeQuota(0)) store.getState().receive(msg);
+      });
+      const reset = 3 * 3_600_000;
+      // Reloj 1 ms por detrás del reinicio cuando dispara el temporizador.
+      vi.setSystemTime(reset - 1);
+      act(() => {
+        vi.runOnlyPendingTimers();
+      });
+      expect(
+        screen.getByRole("button", { name: "Cuota de Claude: 5 h 100 %, sem 40 %" }),
+      ).toBeTruthy();
+      // Solo queda el temporizador del siguiente reinicio, no uno de 0-1 ms para el mismo.
+      expect(vi.getTimerCount()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

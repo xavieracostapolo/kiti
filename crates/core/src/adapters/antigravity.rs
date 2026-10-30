@@ -232,7 +232,7 @@ pub fn usage_json(agy: &Path, timeout: std::time::Duration) -> Option<Vec<u8>> {
             Ok(Some(status)) if status.success() => break,
             Ok(Some(_)) => return None,
             Ok(None) if std::time::Instant::now() < deadline => {
-                std::thread::sleep(std::time::Duration::from_millis(100));
+                std::thread::sleep(std::time::Duration::from_millis(25));
             }
             _ => {
                 let _ = child.kill();

@@ -26,6 +26,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 - The office board's box fits its text instead of a fixed width.
 - The office board read the wrong repository when Kiti ran inside a git hook that exports `GIT_DIR`.
+- A tmux session started outside Kiti (`tmux -L kiti new-session`) gets its terminal in the office without reopening the window.
 
 ## [0.2.0] - 2026-10-27
 
