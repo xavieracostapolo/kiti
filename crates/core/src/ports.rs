@@ -40,6 +40,12 @@ pub trait AliasStore: Send + 'static {
     fn save(&mut self, entries: &[crate::domain::AliasEntry]);
 }
 
+/// Persistencia de los mensajes en espera y los hilos abiertos (ADR 0017): el runtime guarda
+/// la instantánea cada vez que cambia.
+pub trait MailStore: Send + 'static {
+    fn save(&mut self, snapshot: &crate::domain::MailSnapshot);
+}
+
 /// Persistencia y búsqueda `FTS5 BM25` de los recuerdos del proyecto (ADR 0018).
 pub trait MemoryStore: Send + 'static {
     /// Persiste un recuerdo recién creado.

@@ -27,8 +27,8 @@ pub use ids::{
     Timestamp, ToolName, ToolUseKey, WorkingDir,
 };
 pub use mailbox::{
-    Delivery, HOP_STEP, MAX_TEXT, MailMode, Mailbox, Message, MessageId, MessageState,
-    RATE_PER_HOUR, SendError, Sent, Thread, ThreadId, ThreadState,
+    Delivery, HOP_STEP, MAX_TEXT, MailMode, MailSnapshot, Mailbox, Message, MessageId,
+    MessageState, RATE_PER_HOUR, Rebound, SendError, Sent, Thread, ThreadId, ThreadState,
 };
 pub use memory::{
     KEEP_MEMORIES, MAX_DETAIL, MAX_MEMORY_FILES, MAX_TITLE, MemoryBook, MemoryEntry, MemoryId,

@@ -35,7 +35,14 @@ import { DEFAULT_ZONES, layoutZones, type Zone, type ZoneSlots } from "../domain
 import type { AgentId, AgentState, ConversationInfo, Provider } from "../protocol";
 import { planScene } from "../state/agents";
 import { isActive, matchesAgent, matchesConversation } from "../state/filter";
-import { aliasOf, inTransit, waitingFor } from "../state/mail";
+import {
+  aliasOf,
+  hasLingering,
+  MAIL_LINGER_MS,
+  markDelivered,
+  visibleTransit,
+  waitingFor,
+} from "../state/mail";
 import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
 import type { Metrics } from "../telemetry/metrics";
@@ -133,6 +140,10 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   /** Rutas y sobres de los mensajes en camino entre oficinas (ADR 0017). */
   const mailLayer = new Container();
   let envelopeCount = 0;
+  /** Cuándo vio la UI pasar cada mensaje a entregado (id → ms de `performance.now()`). */
+  const deliveredSeen = new Map<number, number>();
+  let mailAnimating = false;
+  let mailExpiry: ReturnType<typeof setTimeout> | undefined;
   let corridor: TilingSprite | undefined;
   let art: OfficeArt | undefined;
 
@@ -245,6 +256,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       },
     });
     cleanup.push(() => scheduler?.dispose());
+    cleanup.push(() => clearTimeout(mailExpiry));
 
     sync(EMPTY, NO_ROOMS);
     applyInitialCamera();
@@ -287,8 +299,10 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
         if (s.filter !== prev.filter) setCamera(filterCamera(), true);
         // Mensajes entre agentes (ADR 0017): alias, sobres por oficina y rutas.
         if (s.mail !== prev.mail) {
+          markDelivered(s.mail, prev.mail, deliveredSeen, performance.now());
           applyMail();
           scheduler?.request();
+          trackLingering();
         }
         // Git del proyecto de cada oficina (ADR 0016).
         if (s.git !== prev.git) {
@@ -430,16 +444,43 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   }
 
   /**
-   * Alias y sobre de cada oficina, y una ruta punteada con un sobre entre cada pareja con
-   * mensajes en camino (ADR 0017). Estático: no anima, así que en reposo sigue sin frames.
+   * Un entregado sigue en el mapa `MAIL_LINGER_MS`, moviéndose de una oficina a la otra. El
+   * ticker solo corre mientras haya alguno; al irse el último vuelve a 0 frames en reposo. Sin
+   * animaciones (`anim=0`) no hay ticker: un temporizador redibuja al caducar.
    */
-  function applyMail() {
+  function trackLingering() {
+    clearTimeout(mailExpiry);
+    const mail = store.getState().mail;
+    if (!hasLingering(mail, performance.now(), deliveredSeen)) return;
+    if (!opts.anim || !scheduler) {
+      mailExpiry = setTimeout(() => {
+        applyMail();
+        scheduler?.request();
+      }, MAIL_LINGER_MS + 50);
+      return;
+    }
+    if (mailAnimating) return;
+    mailAnimating = true;
+    scheduler.animate((now) => {
+      applyMail(now);
+      if (hasLingering(store.getState().mail, now, deliveredSeen)) return false;
+      mailAnimating = false;
+      return true;
+    });
+  }
+
+  /**
+   * Alias y sobre de cada oficina, y una ruta punteada con un sobre entre cada pareja con
+   * mensajes en camino (ADR 0017). Los que esperan son estáticos; los recién entregados se
+   * mueven (ver `trackLingering`).
+   */
+  function applyMail(now = performance.now()) {
     const mail = store.getState().mail;
     for (const [id, view] of views) view.setMail(aliasOf(mail, id), waitingFor(mail, id));
     for (const child of mailLayer.removeChildren()) child.destroy({ children: true });
     envelopeCount = 0;
     const t = layout.tile;
-    for (const tr of inTransit(mail)) {
+    for (const tr of visibleTransit(mail, now, deliveredSeen)) {
       const a = rooms.get(tr.from);
       const b = rooms.get(tr.to);
       if (!a || !b) continue;
@@ -463,8 +504,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       // Sobre en el punto medio, con su sombra y la solapa en V.
       const ew = t * 2.2;
       const eh = t * 1.5;
-      const ex = (ax + bx) / 2 - ew / 2;
-      const ey = (ay + by) / 2 - eh / 2;
+      const ex = ax + (bx - ax) * tr.progress - ew / 2;
+      const ey = ay + (by - ay) * tr.progress - eh / 2;
       const line = Math.max(1.5, t * 0.18);
       g.rect(ex + line * 2, ey + line * 2, ew, eh)
         .fill(PAL.housing)

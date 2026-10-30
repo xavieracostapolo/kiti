@@ -167,6 +167,12 @@ export function applyMailCommand(mail: MailState, cmd: MailCommand): MailState {
       break;
     case "pause":
       paused = cmd.paused;
+      // Como el core: al reanudar se entrega lo que estaba en cola.
+      if (!paused && mail.paused) {
+        threads = threads.map((t) =>
+          withState(t, (m) => (m.state === "queued" ? { ...m, state: "delivered" } : m)),
+        );
+      }
       break;
     case "approve":
     case "discard": {

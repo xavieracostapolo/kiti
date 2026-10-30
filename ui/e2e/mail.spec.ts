@@ -33,3 +33,23 @@ test("alias, sobres y el panel de mensajes en automático", async ({ page }) => 
   // Lo retenido sigue su curso: pasa a la cola.
   await expect(panel.getByRole("region", { name: "Hilo Debate" })).toContainText("en cola");
 });
+
+test("al entregarse, el sobre sigue 3 s en el mapa y luego vuelve a 0 frames", async ({ page }) => {
+  await openWorld(page, "sim=20&seed=42&steps=357&freeze=1&mail=1");
+  const envelopes = () => page.evaluate(() => window.__kiti?.envelopes() ?? 0);
+  await page.getByRole("button", { name: /^Mensajes/ }).click();
+  const panel = page.getByRole("complementary", { name: "Mensajes entre agentes" });
+  await panel.getByRole("button", { name: /Pausar/ }).click();
+  await panel.getByRole("button", { name: /Reanudar/ }).click();
+  // Los que esperaban ya están entregados, pero siguen a la vista.
+  const during = await envelopes();
+  expect(during).toBeGreaterThan(0);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__kiti?.metrics()["ui.ticker_running"])).toBe(true);
+  await page.waitForTimeout(3300);
+  // Se fueron los entregados; quedan solo los que siguen esperando.
+  expect(await envelopes()).toBeLessThan(during);
+  const before = await page.evaluate(() => window.__kiti?.frames());
+  await page.waitForTimeout(1000);
+  expect(await page.evaluate(() => window.__kiti?.frames())).toBe(before);
+});

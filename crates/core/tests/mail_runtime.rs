@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use kiti_core::application::runtime::MailAction;
 use kiti_core::application::{Runtime, RuntimeHandle, Telemetry};
-use kiti_core::domain::{AliasEntry, AliasKey};
+use kiti_core::domain::{AliasEntry, AliasKey, MailSnapshot};
 use kiti_core::domain::{
     DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Timestamp, WorkingDir,
 };
 use kiti_core::ports::{
-    AgentKiller, AliasStore, DiffPublisher, KillOutcome, KillTarget, MailCourier,
+    AgentKiller, AliasStore, DiffPublisher, KillOutcome, KillTarget, MailCourier, MailStore,
 };
 use kiti_core::testing::ManualClock;
 use kiti_protocol::mcp::{RecallRequest, RememberRequest, SendRequest};
@@ -624,4 +624,142 @@ async fn un_agente_lanzado_a_mitad_conserva_su_alias_al_aparecer_en_tmux() {
     h.mail_reachable(vec![(Pid(11), "kiti-7".into())]).await;
     assert_eq!(h.mcp_agents(from(11)).await.unwrap().you, "claude-2");
     assert_eq!(h.mcp_agents(from(10)).await.unwrap().you, "claude-1");
+}
+
+#[derive(Clone, Default)]
+struct FakeMailStore(Arc<Mutex<Vec<MailSnapshot>>>);
+
+impl MailStore for FakeMailStore {
+    fn save(&mut self, snapshot: &MailSnapshot) {
+        self.0.lock().unwrap().push(snapshot.clone());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_mensaje_en_cola_sobrevive_al_reinicio_y_se_entrega_por_alias() {
+    // Primer arranque: dos agentes en tmux; el destinatario no es alcanzable aún.
+    let clock = ManualClock::new(1_000);
+    let aliases = FakeAliasStore::default();
+    let mails = FakeMailStore::default();
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        clock.clone(),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_aliases(Vec::new(), aliases.clone())
+            .with_mail_store(MailSnapshot::default(), mails.clone())
+            .run(),
+    );
+    h.mail_reachable(vec![(Pid(10), "kiti-1".into()), (Pid(20), "kiti-2".into())])
+        .await;
+    h.register_agent(agent(Provider::Claude, 10, "/w/a"), Timestamp(1_000))
+        .await;
+    h.register_agent(agent(Provider::Codex, 20, "/w/b"), Timestamp(1_000))
+        .await;
+    // El destinatario trabaja: el mensaje se queda en cola.
+    h.hook_from(
+        Provider::Codex,
+        kiti_core::ingestion::HookEvent {
+            session: kiti_core::domain::SessionId::new("s-2"),
+            cwd: "/w/b".into(),
+            name: "UserPromptSubmit".into(),
+            signal: kiti_core::domain::Signal::PromptSubmit,
+            info: Default::default(),
+        },
+        vec![Pid(20), Pid(1)],
+        Timestamp(1_100),
+    )
+    .await;
+    settle().await;
+    let sent = h
+        .mcp_send(from(10), send("codex-1", "no borres las ramas"))
+        .await
+        .unwrap();
+    settle().await;
+    let snap = mails.0.lock().unwrap().last().cloned().expect("guardado");
+    assert_eq!(snap.messages.len(), 1);
+    assert_eq!(snap.messages[0].id.0, sent.id);
+    let saved_aliases = aliases.0.lock().unwrap().last().cloned().unwrap();
+
+    // Segundo arranque: otros pids en las mismas sesiones tmux.
+    let courier = FakeCourier::default();
+    let (runtime, h2) = Runtime::new(
+        NoKill,
+        ManualClock::new(5_000),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(courier.clone())
+            .with_aliases(saved_aliases, FakeAliasStore::default())
+            .with_mail_store(snap, FakeMailStore::default())
+            .run(),
+    );
+    let sink = Sink::default();
+    h2.subscribe(sink.clone()).await.unwrap();
+    h2.mail_reachable(vec![(Pid(11), "kiti-1".into()), (Pid(21), "kiti-2".into())])
+        .await;
+    h2.register_agent(agent(Provider::Claude, 11, "/w/a"), Timestamp(5_000))
+        .await;
+    h2.register_agent(agent(Provider::Codex, 21, "/w/b"), Timestamp(5_000))
+        .await;
+    settle().await;
+    let typed = courier.0.lock().unwrap().clone();
+    assert_eq!(typed.len(), 1);
+    assert_eq!(typed[0].0, 21);
+    assert!(typed[0].1.contains("no borres las ramas"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_mensaje_restaurado_sin_destinatario_vivo_se_descarta() {
+    let snap = {
+        let mut mb = kiti_core::domain::Mailbox::default();
+        let a = kiti_core::domain::AgentId {
+            provider: Provider::Claude,
+            pid: Pid(10),
+            start_time: ProcessStartTime(100),
+        };
+        let b = kiti_core::domain::AgentId {
+            provider: Provider::Codex,
+            pid: Pid(20),
+            start_time: ProcessStartTime(100),
+        };
+        mb.join(a, AliasKey::Tmux("kiti-1".into()), Timestamp(1));
+        mb.join(b, AliasKey::Tmux("kiti-2".into()), Timestamp(1));
+        mb.send(a, "codex-1", "hola", None, Timestamp(2)).unwrap();
+        mb.snapshot()
+    };
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        ManualClock::new(5_000),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_mail_store(snap, FakeMailStore::default())
+            .run(),
+    );
+    let sink = Sink::default();
+    h.subscribe(sink.clone()).await.unwrap();
+    h.mail_reachable(Vec::new()).await;
+    h.register_agent(agent(Provider::Claude, 11, "/w/a"), Timestamp(5_000))
+        .await;
+    settle().await;
+    let mail = last_mail(&sink);
+    assert!(
+        mail.threads
+            .iter()
+            .flat_map(|t| &t.messages)
+            .all(|m| m.state == MailMessageState::Discarded)
+    );
 }
