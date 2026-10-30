@@ -5,6 +5,7 @@ import { parseParams } from "./dev/params";
 import { App } from "./panels/App";
 import "./styles.css";
 import { createKitiStore } from "./state/store";
+import { decideTerminalRefresh } from "./state/terminalRefresh";
 import { createMetrics } from "./telemetry/metrics";
 import { startUiReport } from "./telemetry/report";
 import { SimTransport } from "./transport/sim/SimTransport";
@@ -93,6 +94,40 @@ async function bootstrap() {
     setInterval(refreshConversations, 15_000);
     store.subscribe((s, prev) => {
       if (s.agents.agents.size < prev.agents.agents.size) refreshConversations();
+    });
+  }
+  // Sesiones tmux creadas fuera de Kiti: si aparece un agente sin terminal conocida, se vuelve a
+  // pedir la lista (una vez por pid, máx. cada 5 s; sin sondeo).
+  const terminals = transport.terminals;
+  if (terminals) {
+    const asked = new Set<number>();
+    let lastAt = 0;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const maybeRefreshTerminals = () => {
+      const st = store.getState();
+      const d = decideTerminalRefresh({
+        agentPids: [...st.agents.agents.values()].map((a) => a.pid),
+        knownPids: new Set(st.terminals.keys()),
+        asked,
+        lastAt,
+        now: Date.now(),
+      });
+      if (d.waitMs !== undefined && retry === undefined) {
+        retry = setTimeout(() => {
+          retry = undefined;
+          maybeRefreshTerminals();
+        }, d.waitMs);
+      }
+      if (!d.refresh) return;
+      for (const pid of d.mark) asked.add(pid);
+      lastAt = Date.now();
+      terminals
+        .list()
+        .then((list) => store.getState().setTerminals(list))
+        .catch((e) => console.warn(JSON.stringify({ event: "terminals.error", error: e })));
+    };
+    store.subscribe((s, prev) => {
+      if (s.agents.agents !== prev.agents.agents) maybeRefreshTerminals();
     });
   }
   connect();
