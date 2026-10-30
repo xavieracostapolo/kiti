@@ -229,14 +229,10 @@ impl MemoryBook {
     }
 
     /// Búsqueda en memoria por palabras clave con pesos (título × 5, archivos × 3, detalle × 1).
-    /// Se usa en el simulador, en tests de dominio y como respaldo si no hay SQLite FTS5.
+    /// Ignora mayúsculas y tildes, y un término de 4 o más letras también coincide por prefijo
+    /// (singular y plural). Es la búsqueda real: SQLite solo persiste.
     pub fn search(&self, project: &str, query: &str, limit: usize) -> Vec<MemoryEntry> {
-        let terms: Vec<String> = query
-            .to_lowercase()
-            .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
-            .filter(|t| !t.is_empty())
-            .map(str::to_owned)
-            .collect();
+        let terms = words(query);
         if terms.is_empty() {
             return self
                 .for_project(project)
@@ -250,18 +246,18 @@ impl MemoryBook {
             .iter()
             .filter(|e| e.project == project)
             .filter_map(|e| {
-                let title_l = e.title.to_lowercase();
-                let detail_l = e.detail.to_lowercase();
-                let files_l = e.files.join(" ").to_lowercase();
+                let title_w = words(&e.title);
+                let detail_w = words(&e.detail);
+                let files_w = words(&e.files.join(" "));
                 let mut score = 0u32;
                 for t in &terms {
-                    if title_l.contains(t) {
+                    if matches_any(t, &title_w) {
                         score += 5;
                     }
-                    if files_l.contains(t) {
+                    if matches_any(t, &files_w) {
                         score += 3;
                     }
-                    if detail_l.contains(t) {
+                    if matches_any(t, &detail_w) {
                         score += 1;
                     }
                 }
@@ -275,6 +271,44 @@ impl MemoryBook {
             .map(|(_, _, e)| e.clone())
             .collect()
     }
+}
+
+/// Minúsculas y sin diacríticos del castellano (á é í ó ú ü ñ).
+fn fold(text: &str) -> String {
+    text.chars()
+        .flat_map(char::to_lowercase)
+        .map(|c| match c {
+            'á' | 'à' | 'ä' | 'â' => 'a',
+            'é' | 'è' | 'ë' | 'ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' => 'u',
+            'ñ' => 'n',
+            c => c,
+        })
+        .collect()
+}
+
+/// Palabras normalizadas de un texto.
+fn words(text: &str) -> Vec<String> {
+    fold(text)
+        .split(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
+        .filter(|w| !w.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Longitud mínima para coincidir por prefijo.
+const PREFIX_MIN: usize = 4;
+
+fn matches_any(term: &str, words: &[String]) -> bool {
+    let long = term.chars().count() >= PREFIX_MIN;
+    words.iter().any(|w| {
+        w == term
+            || (long
+                && w.chars().count() >= PREFIX_MIN
+                && (w.starts_with(term) || term.starts_with(w.as_str())))
+    })
 }
 
 #[cfg(test)]
@@ -372,5 +406,61 @@ mod tests {
         assert_eq!(hits.len(), 2);
         assert_eq!(hits[0].title, "Motor SQLite FTS5 con BM25");
         assert_eq!(hits[1].title, "Ajuste menor de estilos");
+    }
+
+    fn book_with(entries: &[(&str, &str, &str, u64)]) -> MemoryBook {
+        let mut book = MemoryBook::default();
+        for (title, detail, file, at) in entries {
+            let files: Vec<String> = if file.is_empty() {
+                vec![]
+            } else {
+                vec![(*file).to_owned()]
+            };
+            book.remember("/w/p", "a", "note", title, detail, &files, Timestamp(*at))
+                .unwrap();
+        }
+        book
+    }
+
+    #[test]
+    fn la_busqueda_ignora_tildes_y_mayusculas() {
+        let book = book_with(&[("Aprobación manual", "Detalle", "", 1)]);
+        assert_eq!(book.search("/w/p", "aprobacion", 5).len(), 1);
+        assert_eq!(book.search("/w/p", "APROBACIÓN", 5).len(), 1);
+        let book = book_with(&[("Diseno del nino", "x", "", 1)]);
+        assert_eq!(book.search("/w/p", "diseño niño", 5).len(), 1);
+    }
+
+    #[test]
+    fn singular_y_plural_se_encuentran_entre_si() {
+        let book = book_with(&[("Aprobaciones de permisos", "x", "", 1)]);
+        assert_eq!(book.search("/w/p", "aprobacion", 5).len(), 1);
+        let book = book_with(&[("Aprobacion de permiso", "x", "", 1)]);
+        assert_eq!(book.search("/w/p", "aprobaciones", 5).len(), 1);
+    }
+
+    #[test]
+    fn un_termino_corto_no_coincide_por_prefijo() {
+        let book = book_with(&[("Mutex compartido", "x", "", 1)]);
+        assert!(book.search("/w/p", "mut", 5).is_empty());
+        assert_eq!(book.search("/w/p", "mutex", 5).len(), 1);
+        // La palabra corta del texto tampoco es prefijo de un término largo.
+        let book = book_with(&[("Uso de la API", "x", "", 1)]);
+        assert!(book.search("/w/p", "descubrir", 5).is_empty());
+    }
+
+    #[test]
+    fn el_orden_es_por_puntuacion_y_luego_por_fecha() {
+        let book = book_with(&[
+            ("Otra cosa", "habla de aprobaciones", "", 10),
+            ("Aprobación", "x", "", 5),
+            ("Sin relación", "aprobacion también", "", 20),
+        ]);
+        let titles: Vec<String> = book
+            .search("/w/p", "aprobación", 5)
+            .into_iter()
+            .map(|e| e.title)
+            .collect();
+        assert_eq!(titles, ["Aprobación", "Sin relación", "Otra cosa"]);
     }
 }
