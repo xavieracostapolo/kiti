@@ -61,19 +61,24 @@ export function TopBar({ store, onLaunch, now }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const chip = (kind: FilterKind, count: number, color: number, label: string) => (
-    <button
-      key={kind}
-      type="button"
-      className={s.count}
-      aria-pressed={filter.kinds.has(kind)}
-      data-testid={`count-${kind}`}
-      onClick={() => store.getState().toggleFilterKind(kind)}
-    >
-      <span className={s.dot} style={{ background: hex(color) }} />
-      {count} {label}
-    </button>
-  );
+  const chip = (kind: FilterKind, count: number, color: number, label: string) => {
+    const pressed = filter.kinds.has(kind);
+    const showLabel = count > 0 || pressed;
+    return (
+      <button
+        key={kind}
+        type="button"
+        className={s.count}
+        aria-pressed={pressed}
+        title={`${count} ${label}`}
+        data-testid={`count-${kind}`}
+        onClick={() => store.getState().toggleFilterKind(kind)}
+      >
+        <span className={s.dot} style={{ background: hex(color) }} />
+        {showLabel ? `${count} ${label}` : count}
+      </button>
+    );
+  };
 
   return (
     <header className={s.topbar}>

@@ -2,6 +2,7 @@
 // selectores finos. El estado de vista vive en un slice aparte (ADR 0003 §4).
 
 import { createStore } from "zustand/vanilla";
+import { MAX_TERMINAL_FRACTION, MIN_TERMINAL_FRACTION, TERMINAL_FRACTION } from "../domain/layout";
 import type { Lod } from "../domain/lod";
 import type { LayoutMode } from "../domain/zones";
 import type {
@@ -60,6 +61,9 @@ export type KitiState = {
   /** Terminales de los agentes lanzados desde Kiti, por pid (ADR 0007). */
   terminals: ReadonlyMap<number, TerminalInfo>;
   openTerminalId: string | undefined;
+  /** Fracción del ancho de la ventana que ocupa la terminal abierta. */
+  terminalFraction: number;
+  setTerminalFraction(fraction: number): void;
   /** PID de un agente recién lanzado: al aparecer su oficina se enfoca y se selecciona. */
   pendingLaunchPid: number | undefined;
   hover: Hover | undefined;
@@ -133,6 +137,14 @@ export function createKitiStore() {
     },
     terminals: new Map(),
     openTerminalId: undefined,
+    terminalFraction: TERMINAL_FRACTION,
+    setTerminalFraction(fraction) {
+      const clamped = Math.min(
+        MAX_TERMINAL_FRACTION,
+        Math.max(MIN_TERMINAL_FRACTION, Math.round(fraction * 100) / 100),
+      );
+      if (get().terminalFraction !== clamped) set({ terminalFraction: clamped });
+    },
     pendingLaunchPid: undefined,
     hover: undefined,
     setPendingLaunch(pid) {

@@ -77,4 +77,15 @@ describe("TopBar", () => {
     expect(store.getState().filter.text).toBe("");
     expect(document.activeElement).not.toBe(search);
   });
+
+  it("los contadores en cero ocultan su etiqueta salvo que estén activos en el filtro", async () => {
+    const { default: userEvent } = await import("@testing-library/user-event");
+    const store = createKitiStore();
+    render(<TopBar store={store} />);
+    const waiting = screen.getByTestId("count-waiting");
+    expect(waiting.textContent?.trim()).toBe("0");
+    expect(waiting.getAttribute("title")).toBe("0 esperando");
+    await userEvent.click(waiting);
+    expect(waiting.textContent?.trim()).toBe("0 esperando");
+  });
 });

@@ -124,7 +124,7 @@ export function App({ store, transport, metrics, params, now, onWorld }: Props) 
         now={now}
         {...(conversations ? { onResume: resume, onArchive: archive } : {})}
       />
-      {terminals && <TerminalPanel store={store} api={terminals} />}
+      {terminals && <TerminalPanel store={store} api={terminals} world={() => world.current} />}
       <MailPanel store={store} now={now} act={(c) => void transport.mailAction(c)} />
       <OfficeTooltip store={store} now={now} />
       {transport.killConfirmation === "in-app" ? (

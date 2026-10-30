@@ -46,6 +46,8 @@
   border: 2px solid var(--edge);
   box-shadow: 3px 3px 0 var(--shadow);
   cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .button:hover {
@@ -360,7 +362,7 @@
   overflow-wrap: anywhere;
 }
 
-/* Ancho = TERMINAL_FRACTION (domain/layout.ts): el mundo encuadra en el espacio que queda libre. */
+/* Ancho inicial = TERMINAL_FRACTION (domain/layout.ts): redimensionable arrastrando el borde izquierdo. */
 .terminalPanel {
   position: absolute;
   top: 72px;
@@ -375,15 +377,75 @@
   pointer-events: auto;
 }
 
+.terminalResizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -5px;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 5;
+}
+
+.terminalResizeHandle:hover {
+  background: rgb(255 255 255 / 18%);
+}
+
 .terminalHeader {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  gap: 10px;
+  padding: 8px 10px;
   background: var(--panel);
+  border-bottom: 2px solid var(--edge);
   font-family: var(--font);
   font-size: 12px;
   color: var(--text);
+}
+
+.terminalMeta {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.terminalTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminalTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminalBadgeText {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminalSubRow {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.terminalActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .terminalHost {
