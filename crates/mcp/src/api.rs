@@ -1,4 +1,4 @@
-//! Llamadas al HookServer de Kiti: `POST /v1/mcp/{agents,send,inbox}` con token y PPID.
+//! Llamadas al HookServer de Kiti: `POST /v1/mcp/{agents,send,inbox,…}` con token y PPID.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -8,6 +8,8 @@ use serde::de::DeserializeOwned;
 
 const DEFAULT_PORT: u16 = 47821;
 const TIMEOUT: Duration = Duration::from_secs(3);
+/// `kiti_spawn` crea un worktree y una sesión: tarda más que el resto.
+const SPAWN_TIMEOUT: Duration = Duration::from_secs(25);
 
 #[derive(Debug)]
 pub enum ApiError {
@@ -23,6 +25,8 @@ pub trait Api: Send + Sync + 'static {
     fn inbox(&self) -> Result<mcp::InboxReply, ApiError>;
     fn remember(&self, request: &mcp::RememberRequest) -> Result<mcp::RememberReply, ApiError>;
     fn recall(&self, request: &mcp::RecallRequest) -> Result<mcp::RecallReply, ApiError>;
+    fn spawn(&self, request: &mcp::SpawnRequest) -> Result<mcp::SpawnReply, ApiError>;
+    fn done(&self, request: &mcp::DoneRequest) -> Result<mcp::DoneReply, ApiError>;
 }
 
 pub struct HttpApi {
@@ -55,7 +59,12 @@ impl HttpApi {
         }
     }
 
-    fn call<T: DeserializeOwned>(&self, tool: &str, body: &[u8]) -> Result<T, ApiError> {
+    fn call<T: DeserializeOwned>(
+        &self,
+        tool: &str,
+        body: &[u8],
+        timeout: Duration,
+    ) -> Result<T, ApiError> {
         // El token se lee en cada llamada: Kiti puede arrancar después que el agente.
         let token = self
             .token_file
@@ -66,6 +75,9 @@ impl HttpApi {
             .agent
             .post(format!("http://127.0.0.1:{}/v1/mcp/{tool}", self.port))
             .header("Authorization", format!("Bearer {}", token.trim()))
+            .config()
+            .timeout_global(Some(timeout))
+            .build()
             .header("Content-Type", "application/json")
             .header(
                 "X-Kiti-Ppid",
@@ -90,25 +102,35 @@ impl HttpApi {
 
 impl Api for HttpApi {
     fn agents(&self) -> Result<mcp::AgentsReply, ApiError> {
-        self.call("agents", b"{}")
+        self.call("agents", b"{}", TIMEOUT)
     }
 
     fn send(&self, request: &mcp::SendRequest) -> Result<mcp::SendReply, ApiError> {
         let body = serde_json::to_vec(request).map_err(|_| ApiError::Unavailable)?;
-        self.call("send", &body)
+        self.call("send", &body, TIMEOUT)
     }
 
     fn inbox(&self) -> Result<mcp::InboxReply, ApiError> {
-        self.call("inbox", b"{}")
+        self.call("inbox", b"{}", TIMEOUT)
     }
 
     fn remember(&self, request: &mcp::RememberRequest) -> Result<mcp::RememberReply, ApiError> {
         let body = serde_json::to_vec(request).map_err(|_| ApiError::Unavailable)?;
-        self.call("remember", &body)
+        self.call("remember", &body, TIMEOUT)
     }
 
     fn recall(&self, request: &mcp::RecallRequest) -> Result<mcp::RecallReply, ApiError> {
         let body = serde_json::to_vec(request).map_err(|_| ApiError::Unavailable)?;
-        self.call("recall", &body)
+        self.call("recall", &body, TIMEOUT)
+    }
+
+    fn spawn(&self, request: &mcp::SpawnRequest) -> Result<mcp::SpawnReply, ApiError> {
+        let body = serde_json::to_vec(request).map_err(|_| ApiError::Unavailable)?;
+        self.call("spawn", &body, SPAWN_TIMEOUT)
+    }
+
+    fn done(&self, request: &mcp::DoneRequest) -> Result<mcp::DoneReply, ApiError> {
+        let body = serde_json::to_vec(request).map_err(|_| ApiError::Unavailable)?;
+        self.call("done", &body, TIMEOUT)
     }
 }
