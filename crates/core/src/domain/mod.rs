@@ -15,6 +15,7 @@ mod registry;
 mod signal;
 mod stale;
 mod status;
+mod task;
 
 pub use agent::{
     Agent, AgentInput, AgentStats, DetectedAgent, Events, HISTORY_MAX, SessionActivity,
@@ -41,3 +42,7 @@ pub use registry::{AgentRegistry, RegistryDiff};
 pub use signal::{AgentInfo, Signal, ToolOutcome};
 pub use stale::StalePolicy;
 pub use status::{Status, StatusKind, StatusReason, TrafficLight};
+pub use task::{
+    KEEP_TASKS, LimitReason, MAX_LAUNCHES_PER_HOUR, MAX_LIVE_TASKS, NewTask, STUCK_AFTER, Task,
+    TaskBook, TaskError, TaskId, TaskRole, TaskState,
+};
