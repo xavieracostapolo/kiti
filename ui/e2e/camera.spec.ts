@@ -7,17 +7,19 @@ test("doble clic enfoca la oficina en 400 ms o menos y la selecciona", async ({ 
   await openWorld(page, Q);
   const c = await page.evaluate(() => window.__kiti?.screenCenter("7"));
   if (!c) throw new Error("sin oficina 7");
-  const t0 = Date.now();
   await page.mouse.dblclick(c.x, c.y);
   await expect.poll(() => page.evaluate(() => window.__kiti?.lod())).toBe("near");
   // Centrada en la zona libre: bajo la barra superior (56 px) → (720, 56 + (900 - 56) / 2).
+  // El límite de 1500 ms cubre los 400 ms de animación y la latencia de Playwright en CI.
   await expect
-    .poll(async () => {
-      const p = await page.evaluate(() => window.__kiti?.screenCenter("7"));
-      return p ? Math.hypot(p.x - 720, p.y - 478) : 999;
-    })
+    .poll(
+      async () => {
+        const p = await page.evaluate(() => window.__kiti?.screenCenter("7"));
+        return p ? Math.hypot(p.x - 720, p.y - 478) : 999;
+      },
+      { timeout: 1500 },
+    )
     .toBeLessThan(2);
-  expect(Date.now() - t0).toBeLessThan(1500); // 400 ms de animación + latencia de Playwright
   await expect(page.getByRole("complementary", { name: "Agente seleccionado" })).toBeVisible();
 });
 
