@@ -1111,12 +1111,13 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 agent,
                 alias,
                 &project,
-                self.reachable.contains_key(&agent.id().pid),
+                self.reachable.get(&agent.id().pid).map(String::as_str),
             ));
         }
         peers.sort_by(|a, b| a.alias.cmp(&b.alias));
         Ok(mcp::AgentsReply {
             you: self.mailbox.alias(&me).unwrap_or_default().to_owned(),
+            you_session: self.reachable.get(&me.pid).cloned(),
             peers,
         })
     }

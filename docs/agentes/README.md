@@ -28,7 +28,10 @@ Mientras no exista `kiti_spawn` (ADR 0019):
    tmux -L kiti set-option -t kiti-<n> @kiti_provider claude
    ```
 
-4. Busca su alias con `kiti_agents` y envíale con `kiti_send` un mensaje corto: «Tu rol: `docs/agentes/<rol>.md`. Tu encargo: `<ruta>`. Léelos enteros y síguelos.» `kiti_send` corta en 4000 caracteres, así que el detalle va en los archivos.
+4. Busca su alias con `kiti_agents` (muestra también su sesión tmux y su PID, para ligar el alias con su terminal) y envíale con `kiti_send` un mensaje corto: «Tu rol: `docs/agentes/<rol>.md`. Tu encargo: `<ruta>`. Léelos enteros y síguelos.» `kiti_send` corta en 4000 caracteres, así que el detalle va en los archivos.
 5. Cuando entrega, revisa su trabajo, pide al usuario el visto bueno para el merge, haz el merge y cierra su sesión, su worktree y su rama local.
+   - Para saber qué sesión tmux cerrar, búscala por carpeta y proceso, nunca por el número del alias: `claude-4` no tiene por qué vivir en `kiti-4`.
+   - Lista las sesiones con `tmux -L kiti list-panes -a -F '#{session_name} #{pane_pid} #{session_path}'` y, si hay dudas, mira `~/.claude/sessions/<pid>.json`, que liga el proceso a su conversación.
+   - Archiva también su conversación, o Kiti la seguirá mostrando 7 días como oficina apagada (ADR 0009). Para ello, añade su id (el nombre del `.jsonl` en `~/.claude/projects/<carpeta del worktree>/`) a `hidden-conversations.json`, en el app data dir, con Kiti cerrado. Si no, usa el botón de archivar de la oficina. Con `kiti_done` (ADR 0019) lo hará Kiti.
 
 Lo que **nunca** se delega en un agente efímero: el merge, borrar ramas y recompilar o reiniciar la app. El clasificador de permisos solo acepta esas acciones cuando el usuario las aprueba en la conversación de quien las ejecuta. Una aprobación que llega reenviada por otro agente no vale (ADR 0019, «Aprobaciones del usuario»).

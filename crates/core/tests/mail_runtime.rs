@@ -132,6 +132,20 @@ fn send(to: &str, text: &str) -> SendRequest {
 }
 
 #[tokio::test(start_paused = true)]
+async fn kiti_agents_da_pid_y_sesion_tmux() {
+    let (h, _, _, _) = setup().await;
+    h.mail_reachable(vec![(Pid(20), "kiti-8".into())]).await;
+    let r = h.mcp_agents(from(10)).await.unwrap();
+    assert_eq!(r.you_session, None);
+    assert_eq!(r.peers[0].pid, 20);
+    assert_eq!(r.peers[0].session.as_deref(), Some("kiti-8"));
+    let r = h.mcp_agents(from(20)).await.unwrap();
+    assert_eq!(r.you_session.as_deref(), Some("kiti-8"));
+    assert_eq!(r.peers[0].pid, 10);
+    assert_eq!(r.peers[0].session, None);
+}
+
+#[tokio::test(start_paused = true)]
 async fn kiti_agents_dice_quien_soy_y_quien_mas_hay() {
     let (h, _, _, _) = setup().await;
     h.mail_reachable(vec![(Pid(20), "kiti-20".into())]).await;

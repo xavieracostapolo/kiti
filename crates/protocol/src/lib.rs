@@ -439,6 +439,10 @@ pub mod mcp {
         pub title: Option<String>,
         /// Kiti puede escribirle en su terminal (lanzado desde Kiti); si no, lee con `kiti_inbox`.
         pub reachable: bool,
+        pub pid: u32,
+        /// Sesión tmux de Kiti (`kiti-N`); `None` si el agente no vive en tmux.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub session: Option<String>,
     }
 
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -446,6 +450,9 @@ pub mod mcp {
     pub struct AgentsReply {
         /// Alias de quien pregunta.
         pub you: String,
+        /// Sesión tmux de Kiti de quien pregunta, si vive en una.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub you_session: Option<String>,
         pub peers: Vec<Peer>,
     }
 

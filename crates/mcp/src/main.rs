@@ -220,6 +220,7 @@ mod tests {
             }
             Ok(mcp::AgentsReply {
                 you: "claude-1".into(),
+                you_session: None,
                 peers: vec![],
             })
         }
