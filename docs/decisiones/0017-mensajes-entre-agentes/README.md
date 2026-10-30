@@ -159,5 +159,6 @@ El usuario no quiere ser un cuello de botella leyendo y aprobando cada mensaje, 
 
 ## Límites conocidos
 
-- Los mensajes pendientes del `Mailbox` (por aprobar o en cola para un agente ocupado) viven en memoria: si Kiti se reinicia, se pierden. Solo los alias se persisten.
+- Desde el PR #30, los mensajes pendientes (por aprobar o en cola) y los hilos abiertos se guardan en `mailbox.json` (`0600`, escritura atómica) y sobreviven a un reinicio de Kiti. Al restaurarlos, el destinatario se resuelve por su alias; si ningún agente vivo lo tiene, el mensaje se descarta (`mail.restored_discarded`). Los mensajes ya entregados o descartados no se guardan.
+- El sobre se queda 3 s en el mapa tras la entrega, moviéndose del remitente al destinatario: antes, con entregas de 20 a 90 ms, no llegaba a verse.
 - Un agente fuera de tmux conserva su alias mientras vive su proceso; si se cierra y se vuelve a abrir, es otra clave y recibe otro alias (el anterior queda reservado 24 h).

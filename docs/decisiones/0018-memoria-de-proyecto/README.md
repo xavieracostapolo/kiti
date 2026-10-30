@@ -7,7 +7,7 @@
   2. **Memoria del proyecto en SQLite + FTS5 (`bm25`):** en `memory.db` (modo `WAL`), Kiti persiste recuerdos estructurados por proyecto (`decision`, `gotcha`, `handoff`, `note`) e indexa su contenido con `FTS5`.
   3. **Recuperación en dos pasos por MCP (`kiti-mcp`):**
      - `kiti_recall()` sin consulta devuelve el **pulso e índice del proyecto** (~150 tokens): qué hacen o hicieron las sesiones del proyecto, qué archivos tocaron, qué tareas siguen pendientes y solo los **títulos** de los recuerdos guardados.
-     - `kiti_recall(query)` busca en `FTS5` ordenando por `bm25()` y devuelve el detalle de los recuerdos más relevantes (hasta 5).
+     - `kiti_recall(query)` busca en los recuerdos del proyecto y devuelve el detalle de los más relevantes (hasta 5). Desde el 2026-10-30 la búsqueda se hace en memoria (ver «Corrección del 2026-10-30»).
      - `kiti_remember(kind, title, detail, files?)` guarda un recuerdo en el proyecto del agente que llama.
 
 ## Contexto
@@ -41,6 +41,20 @@ Cuando una sesión de Claude Code, Codex o Antigravity se alarga, ocurren dos pr
 
 - Igual que en el ADR 0017, `kiti-mcp` envía `X-Kiti-Ppid`; el core resuelve el agente y obtiene su `project` (raíz git o `cwd`). Un agente solo lee y escribe en la memoria de su propio proyecto.
 
+## Corrección del 2026-10-30
+
+Una prueba real y la revisión del código (PR #29) mostraron tres problemas:
+
+- **Dos búsquedas distintas.** Con consulta, `kiti_recall` buscaba con `FTS5` y `bm25`, lanzando un proceso `/usr/bin/sqlite3` en cada llamada (unos 3–4 ms). Solo si eso fallaba usaba `MemoryBook`, la copia en memoria que se carga al arrancar (`memory.loaded`). Sin consulta, el índice salía de `MemoryBook`.
+- **Worktrees.** La memoria se agrupaba por `project_of` (el `.git` más cercano), así que cada worktree de git era un proyecto distinto y no veía los recuerdos de los otros.
+- **Sin uso.** En sus primeros dos días ningún agente guardó un recuerdo: nada les pedía hacerlo.
+
+Decisión:
+
+- **`kiti_recall` busca siempre en `MemoryBook`.** Busca en memoria, normaliza tildes y, con términos de 4 o más letras, acepta prefijos (singular y plural). Pesos: título 5, archivos 3 y detalle 1; empata por fecha. Tarda microsegundos y no lanza ningún proceso. SQLite queda solo para persistir. Las tablas `FTS5` y `MemoryStore::search` siguen, pero no se usan. El tokenizador `porter` de `FTS5` solo sabe inglés, así que no aportaba nada en español.
+- **La clave de memoria es el repositorio principal** (`ProjectResolver::repo_of`), que sigue el archivo `.git` de cada worktree. Los recuerdos antiguos, guardados con la ruta del worktree, se reasignan al cargar, sin tocar SQLite. Las zonas del mapa no cambian.
+- **AGENTS.md (regla 7)** dice cuándo llamar a `kiti_recall` y a `kiti_remember`. El panel de debug cuenta `memories_stored` y `memories_recalled` para ver si se usa.
+
 ## Privacidad y seguridad
 
 - Nunca se guardan contenidos de archivos ni salidas de comandos: de `Edit`/`Write` solo se extrae el nombre relativo del archivo.
@@ -54,3 +68,4 @@ Cuando una sesión de Claude Code, Codex o Antigravity se alarga, ocurren dos pr
 | ¿Responde rápido `kiti_recall`? | `memory.recalled` (`has_query`, `results`) | < 5 ms en SQLite FTS5; test de adaptador `memory_sqlite` |
 | ¿Se captura el trabajo de la sesión por hooks? | `touched_files` y `tasks` en `AgentState` | Tests de `ingestion::claude` y `domain::agent` |
 | ¿Se ve en el panel de debug? | `core.memories_total` en `CoreMetrics` (`Cmd+Shift+D`) y `window.__kiti.memory()` | Visible en modo sim y nativo |
+| ¿Se usa de verdad? | `memories_stored` y `memories_recalled` en `CoreMetrics` | Más de 0 al día con agentes trabajando; si se queda en 0, la regla 7 de AGENTS.md no se está siguiendo |
