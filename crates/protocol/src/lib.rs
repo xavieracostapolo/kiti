@@ -219,6 +219,12 @@ pub struct CoreMetrics {
     /// Recuerdos de proyecto guardados (ADR 0018).
     #[serde(default)]
     pub memories_total: u64,
+    /// Recuerdos guardados desde que arrancó Kiti (ADR 0018).
+    #[serde(default)]
+    pub memories_stored: u64,
+    /// Consultas `kiti_recall` atendidas desde que arrancó Kiti.
+    #[serde(default)]
+    pub memories_recalled: u64,
 }
 
 /// Stream core -> UI. El primer mensaje es siempre `Snapshot`; `seq` es monotónico.

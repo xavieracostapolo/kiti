@@ -6,12 +6,12 @@ use std::time::Duration;
 
 use kiti_core::application::runtime::MailAction;
 use kiti_core::application::{Runtime, RuntimeHandle, Telemetry};
-use kiti_core::domain::{AliasEntry, AliasKey};
+use kiti_core::domain::{AliasEntry, AliasKey, MailSnapshot};
 use kiti_core::domain::{
     DetectedAgent, Pid, ProcessIdentity, ProcessStartTime, Provider, Timestamp, WorkingDir,
 };
 use kiti_core::ports::{
-    AgentKiller, AliasStore, DiffPublisher, KillOutcome, KillTarget, MailCourier,
+    AgentKiller, AliasStore, DiffPublisher, KillOutcome, KillTarget, MailCourier, MailStore,
 };
 use kiti_core::testing::ManualClock;
 use kiti_protocol::mcp::{RecallRequest, RememberRequest, SendRequest};
@@ -355,6 +355,164 @@ async fn recuerda_y_recupera_pulso_indice_y_detalle_del_proyecto() {
     assert_eq!(mem_msg[0].title, "Webhooks de Stripe requieren raw body");
 }
 
+/// Dos carpetas del mismo repositorio (principal y worktree) comparten `repo_of`.
+struct Worktrees;
+
+impl kiti_core::ports::ProjectResolver for Worktrees {
+    fn project_of(&mut self, cwd: &str) -> String {
+        cwd.to_owned()
+    }
+    fn repo_of(&mut self, cwd: &str) -> String {
+        cwd.replace("/tienda-web-rama", "/tienda-web")
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_recuerdo_guardado_en_un_worktree_lo_ve_el_repositorio_principal() {
+    let clock = ManualClock::new(1_000);
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        clock,
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_projects(Worktrees)
+            .run(),
+    );
+    h.mail_reachable(Vec::new()).await;
+    for a in [
+        agent(Provider::Claude, 10, "/Users/dev/tienda-web"),
+        agent(Provider::Codex, 20, "/Users/dev/tienda-web-rama"),
+    ] {
+        h.register_agent(a, Timestamp(1_000)).await;
+    }
+    h.mcp_remember(
+        from(20),
+        RememberRequest {
+            kind: "note".into(),
+            title: "Aprobación manual".into(),
+            detail: "Detalle".into(),
+            files: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    let reply = h
+        .mcp_recall(from(10), RecallRequest { query: None })
+        .await
+        .unwrap();
+    assert_eq!(reply.memories.len(), 1);
+    assert_eq!(reply.memories[0].title, "Aprobación manual");
+    assert_eq!(reply.sessions.len(), 2);
+}
+
+struct NoStore;
+
+impl kiti_core::ports::MemoryStore for NoStore {
+    fn save(&mut self, _entry: &kiti_core::domain::MemoryEntry) {}
+    /// Como un FTS que no ve las claves nuevas: no debe usarse para responder.
+    fn search(
+        &mut self,
+        _project: &str,
+        _query: &str,
+        _limit: usize,
+    ) -> Option<Vec<kiti_core::domain::MemoryEntry>> {
+        Some(Vec::new())
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_recuerdo_antiguo_de_un_worktree_lo_encuentra_el_repositorio_principal() {
+    let old = kiti_core::domain::MemoryEntry {
+        id: kiti_core::domain::MemoryId(1),
+        project: "/Users/dev/tienda-web-rama".into(),
+        kind: kiti_core::domain::MemoryKind::Handoff,
+        title: "Viejo".into(),
+        detail: "Guardado desde el worktree".into(),
+        files: vec![],
+        author: "claude-9".into(),
+        created_at: Timestamp(1),
+    };
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        ManualClock::new(1_000),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_memories(vec![old], NoStore)
+            .with_projects(Worktrees)
+            .run(),
+    );
+    h.mail_reachable(Vec::new()).await;
+    h.register_agent(
+        agent(Provider::Claude, 10, "/Users/dev/tienda-web"),
+        Timestamp(1_000),
+    )
+    .await;
+    let reply = h
+        .mcp_recall(from(10), RecallRequest { query: None })
+        .await
+        .unwrap();
+    assert_eq!(reply.memories.len(), 1);
+    assert_eq!(reply.memories[0].title, "Viejo");
+    let found = h
+        .mcp_recall(
+            from(10),
+            RecallRequest {
+                query: Some("worktree".into()),
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(found.memories.len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn las_metricas_cuentan_recuerdos_guardados_y_consultados() {
+    let telemetry = Arc::new(Telemetry::new());
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        ManualClock::new(1_000),
+        telemetry.clone(),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(runtime.with_courier(FakeCourier::default()).run());
+    h.mail_reachable(Vec::new()).await;
+    h.register_agent(
+        agent(Provider::Claude, 10, "/Users/dev/tienda-web"),
+        Timestamp(1_000),
+    )
+    .await;
+    h.mcp_remember(
+        from(10),
+        RememberRequest {
+            kind: "note".into(),
+            title: "Algo".into(),
+            detail: "Detalle".into(),
+            files: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    for query in [None, Some("algo".to_owned())] {
+        h.mcp_recall(from(10), RecallRequest { query })
+            .await
+            .unwrap();
+    }
+    let m = telemetry.snapshot_core_metrics(1, 0, 0.0, 0);
+    assert_eq!(m.memories_stored, 1);
+    assert_eq!(m.memories_recalled, 2);
+}
+
 fn process_key(provider: Provider, pid: u32) -> AliasKey {
     AliasKey::Process(kiti_core::domain::AgentId {
         provider,
@@ -466,4 +624,142 @@ async fn un_agente_lanzado_a_mitad_conserva_su_alias_al_aparecer_en_tmux() {
     h.mail_reachable(vec![(Pid(11), "kiti-7".into())]).await;
     assert_eq!(h.mcp_agents(from(11)).await.unwrap().you, "claude-2");
     assert_eq!(h.mcp_agents(from(10)).await.unwrap().you, "claude-1");
+}
+
+#[derive(Clone, Default)]
+struct FakeMailStore(Arc<Mutex<Vec<MailSnapshot>>>);
+
+impl MailStore for FakeMailStore {
+    fn save(&mut self, snapshot: &MailSnapshot) {
+        self.0.lock().unwrap().push(snapshot.clone());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_mensaje_en_cola_sobrevive_al_reinicio_y_se_entrega_por_alias() {
+    // Primer arranque: dos agentes en tmux; el destinatario no es alcanzable aún.
+    let clock = ManualClock::new(1_000);
+    let aliases = FakeAliasStore::default();
+    let mails = FakeMailStore::default();
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        clock.clone(),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_aliases(Vec::new(), aliases.clone())
+            .with_mail_store(MailSnapshot::default(), mails.clone())
+            .run(),
+    );
+    h.mail_reachable(vec![(Pid(10), "kiti-1".into()), (Pid(20), "kiti-2".into())])
+        .await;
+    h.register_agent(agent(Provider::Claude, 10, "/w/a"), Timestamp(1_000))
+        .await;
+    h.register_agent(agent(Provider::Codex, 20, "/w/b"), Timestamp(1_000))
+        .await;
+    // El destinatario trabaja: el mensaje se queda en cola.
+    h.hook_from(
+        Provider::Codex,
+        kiti_core::ingestion::HookEvent {
+            session: kiti_core::domain::SessionId::new("s-2"),
+            cwd: "/w/b".into(),
+            name: "UserPromptSubmit".into(),
+            signal: kiti_core::domain::Signal::PromptSubmit,
+            info: Default::default(),
+        },
+        vec![Pid(20), Pid(1)],
+        Timestamp(1_100),
+    )
+    .await;
+    settle().await;
+    let sent = h
+        .mcp_send(from(10), send("codex-1", "no borres las ramas"))
+        .await
+        .unwrap();
+    settle().await;
+    let snap = mails.0.lock().unwrap().last().cloned().expect("guardado");
+    assert_eq!(snap.messages.len(), 1);
+    assert_eq!(snap.messages[0].id.0, sent.id);
+    let saved_aliases = aliases.0.lock().unwrap().last().cloned().unwrap();
+
+    // Segundo arranque: otros pids en las mismas sesiones tmux.
+    let courier = FakeCourier::default();
+    let (runtime, h2) = Runtime::new(
+        NoKill,
+        ManualClock::new(5_000),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(courier.clone())
+            .with_aliases(saved_aliases, FakeAliasStore::default())
+            .with_mail_store(snap, FakeMailStore::default())
+            .run(),
+    );
+    let sink = Sink::default();
+    h2.subscribe(sink.clone()).await.unwrap();
+    h2.mail_reachable(vec![(Pid(11), "kiti-1".into()), (Pid(21), "kiti-2".into())])
+        .await;
+    h2.register_agent(agent(Provider::Claude, 11, "/w/a"), Timestamp(5_000))
+        .await;
+    h2.register_agent(agent(Provider::Codex, 21, "/w/b"), Timestamp(5_000))
+        .await;
+    settle().await;
+    let typed = courier.0.lock().unwrap().clone();
+    assert_eq!(typed.len(), 1);
+    assert_eq!(typed[0].0, 21);
+    assert!(typed[0].1.contains("no borres las ramas"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn un_mensaje_restaurado_sin_destinatario_vivo_se_descarta() {
+    let snap = {
+        let mut mb = kiti_core::domain::Mailbox::default();
+        let a = kiti_core::domain::AgentId {
+            provider: Provider::Claude,
+            pid: Pid(10),
+            start_time: ProcessStartTime(100),
+        };
+        let b = kiti_core::domain::AgentId {
+            provider: Provider::Codex,
+            pid: Pid(20),
+            start_time: ProcessStartTime(100),
+        };
+        mb.join(a, AliasKey::Tmux("kiti-1".into()), Timestamp(1));
+        mb.join(b, AliasKey::Tmux("kiti-2".into()), Timestamp(1));
+        mb.send(a, "codex-1", "hola", None, Timestamp(2)).unwrap();
+        mb.snapshot()
+    };
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        ManualClock::new(5_000),
+        Arc::new(Telemetry::new()),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(
+        runtime
+            .with_courier(FakeCourier::default())
+            .with_mail_store(snap, FakeMailStore::default())
+            .run(),
+    );
+    let sink = Sink::default();
+    h.subscribe(sink.clone()).await.unwrap();
+    h.mail_reachable(Vec::new()).await;
+    h.register_agent(agent(Provider::Claude, 11, "/w/a"), Timestamp(5_000))
+        .await;
+    settle().await;
+    let mail = last_mail(&sink);
+    assert!(
+        mail.threads
+            .iter()
+            .flat_map(|t| &t.messages)
+            .all(|m| m.state == MailMessageState::Discarded)
+    );
 }
