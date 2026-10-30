@@ -5,7 +5,10 @@ use kiti_protocol::mcp;
 use crate::api::ApiError;
 
 pub fn agents(r: &mcp::AgentsReply) -> String {
-    let mut out = format!("Tú eres {}.", r.you);
+    let mut out = match &r.you_session {
+        Some(s) => format!("Tú eres {} (tmux {s}).", r.you),
+        None => format!("Tú eres {}.", r.you),
+    };
     if r.peers.is_empty() {
         out.push_str(" No hay otros agentes abiertos ahora.");
         return out;
@@ -22,9 +25,14 @@ pub fn agents(r: &mcp::AgentsReply) -> String {
         } else {
             "lo lee cuando llame a kiti_inbox"
         };
+        let tmux = p
+            .session
+            .as_deref()
+            .map(|s| format!(", tmux {s}"))
+            .unwrap_or_default();
         out.push_str(&format!(
-            "- {} ({}, proyecto {}, {}){} · {}\n",
-            p.alias, p.provider, p.project, p.status, title, reach
+            "- {} ({}, proyecto {}, {}{tmux}, pid {}){} · {}\n",
+            p.alias, p.provider, p.project, p.status, p.pid, title, reach
         ));
     }
     out.trim_end().to_owned()
@@ -136,22 +144,41 @@ mod tests {
     fn lista_de_agentes_legible() {
         let r = mcp::AgentsReply {
             you: "claude-1".into(),
-            peers: vec![mcp::Peer {
-                alias: "codex-1".into(),
-                provider: "codex".into(),
-                project: "api".into(),
-                status: "idle".into(),
-                title: Some("Tests del carrito".into()),
-                reachable: false,
-            }],
+            you_session: Some("kiti-3".into()),
+            peers: vec![
+                mcp::Peer {
+                    alias: "codex-1".into(),
+                    provider: "codex".into(),
+                    project: "api".into(),
+                    status: "idle".into(),
+                    title: Some("Tests del carrito".into()),
+                    reachable: false,
+                    pid: 4120,
+                    session: None,
+                },
+                mcp::Peer {
+                    alias: "claude-4".into(),
+                    provider: "claude".into(),
+                    project: "web".into(),
+                    status: "working".into(),
+                    title: None,
+                    reachable: true,
+                    pid: 31202,
+                    session: Some("kiti-8".into()),
+                },
+            ],
         };
         assert_eq!(
             agents(&r),
-            "Tú eres claude-1. Otros agentes:\n- codex-1 (codex, proyecto api, idle) · «Tests del \
-             carrito» · lo lee cuando llame a kiti_inbox"
+            "Tú eres claude-1 (tmux kiti-3). Otros agentes:\n\
+             - codex-1 (codex, proyecto api, idle, pid 4120) · «Tests del carrito» · lo lee cuando \
+             llame a kiti_inbox\n\
+             - claude-4 (claude, proyecto web, working, tmux kiti-8, pid 31202) · lo recibe en \
+             cuanto esté libre"
         );
         let solo = mcp::AgentsReply {
             you: "agy-1".into(),
+            you_session: None,
             peers: vec![],
         };
         assert_eq!(

@@ -127,7 +127,7 @@ pub fn delivery_prompt(d: &Delivery, mut project_of: impl FnMut(&Message) -> Str
     out
 }
 
-pub fn peer(agent: &Agent, alias: &str, project: &str, reachable: bool) -> mcp::Peer {
+pub fn peer(agent: &Agent, alias: &str, project: &str, session: Option<&str>) -> mcp::Peer {
     let status = match project_status_kind(agent.status().kind) {
         proto::StatusKind::Working => "working",
         proto::StatusKind::Waiting => "waiting",
@@ -141,7 +141,9 @@ pub fn peer(agent: &Agent, alias: &str, project: &str, reachable: bool) -> mcp::
         project: project_name(project),
         status: status.to_owned(),
         title: agent.title().map(str::to_owned),
-        reachable,
+        reachable: session.is_some(),
+        pid: agent.id().pid.0,
+        session: session.map(str::to_owned),
     }
 }
 
