@@ -410,6 +410,44 @@ async fn un_recuerdo_guardado_en_un_worktree_lo_ve_el_repositorio_principal() {
     assert_eq!(reply.sessions.len(), 2);
 }
 
+#[tokio::test(start_paused = true)]
+async fn las_metricas_cuentan_recuerdos_guardados_y_consultados() {
+    let telemetry = Arc::new(Telemetry::new());
+    let (runtime, h) = Runtime::new(
+        NoKill,
+        ManualClock::new(1_000),
+        telemetry.clone(),
+        Source::Sim,
+        "test",
+    );
+    tokio::spawn(runtime.with_courier(FakeCourier::default()).run());
+    h.mail_reachable(Vec::new()).await;
+    h.register_agent(
+        agent(Provider::Claude, 10, "/Users/dev/tienda-web"),
+        Timestamp(1_000),
+    )
+    .await;
+    h.mcp_remember(
+        from(10),
+        RememberRequest {
+            kind: "note".into(),
+            title: "Algo".into(),
+            detail: "Detalle".into(),
+            files: vec![],
+        },
+    )
+    .await
+    .unwrap();
+    for query in [None, Some("algo".to_owned())] {
+        h.mcp_recall(from(10), RecallRequest { query })
+            .await
+            .unwrap();
+    }
+    let m = telemetry.snapshot_core_metrics(1, 0, 0.0, 0);
+    assert_eq!(m.memories_stored, 1);
+    assert_eq!(m.memories_recalled, 2);
+}
+
 fn process_key(provider: Provider, pid: u32) -> AliasKey {
     AliasKey::Process(kiti_core::domain::AgentId {
         provider,

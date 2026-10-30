@@ -61,6 +61,8 @@ describe("applyMsg", () => {
       mailsTotal: 0,
       mailPending: 0,
       memoriesTotal: 0,
+      memoriesStored: 0,
+      memoriesRecalled: 0,
     };
     expect(applyMsg(s0, metrics)).toBe(s0);
   });

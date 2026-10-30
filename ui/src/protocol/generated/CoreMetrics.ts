@@ -15,4 +15,12 @@ mailPending: number,
 /**
  * Recuerdos de proyecto guardados (ADR 0018).
  */
-memoriesTotal: number, };
+memoriesTotal: number, 
+/**
+ * Recuerdos guardados desde que arrancó Kiti (ADR 0018).
+ */
+memoriesStored: number, 
+/**
+ * Consultas `kiti_recall` atendidas desde que arrancó Kiti.
+ */
+memoriesRecalled: number, };

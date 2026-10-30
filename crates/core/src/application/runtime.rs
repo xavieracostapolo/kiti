@@ -1229,6 +1229,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             .map(|a| a.cwd().as_str().to_owned())
             .unwrap_or_default();
         let project = self.projects.repo_of(&cwd);
+        self.telemetry.record_recall();
         let query = request
             .query
             .as_deref()
