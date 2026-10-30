@@ -10,6 +10,7 @@ pub mod projection;
 pub mod runtime;
 pub mod scanner;
 pub mod summary;
+pub mod tasks;
 pub mod telemetry;
 
 pub use alerts::{alert_text, quota_text};

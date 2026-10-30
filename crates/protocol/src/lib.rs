@@ -172,6 +172,55 @@ pub struct MemoryItem {
     pub created_at: u64,
 }
 
+/// Ficha de rol de un agente efímero (ADR 0019, `docs/agentes/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum TaskRole {
+    Implementar,
+    Documentar,
+    Revisar,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+#[ts(export)]
+pub enum TaskStateKind {
+    Launching,
+    Running,
+    Done,
+    Failed,
+    Stuck,
+}
+
+/// Una tarea de agente efímero para el tablero (ADR 0019).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TaskInfo {
+    pub id: u64,
+    /// Alias del agente de la tarea, si ya está en el mapa.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub alias: Option<String>,
+    /// Alias de quien la lanzó.
+    pub orchestrator: String,
+    pub role: TaskRole,
+    pub provider: Provider,
+    pub model: String,
+    pub branch: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pr: Option<String>,
+    pub state: TaskStateKind,
+    /// Motivo del fallo (`failed`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    pub created_at: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_at: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 #[ts(export)]
@@ -264,6 +313,11 @@ pub enum ServerMsg {
     /// Recuerdos de los proyectos (ADR 0018): se envía al cambiar y tras cada Snapshot.
     Memory {
         memories: Vec<MemoryItem>,
+    },
+    /// Tareas de agentes efímeros (ADR 0019): la lista completa al cambiar algo y tras cada
+    /// Snapshot.
+    Tasks {
+        tasks: Vec<TaskInfo>,
     },
 }
 
@@ -558,6 +612,55 @@ pub mod mcp {
         pub query: Option<String>,
         pub sessions: Vec<RecallSession>,
         pub memories: Vec<RecallEntry>,
+    }
+
+    /// `kiti_spawn` (ADR 0019).
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SpawnRequest {
+        /// `implementar`, `documentar` o `revisar`.
+        pub role: String,
+        /// El encargo, que se guarda en un archivo para el agente.
+        pub task: String,
+        /// Nombre corto de la rama (`quota-live`).
+        pub slug: String,
+        /// Tipo de rama (`feat`, `fix`, `docs`…).
+        pub branch_type: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub provider: Option<crate::Provider>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub model: Option<String>,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SpawnReply {
+        pub task_id: u64,
+        pub branch: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub session: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub worktree: Option<String>,
+    }
+
+    /// `kiti_done` (ADR 0019): el agente efímero entrega.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DoneRequest {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub pr: Option<String>,
+        /// Motivo si no pudo terminar la tarea.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub failed: Option<String>,
+        pub summary: String,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct DoneReply {
+        pub task_id: u64,
+        /// `done` o `failed`.
+        pub state: String,
     }
 
     /// Cuerpo de las respuestas 4xx: `code` estable y `message` legible para el modelo.

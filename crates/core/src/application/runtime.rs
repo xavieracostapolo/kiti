@@ -14,18 +14,20 @@ use crate::application::memory;
 use crate::application::projection::{project_diff, project_provider, project_snapshot};
 use crate::application::scanner::TranscriptUpdate;
 use crate::application::summary::Summary;
+use crate::application::tasks;
 use crate::application::telemetry::Telemetry;
 use crate::domain::{
     AgentId, AgentInput, AgentRegistry, AgentStats, AlertPolicy, AliasEntry, AliasKey,
     DetectedAgent, DomainEvent, Events, GitStatus, MailSnapshot, Mailbox, MemoryBook, MemoryEntry,
-    MessageId, Pid, Provider, QuotaPolicy, QuotaWindow, SEARCH_LIMIT, SessionId, StalePolicy,
-    StatusKind, ThreadId, Timestamp,
+    MessageId, NewTask, Pid, Placement, Provider, QuotaPolicy, QuotaWindow, SEARCH_LIMIT,
+    SessionId, StalePolicy, StatusKind, TaskBook, TaskId, ThreadId, Timestamp,
 };
 use crate::ingestion::HookEvent;
 use crate::ingestion::claude::SessionFile;
 use crate::ports::{
     AgentKiller, AlertNotice, AlertSink, AliasStore, Clock, CwdProjects, DiffPublisher, KillError,
-    KillOutcome, KillTarget, MailCourier, MailStore, MemoryStore, ProjectResolver, SelfMonitor,
+    KillOutcome, KillTarget, LaunchSpec, Launched, MailCourier, MailStore, MemoryStore,
+    ProjectResolver, SelfMonitor, TaskLauncher,
 };
 use kiti_protocol::mcp;
 use kiti_protocol::{Hello, KillResult, PROTOCOL_VERSION, ServerMsg, Source};
@@ -39,6 +41,8 @@ pub const KILL_GRACE: Duration = Duration::from_secs(5);
 /// Tras escribir en la terminal de un agente, no se le escribe otra vez hasta verlo trabajar,
 /// o hasta pasado este tiempo si nunca llega a verse (ADR 0017).
 pub const MAIL_RETRY: Duration = Duration::from_secs(60);
+/// Entre `kiti_done` y el cierre de la sesión del agente: tiempo para que termine su turno.
+pub const TASK_CLOSE_DELAY: Duration = Duration::from_secs(10);
 
 /// Lo que la UI puede hacer con los mensajes (ADR 0017).
 pub type MailAction = kiti_protocol::MailCommand;
@@ -133,6 +137,24 @@ pub enum RuntimeCommand {
         ancestry: Vec<Pid>,
         request: mcp::RecallRequest,
         reply: McpReply<mcp::RecallReply>,
+    },
+    /// `kiti_spawn` (ADR 0019): responde cuando el lanzador termina, fuera del actor.
+    McpSpawn {
+        ancestry: Vec<Pid>,
+        request: mcp::SpawnRequest,
+        reply: McpReply<mcp::SpawnReply>,
+    },
+    McpDone {
+        ancestry: Vec<Pid>,
+        request: mcp::DoneRequest,
+        reply: McpReply<mcp::DoneReply>,
+    },
+    /// Interno: el lanzador terminó y devuelve el resultado al actor.
+    #[doc(hidden)]
+    SpawnFinished {
+        id: TaskId,
+        result: Result<Launched, String>,
+        reply: McpReply<mcp::SpawnReply>,
     },
     /// PIDs de los agentes lanzados desde Kiti (sesiones tmux): a ellos se les puede escribir.
     /// Pid del agente y nombre de su sesión tmux de Kiti.
@@ -392,6 +414,32 @@ impl RuntimeHandle {
         .await
     }
 
+    pub async fn mcp_spawn(
+        &self,
+        ancestry: Vec<Pid>,
+        request: mcp::SpawnRequest,
+    ) -> Result<mcp::SpawnReply, mcp::ErrorReply> {
+        self.mcp(|reply| RuntimeCommand::McpSpawn {
+            ancestry,
+            request,
+            reply,
+        })
+        .await
+    }
+
+    pub async fn mcp_done(
+        &self,
+        ancestry: Vec<Pid>,
+        request: mcp::DoneRequest,
+    ) -> Result<mcp::DoneReply, mcp::ErrorReply> {
+        self.mcp(|reply| RuntimeCommand::McpDone {
+            ancestry,
+            request,
+            reply,
+        })
+        .await
+    }
+
     /// Agentes a los que Kiti puede escribir (sesiones tmux).
     pub async fn mail_reachable(&self, sessions: Vec<(Pid, String)>) {
         let _ = self.tx.send(RuntimeCommand::MailReachable(sessions)).await;
@@ -510,6 +558,11 @@ pub struct Runtime<K: AgentKiller + Clone, C: Clock> {
     memories: MemoryBook,
     memory_store: Option<Box<dyn MemoryStore>>,
     memory_dirty: bool,
+    /// Agentes efímeros (ADR 0019).
+    tasks: TaskBook,
+    launcher: Option<Arc<dyn TaskLauncher>>,
+    /// Tareas cuyo agente ya recibió su mensaje de rol.
+    greeted: std::collections::HashSet<TaskId>,
 }
 
 impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
@@ -558,6 +611,9 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
             memories: MemoryBook::default(),
             memory_store: None,
             memory_dirty: false,
+            tasks: TaskBook::default(),
+            launcher: None,
+            greeted: std::collections::HashSet::new(),
         };
         (
             runtime,
@@ -591,6 +647,12 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
     /// Quién escribe los mensajes en las terminales (ADR 0017). Sin él, solo hay `kiti_inbox`.
     pub fn with_courier(mut self, courier: impl MailCourier) -> Self {
         self.courier = Some(Box::new(courier));
+        self
+    }
+
+    /// Quién lanza y cierra los agentes efímeros (ADR 0019). Sin él, `kiti_spawn` se rechaza.
+    pub fn with_launcher(mut self, launcher: impl TaskLauncher) -> Self {
+        self.launcher = Some(Arc::new(launcher));
         self
     }
 
@@ -685,6 +747,7 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                     let now = self.clock.now();
                     let events = self.registry.tick(&self.stale_policy, now);
                     self.notify(&events, now);
+                    self.tick_tasks(now);
                 }
             }
         }
@@ -863,6 +926,11 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                         publisher.publish(memory::memory_msg(&self.memories));
                     }
                     self.memory_dirty = false;
+                    let infos = self.task_infos();
+                    if !infos.is_empty() {
+                        publisher.publish(tasks::tasks_msg(infos));
+                    }
+                    self.tasks.take_dirty();
                     if let Some(id) = self.pending_focus.take() {
                         publisher.publish(ServerMsg::Focus {
                             id: kiti_protocol::AgentId(id.to_string()),
@@ -926,6 +994,21 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
                 reply,
             } => {
                 let _ = reply.send(self.mcp_recall(&ancestry, request));
+            }
+            RuntimeCommand::McpSpawn {
+                ancestry,
+                request,
+                reply,
+            } => self.start_spawn(&ancestry, request, reply),
+            RuntimeCommand::McpDone {
+                ancestry,
+                request,
+                reply,
+            } => {
+                let _ = reply.send(self.mcp_done(&ancestry, request));
+            }
+            RuntimeCommand::SpawnFinished { id, result, reply } => {
+                let _ = reply.send(self.finish_spawn(id, result));
             }
             RuntimeCommand::MailReachable(sessions) => {
                 self.reachable = sessions.into_iter().collect();
@@ -1318,8 +1401,295 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         })
     }
 
+    /// Las tareas para el tablero, con el alias de su agente si ya está en el mapa.
+    fn task_infos(&self) -> Vec<kiti_protocol::TaskInfo> {
+        self.tasks
+            .tasks()
+            .map(|t| {
+                let alias = t.pid.and_then(|pid| {
+                    let agent = self
+                        .registry
+                        .agents()
+                        .find(|a| !a.is_dead() && a.id().pid == pid)?;
+                    self.mailbox.alias(&agent.id()).map(str::to_owned)
+                });
+                tasks::task_info(t, alias)
+            })
+            .collect()
+    }
+
+    /// `kiti_spawn`: valida, reserva el hueco y lanza fuera del actor (ADR 0019).
+    fn start_spawn(
+        &mut self,
+        ancestry: &[Pid],
+        request: mcp::SpawnRequest,
+        reply: McpReply<mcp::SpawnReply>,
+    ) {
+        match self.try_spawn(ancestry, &request) {
+            Err(e) => {
+                let _ = reply.send(Err(e));
+            }
+            Ok((id, spec, launcher)) => {
+                let back = self.self_tx.clone();
+                tokio::task::spawn_blocking(move || {
+                    let result = launcher.launch(spec);
+                    let _ = back.blocking_send(RuntimeCommand::SpawnFinished { id, result, reply });
+                });
+            }
+        }
+    }
+
+    fn try_spawn(
+        &mut self,
+        ancestry: &[Pid],
+        request: &mcp::SpawnRequest,
+    ) -> Result<(TaskId, LaunchSpec, Arc<dyn TaskLauncher>), mcp::ErrorReply> {
+        let me = self.caller(ancestry)?;
+        // Lanzar un agente gasta cuota: en modo manual hace falta el visto bueno del usuario, que
+        // no puede viajar como mensaje de otro agente (ADR 0019).
+        if self.mailbox.mode() == crate::domain::MailMode::Manual {
+            info!(event = "task.rejected", reason = "needs_approval");
+            return Err(tasks::error(
+                "NEEDS_APPROVAL",
+                "Kiti está en modo manual: lanzar un agente gasta cuota y lo tiene que aprobar \
+                 el usuario. Pídele que cambie a modo automático o que lance el agente él.",
+            ));
+        }
+        let plan = tasks::plan(request)?;
+        let Some(launcher) = self.launcher.clone() else {
+            return Err(tasks::error(
+                "NO_LAUNCHER",
+                "Esta instancia de Kiti no puede lanzar agentes.",
+            ));
+        };
+        let now = self.clock.now();
+        let cwd = self
+            .registry
+            .get(&me)
+            .map(|a| a.cwd().as_str().to_owned())
+            .unwrap_or_default();
+        let repo = self.projects.repo_of(&cwd);
+        let id = self
+            .tasks
+            .begin(
+                NewTask {
+                    orchestrator: me,
+                    orchestrator_alias: self.mailbox.alias(&me).unwrap_or("?").to_owned(),
+                    role: plan.role,
+                    provider: plan.provider,
+                    model: plan.model.clone(),
+                    branch: plan.branch.clone(),
+                },
+                now,
+            )
+            .map_err(|reason| {
+                tracing::warn!(event = "task.limited", reason = %reason);
+                tasks::error("LIMIT", reason.to_string())
+            })?;
+        let spec = LaunchSpec {
+            task: id,
+            repo: repo.into(),
+            branch: plan.branch,
+            provider: plan.provider,
+            model: plan.model,
+            role: plan.role,
+            brief: plan.brief,
+        };
+        Ok((id, spec, launcher))
+    }
+
+    fn finish_spawn(
+        &mut self,
+        id: TaskId,
+        result: Result<Launched, String>,
+    ) -> Result<mcp::SpawnReply, mcp::ErrorReply> {
+        let now = self.clock.now();
+        match result {
+            Ok(l) => {
+                let _ = self.tasks.launched(
+                    id,
+                    Placement {
+                        worktree: l.worktree.clone(),
+                        session: l.session.clone(),
+                        pid: l.pid,
+                        brief_path: l.brief_path,
+                    },
+                    now,
+                );
+                let task = self.tasks.get(id);
+                let branch = task.map(|t| t.branch.clone()).unwrap_or_default();
+                if let Some(t) = task {
+                    info!(
+                        event = "task.spawned",
+                        task_id = id.0,
+                        provider = %t.provider,
+                        model = %t.model,
+                        role = t.role.as_str(),
+                        repo = %mail::project_name(&l.worktree.to_string_lossy()),
+                    );
+                }
+                Ok(mcp::SpawnReply {
+                    task_id: id.0,
+                    branch,
+                    session: Some(l.session),
+                    worktree: Some(l.worktree.to_string_lossy().into_owned()),
+                })
+            }
+            Err(reason) => {
+                let _ = self.tasks.launch_failed(id, reason.clone(), now);
+                tracing::warn!(event = "task.launch_failed", task_id = id.0);
+                Err(tasks::error("LAUNCH_FAILED", reason))
+            }
+        }
+    }
+
+    /// Cuando el escáner registra al agente de una tarea, le llega su mensaje de rol en nombre
+    /// del orquestador.
+    fn greet_tasks(&mut self) {
+        if !self.reachable_known {
+            return;
+        }
+        let now = self.clock.now();
+        let pending: Vec<(TaskId, Pid)> = self
+            .tasks
+            .tasks()
+            .filter(|t| t.state == crate::domain::TaskState::Running)
+            .filter(|t| !self.greeted.contains(&t.id))
+            .filter_map(|t| t.pid.map(|pid| (t.id, pid)))
+            .collect();
+        for (id, pid) in pending {
+            let Some(agent) = self
+                .registry
+                .agents()
+                .find(|a| !a.is_dead() && a.id().pid == pid)
+                .map(|a| a.id())
+            else {
+                continue;
+            };
+            let Some(alias) = self.mailbox.alias(&agent).map(str::to_owned) else {
+                continue;
+            };
+            let Some(task) = self.tasks.get(id).cloned() else {
+                continue;
+            };
+            self.greeted.insert(id);
+            self.tasks.touch();
+            let path = task
+                .brief_path
+                .as_deref()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let text = tasks::role_message(task.role, &path);
+            match self
+                .mailbox
+                .send(task.orchestrator, &alias, &text, None, now)
+            {
+                Ok(_) => self.mail_dirty = true,
+                Err(e) => {
+                    tracing::warn!(
+                        event = "task.greet_failed",
+                        task_id = id.0,
+                        reason = e.code()
+                    );
+                }
+            }
+        }
+    }
+
+    /// `kiti_done`: solo el agente de una tarea abierta.
+    fn mcp_done(
+        &mut self,
+        ancestry: &[Pid],
+        request: mcp::DoneRequest,
+    ) -> Result<mcp::DoneReply, mcp::ErrorReply> {
+        let me = self.caller(ancestry)?;
+        let not_a_task = || {
+            tasks::error(
+                "NOT_A_TASK",
+                "Tú no eres el agente de ninguna tarea abierta: kiti_done es solo para agentes \
+                 lanzados con kiti_spawn.",
+            )
+        };
+        let id = self
+            .tasks
+            .open_for_pid(me.pid)
+            .map(|t| t.id)
+            .ok_or_else(not_a_task)?;
+        let now = self.clock.now();
+        let outcome = match request
+            .failed
+            .as_deref()
+            .map(str::trim)
+            .filter(|r| !r.is_empty())
+        {
+            Some(reason) => Err(reason.to_owned()),
+            None => Ok(request
+                .pr
+                .as_deref()
+                .map(str::trim)
+                .filter(|p| !p.is_empty())
+                .map(str::to_owned)),
+        };
+        self.tasks
+            .finish(id, outcome.clone(), now)
+            .map_err(|_| not_a_task())?;
+        let task = self.tasks.get(id).cloned().ok_or_else(not_a_task)?;
+        info!(
+            event = "task.done",
+            task_id = id.0,
+            result = if outcome.is_ok() { "done" } else { "failed" },
+            duration_ms = now.0.saturating_sub(task.created_at.0),
+        );
+        let text = tasks::done_message(&task, &outcome, &request.summary);
+        if let Some(alias) = self.mailbox.alias(&task.orchestrator).map(str::to_owned) {
+            match self.mailbox.send(me, &alias, &text, None, now) {
+                Ok(_) => self.mail_dirty = true,
+                Err(e) => {
+                    tracing::warn!(
+                        event = "task.notify_failed",
+                        task_id = id.0,
+                        reason = e.code()
+                    );
+                }
+            }
+        }
+        self.schedule_close(task);
+        Ok(mcp::DoneReply {
+            task_id: id.0,
+            state: if outcome.is_ok() { "done" } else { "failed" }.to_owned(),
+        })
+    }
+
+    /// Pasados unos segundos cierra la sesión, archiva la conversación y limpia el worktree,
+    /// fuera del actor.
+    fn schedule_close(&self, task: crate::domain::Task) {
+        let Some(launcher) = self.launcher.clone() else {
+            return;
+        };
+        tokio::spawn(async move {
+            tokio::time::sleep(TASK_CLOSE_DELAY).await;
+            let id = task.id.0;
+            let outcome = tokio::task::spawn_blocking(move || launcher.close(&task))
+                .await
+                .unwrap_or_default();
+            info!(
+                event = "task.closed",
+                task_id = id,
+                worktree_removed = outcome.worktree_removed,
+                kept_reason = outcome.kept_reason.as_deref().unwrap_or(""),
+            );
+        });
+    }
+
+    fn tick_tasks(&mut self, now: Timestamp) {
+        for id in self.tasks.tick(now) {
+            tracing::warn!(event = "task.stuck", task_id = id.0);
+        }
+    }
+
     fn flush_diff(&mut self) {
         self.sync_mail();
+        self.greet_tasks();
         self.deliver_mail();
         self.save_mail();
         if self.mail_dirty
@@ -1335,6 +1705,14 @@ impl<K: AgentKiller + Clone, C: Clock + 'static> Runtime<K, C> {
         {
             self.memory_dirty = false;
             if !publisher.publish(memory::memory_msg(&self.memories)) {
+                self.drop_publisher();
+            }
+        }
+        if self.publisher.is_some() && self.tasks.take_dirty() {
+            let msg = tasks::tasks_msg(self.task_infos());
+            if let Some(publisher) = self.publisher.as_mut()
+                && !publisher.publish(msg)
+            {
                 self.drop_publisher();
             }
         }

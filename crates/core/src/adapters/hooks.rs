@@ -3,7 +3,7 @@
 //! Responde `204` vacío en cuanto valida la petición y encola el cuerpo con `try_send`: nunca
 //! bloquea al agente ni le devuelve decisiones. La ACL se aplica después, fuera del handler.
 //!
-//! `POST /v1/mcp/{agents,send,inbox}` (ADR 0017) es la API de `kiti-mcp`: con los mismos
+//! `POST /v1/mcp/{agents,send,inbox,remember,recall,spawn,done}` (ADR 0017) es la API de `kiti-mcp`: con los mismos
 //! controles, pero responde JSON con datos (nunca decisiones de un hook).
 
 use std::io::Write;
@@ -232,6 +232,34 @@ async fn handle_mcp(
                 );
             }
         },
+        "spawn" => match serde_json::from_slice::<kiti_protocol::mcp::SpawnRequest>(&body) {
+            Ok(req) => ctx
+                .runtime
+                .mcp_spawn(chain, req)
+                .await
+                .map(|r| json_reply(StatusCode::OK, &r)),
+            Err(_) => {
+                return mcp_error(
+                    StatusCode::BAD_REQUEST,
+                    "bad_request",
+                    "se esperaba {\"role\", \"task\", \"slug\", \"branchType\", \"provider\"?, \"model\"?}",
+                );
+            }
+        },
+        "done" => match serde_json::from_slice::<kiti_protocol::mcp::DoneRequest>(&body) {
+            Ok(req) => ctx
+                .runtime
+                .mcp_done(chain, req)
+                .await
+                .map(|r| json_reply(StatusCode::OK, &r)),
+            Err(_) => {
+                return mcp_error(
+                    StatusCode::BAD_REQUEST,
+                    "bad_request",
+                    "se esperaba {\"pr\"?, \"failed\"?, \"summary\"}",
+                );
+            }
+        },
         _ => {
             return mcp_error(
                 StatusCode::NOT_FOUND,
@@ -256,7 +284,7 @@ pub fn mcp_router(token: String, port: u16, runtime: crate::application::Runtime
         .layer(ConcurrencyLimitLayer::new(16))
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(5),
+            Duration::from_secs(30),
         ))
         .with_state(ctx)
 }

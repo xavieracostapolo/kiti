@@ -75,6 +75,37 @@ pub fn error(e: &ApiError) -> String {
     }
 }
 
+pub fn spawned(r: &mcp::SpawnReply) -> String {
+    let session = r
+        .session
+        .as_deref()
+        .map(|s| format!(", tmux {s}"))
+        .unwrap_or_default();
+    let worktree = r
+        .worktree
+        .as_deref()
+        .map(|w| format!(", worktree {w}"))
+        .unwrap_or_default();
+    format!(
+        "Tarea {} lanzada en la rama {}{session}{worktree}. El agente leerá su ficha y su \
+         encargo; cuando llame a kiti_done recibirás un mensaje con el PR o el motivo del fallo.",
+        r.task_id, r.branch
+    )
+}
+
+pub fn done(r: &mcp::DoneReply) -> String {
+    let what = if r.state == "failed" {
+        "registrada como fallida"
+    } else {
+        "registrada como entregada"
+    };
+    format!(
+        "Tarea {} {what}. Kiti avisa al orquestador y cierra esta sesión en unos segundos: no \
+         hagas nada más.",
+        r.task_id
+    )
+}
+
 pub fn remembered(r: &mcp::RememberReply) -> String {
     format!(
         "Guardado en la memoria de {} (id {}, {}): «{}».",

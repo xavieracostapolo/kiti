@@ -62,6 +62,48 @@ pub trait MemoryStore: Send + 'static {
     }
 }
 
+/// Lo que hace falta para lanzar el agente de una tarea (ADR 0019).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchSpec {
+    pub task: crate::domain::TaskId,
+    /// Repositorio principal donde se crea el worktree.
+    pub repo: std::path::PathBuf,
+    pub branch: String,
+    pub provider: Provider,
+    pub model: String,
+    pub role: crate::domain::TaskRole,
+    /// El texto del encargo: el lanzador lo guarda en un archivo; nunca va a los logs.
+    pub brief: String,
+}
+
+/// Dónde quedó el agente lanzado.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Launched {
+    pub worktree: std::path::PathBuf,
+    pub session: String,
+    /// Pid del proceso de la sesión tmux: el del agente cuando el escáner lo registra.
+    pub pid: crate::domain::Pid,
+    pub brief_path: std::path::PathBuf,
+}
+
+/// Lo que hizo `TaskLauncher::close`, para el log y el tablero.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CloseOutcome {
+    pub session_killed: bool,
+    pub conversation_archived: bool,
+    pub worktree_removed: bool,
+    /// Por qué se dejó el worktree (cambios sin guardar, rama sin subir…).
+    pub kept_reason: Option<String>,
+}
+
+/// Lanza y cierra los agentes efímeros (ADR 0019). Bloqueante (git, tmux, disco): el runtime lo
+/// llama fuera del actor, como el kill.
+pub trait TaskLauncher: Send + Sync + 'static {
+    fn launch(&self, spec: LaunchSpec) -> Result<Launched, String>;
+    /// Cierra la sesión, archiva la conversación y borra el worktree si es seguro.
+    fn close(&self, task: &crate::domain::Task) -> CloseOutcome;
+}
+
 /// Proyecto (raíz git o carpeta) de un `cwd` (ADR 0009). Puede consultar el disco y guardar
 /// en caché: se llama al proyectar cada agente.
 pub trait ProjectResolver: Send + 'static {

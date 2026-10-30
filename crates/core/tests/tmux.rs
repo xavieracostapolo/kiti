@@ -68,6 +68,22 @@ fn crea_una_sesion_y_la_lista_con_su_pid_carpeta_y_proveedor() {
 }
 
 #[test]
+fn kill_session_termina_la_sesion_pedida_y_solo_esa() {
+    let Some(t) = tmux() else { return };
+    let cwd = std::env::temp_dir();
+    let a =
+        t.0.new_session(&cwd, "exec sleep 30", "claude", 80, 24)
+            .unwrap();
+    let b =
+        t.0.new_session(&cwd, "exec sleep 30", "claude", 80, 24)
+            .unwrap();
+    assert!(t.0.kill_session(&a.name));
+    assert!(until(|| t.0.list().iter().all(|x| x.name != a.name)));
+    assert!(t.0.list().iter().any(|x| x.name == b.name));
+    assert!(!t.0.kill_session(&a.name));
+}
+
+#[test]
 fn los_nombres_no_se_repiten() {
     let Some(t) = tmux() else { return };
     let cwd = std::env::temp_dir();
