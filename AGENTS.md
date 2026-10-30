@@ -216,6 +216,13 @@ Alineado con el [ADR 0006](docs/decisiones/0006-arquitectura-consolidada/README.
 4. **No reinventes la rueda:** usa las dependencias aprobadas del ADR 0006. Cualquier dependencia nueva se justifica en el PR (mantenimiento en los últimos 12 meses, licencia y alternativa).
 5. **Itera lo visual con capturas:** levanta la UI en modo sim, captura con Playwright, enseña las capturas al usuario y fija las baselines solo con su visto bueno.
 6. Nunca registres en logs ni guardes en fixtures prompts, código ni salidas de herramientas. El último pedido y la actividad (ADR 0009) solo viajan del core a la UI.
+7. **Usa la memoria del proyecto (ADR 0018)** si tienes las herramientas de `kiti-mcp`:
+   - **Al empezar** una tarea o tras una compactación, llama a `kiti_recall()` y, si el índice trae algo relacionado, `kiti_recall("palabras")`.
+   - **Guarda con `kiti_remember`** solo lo que otro agente necesitaría y no está en el código ni en git:
+     - `decision`: una decisión con su porqué;
+     - `gotcha`: una trampa del entorno o de una herramienta;
+     - `handoff`: al entregar o dejar algo a medias, qué queda y dónde.
+   - Título corto y detalle de 600 caracteres como máximo. Nunca prompts, código, salidas de herramientas ni secretos (regla 6).
 
 ## Cómo trabajar en este repo
 
