@@ -39,6 +39,18 @@ Kiti ya tiene casi todo:
 - Si el proceso no pertenece a ningún agente vivo, se responde con error y no se envía nada.
 - Cada agente se nombra con un **alias corto y estable** mientras vive: `claude-1`, `codex-2`, `agy-1`… Es más fácil de copiar para el modelo que el id opaco.
 
+### Alias estables
+
+Al principio el alias se repartía por orden de llegada y se perdía al reiniciar Kiti o al relanzar un agente: los agentes se escribían a un alias que ya era de otro. Ahora el alias pertenece a una **clave estable**, no al PID:
+
+- **Clave (`AliasKey`):** la sesión tmux de Kiti (`kiti-N`) si el agente vive en una, porque sobrevive a que el agente se relance; si no, el propio proceso (`Process(AgentId)`), que dura lo que dure el agente.
+- **`domain::AliasBook` (puro, sin I/O ni reloj):**
+  - `assign` devuelve el alias que la clave ya tenía, aunque estuviera liberado, o el número libre más bajo del proveedor (`claude-N`, `codex-N`, `gemini-N`, `agy-N`), saltándose los usados y los reservados.
+  - `release` libera el alias de un agente que ya no está, pero lo deja **reservado 24 h** (`RESERVE_MS`) para la misma clave. Si la sesión vuelve en ese plazo, recupera su alias; nadie más puede tomarlo.
+  - `rekey` pasa el alias de un `Process` a su sesión tmux sin renombrarlo, cuando se descubre que el agente vive en una. `prune` borra las reservas caducadas.
+- **Espera al primer `MailReachable`:** el runtime no reparte alias hasta conocer qué agentes viven en sesiones tmux de Kiti. `MailReachable` ahora lleva pares `(pid, sesión)`. Así, tras un reinicio, un agente en `kiti-3` recupera su alias en lugar de recibir uno nuevo por proceso.
+- **Persistencia:** el libro se guarda en `aliases.json`, en el directorio de datos de la app, a través del port `AliasStore`. El adapter `FileAliasStore` (`adapters/alias_file.rs`) escribe en `aliases.json.tmp` y lo renombra: un cierre a mitad no deja el archivo a medias. Las filas van ordenadas por alias, así el JSON es estable. El archivo solo guarda claves, alias y la hora de liberación, nunca mensajes.
+
 ### Herramientas MCP
 
 | Herramienta | Entrada | Salida |
@@ -115,6 +127,7 @@ El usuario no quiere ser un cuello de botella leyendo y aprobando cada mensaje, 
 
 | Pregunta | Señal | Umbral y verificación |
 |---|---|---|
+| ¿Se guardan los alias? | `mail.aliases_save` (warn) si falla la escritura de `aliases.json` | Tests de `adapters/alias_file.rs` y de `crates/core/tests/mail_runtime.rs` (alias recuperado tras reinicio y relanzamiento) |
 | ¿Llegan los envíos? | `mail.sent` (alias, longitud, hilo, estado) | Cada `kiti_send` válido produce uno; test de integración del HookServer |
 | ¿Se entregan? | `mail.delivered` y `mail.queued` con `wait_ms` | Entrega menos de 1 s después del envío (o de aprobarlo, en modo manual) si el destinatario está libre; prueba real con dos agentes |
 | ¿Se rechaza lo que debe? | `mail.rejected` con `reason` (`unknown_sender`, `rate`, `hops`, `self`, `too_long`) | Tests de dominio |
@@ -143,3 +156,8 @@ El usuario no quiere ser un cuello de botella leyendo y aprobando cada mensaje, 
 - **Coste en la UI:** las rutas y los sobres son estáticos, se redibujan solo al cambiar el estado del correo, así que en reposo sigue sin haber frames. Las baselines visuales no cambian: sin `?mail=1` no hay correo en el simulador.
 - **Hallazgo de paso:** dentro de un hook de git, `GIT_DIR` exportado hacía que `git_status` leyera otro repositorio. Se corrigió quitando esas variables (PR #17).
 - **Pendiente:** `kiti_launch` (fase 2) y probar Codex cuando esté instalado.
+
+## Límites conocidos
+
+- Los mensajes pendientes del `Mailbox` (por aprobar o en cola para un agente ocupado) viven en memoria: si Kiti se reinicia, se pierden. Solo los alias se persisten.
+- Un agente fuera de tmux conserva su alias mientras vive su proceso; si se cierra y se vuelve a abrir, es otra clave y recibe otro alias (el anterior queda reservado 24 h).
