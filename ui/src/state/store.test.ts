@@ -156,4 +156,27 @@ describe("store", () => {
     store.getState().setTerminalFraction(0.1);
     expect(store.getState().terminalFraction).toBe(0.32);
   });
+
+  it("receive guarda las tareas del core sin tocar los agentes", () => {
+    const store = createKitiStore();
+    store.getState().receive({ type: "Snapshot", seq: 0, agents: [a] });
+    const before = store.getState().agents;
+    store.getState().receive({
+      type: "Tasks",
+      tasks: [
+        {
+          id: 1,
+          orchestrator: "claude-1",
+          role: "implementar",
+          provider: "claude",
+          model: "sonnet",
+          branch: "feat/x",
+          state: "running",
+          createdAt: 0,
+        },
+      ],
+    });
+    expect(store.getState().tasks.map((t) => t.id)).toEqual([1]);
+    expect(store.getState().agents).toBe(before);
+  });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { sortTasks, type TaskInfo, taskSummary } from "./tasks";
+import type { TaskInfo } from "../protocol";
+import { sortTasks, taskSummary } from "./tasks";
 
 const H = 3_600_000;
 const NOW = 100 * H;

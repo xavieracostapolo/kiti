@@ -1,21 +1,5 @@
 // Tablero de tareas de los agentes efímeros (ADR 0019).
-
-/** Provisional: se sustituirá por el tipo generado de crates/protocol cuando entre el encargo B. */
-export type TaskInfo = {
-  id: number;
-  alias?: string;
-  orchestrator: string;
-  role: "implementar" | "documentar" | "revisar";
-  provider: "claude" | "codex" | "gemini" | "antigravity";
-  model: string;
-  branch: string;
-  session?: string;
-  pr?: string;
-  state: "launching" | "running" | "done" | "failed" | "stuck";
-  reason?: string;
-  createdAt: number;
-  finishedAt?: number;
-};
+import type { TaskInfo } from "../protocol";
 
 export type TaskSummary = {
   /** `launching` + `running`. */

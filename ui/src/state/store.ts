@@ -16,12 +16,12 @@ import type {
   QuotaWindow,
   ServerMsg,
   Source,
+  TaskInfo,
   TerminalInfo,
 } from "../protocol";
 import { type AgentsState, applyMsg, EMPTY_AGENTS } from "./agents";
 import { EMPTY_FILTER, type FilterKind, type OfficeFilter, toggleKind } from "./filter";
 import { dormantRooms } from "./rooms";
-import type { TaskInfo } from "./tasks";
 
 export type ViewState = {
   /** Oficina seleccionada: un agente o una conversación cerrada (`conv:<id>`). */
@@ -202,6 +202,10 @@ export function createKitiStore() {
       if (msg.type === "Mail") {
         const { type: _, ...mail } = msg;
         set({ mail });
+        return;
+      }
+      if (msg.type === "Tasks") {
+        set({ tasks: msg.tasks });
         return;
       }
       if (msg.type === "Memory") {

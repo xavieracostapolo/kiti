@@ -11,7 +11,6 @@ import type {
   UiMetrics,
 } from "../../protocol";
 import { PROTOCOL_VERSION } from "../../protocol";
-import type { TaskInfo } from "../../state/tasks";
 import type { ConversationApi, TerminalApi, Transport } from "../Transport";
 import { FakeConversations, fakeConversations } from "./FakeConversations";
 import { FakeTerminals } from "./FakeTerminals";
@@ -85,6 +84,9 @@ export class SimTransport implements Transport {
     if (this.opts.quota) for (const msg of fakeQuota(this.fleet.now)) onMsg(msg);
     for (const msg of fakeGit(this.fleet.snapshot())) onMsg(msg);
     onMsg(fakeMemory(this.fleet.snapshot(), this.fleet.now));
+    if (this.opts.tasks) {
+      onMsg({ type: "Tasks", tasks: fakeTasks(this.fleet.snapshot(), this.fleet.now) });
+    }
     if (this.opts.mail) {
       this.mail = fakeMail(this.fleet.snapshot(), this.fleet.now);
       onMsg({ type: "Mail", ...this.mail });
@@ -92,11 +94,6 @@ export class SimTransport implements Transport {
     if (!this.opts.freeze)
       this.cancel = (this.opts.schedule ?? intervalSchedule)(() => this.tick());
     return { protocolVersion: PROTOCOL_VERSION, appVersion: "0.1.0-sim", source: "sim" };
-  }
-
-  /** Tareas falsas, si `?tasks=1`. Provisional: pasará a un `ServerMsg::Tasks` (encargo B). */
-  tasks(): TaskInfo[] {
-    return this.opts.tasks ? fakeTasks(this.fleet.snapshot(), this.fleet.now) : [];
   }
 
   /** Reloj virtual del simulador en epoch ms (para "hace N s" en los paneles). */

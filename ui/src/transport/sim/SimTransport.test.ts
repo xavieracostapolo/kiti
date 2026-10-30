@@ -31,6 +31,23 @@ describe("SimTransport", () => {
     expect(t.killConfirmation).toBe("in-app");
   });
 
+  it("con tasks emite un mensaje Tasks y sin él no", async () => {
+    const withTasks: ServerMsg[] = [];
+    await new SimTransport({
+      count: 5,
+      seed: 1,
+      tasks: true,
+      schedule: manualTimer().schedule,
+    }).connect((m) => withTasks.push(m));
+    const tasks = withTasks.find((m) => m.type === "Tasks");
+    expect(tasks?.type === "Tasks" && tasks.tasks.length).toBeGreaterThan(0);
+    const without: ServerMsg[] = [];
+    await new SimTransport({ count: 5, seed: 1, schedule: manualTimer().schedule }).connect((m) =>
+      without.push(m),
+    );
+    expect(without.some((m) => m.type === "Tasks")).toBe(false);
+  });
+
   it("los Diff llevan seq monotónico sin huecos", async () => {
     const timer = manualTimer();
     const msgs: ServerMsg[] = [];

@@ -1,6 +1,7 @@
 import { useStore } from "zustand";
+import type { TaskInfo } from "../protocol";
 import type { KitiStore } from "../state/store";
-import { sortTasks, type TaskInfo, taskSummary } from "../state/tasks";
+import { sortTasks, taskSummary } from "../state/tasks";
 import { ago } from "./labels";
 import s from "./panels.module.css";
 

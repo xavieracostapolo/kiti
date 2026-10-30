@@ -5,7 +5,6 @@ import { parseParams } from "./dev/params";
 import { App } from "./panels/App";
 import "./styles.css";
 import { createKitiStore } from "./state/store";
-import type { TaskInfo } from "./state/tasks";
 import { decideTerminalRefresh } from "./state/terminalRefresh";
 import { createMetrics } from "./telemetry/metrics";
 import { startUiReport } from "./telemetry/report";
@@ -26,7 +25,6 @@ async function bootstrap() {
 
   let transport: Transport;
   let getNow: () => number;
-  let simTasks: (() => TaskInfo[]) | undefined;
   let simAdvancer: { advance(n: number): void; now?(): number } | undefined;
 
   if (isTauri) {
@@ -50,7 +48,6 @@ async function bootstrap() {
     transport = sim;
     getNow = () => sim.now();
     simAdvancer = sim;
-    simTasks = () => sim.tasks();
   }
 
   let world: WorldHandle | undefined;
@@ -68,7 +65,6 @@ async function bootstrap() {
       })
       .then((hello) => {
         store.getState().setSource(hello.source);
-        if (simTasks) store.getState().setTasks(simTasks());
         // Terminales de agentes lanzados antes de abrir esta ventana (ADR 0007).
         void transport.terminals?.list().then((list) => {
           store.getState().setTerminals(list);

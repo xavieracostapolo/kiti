@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import type { TaskInfo } from "../protocol";
 import { createKitiStore } from "../state/store";
-import type { TaskInfo } from "../state/tasks";
 import { TaskBoard, TaskChip } from "./TaskBoard";
 
 afterEach(cleanup);

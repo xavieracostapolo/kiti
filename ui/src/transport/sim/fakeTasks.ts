@@ -1,7 +1,5 @@
 // Tareas falsas de agentes efímeros para el modo sim (`?tasks=1`, ADR 0019): una de cada estado.
-// Provisional: el core las mandará en un `ServerMsg::Tasks`.
-import type { AgentState, Provider } from "../../protocol";
-import type { TaskInfo } from "../../state/tasks";
+import type { AgentState, Provider, TaskInfo } from "../../protocol";
 
 const PREFIX: Record<Provider, string> = {
   claude: "claude",
