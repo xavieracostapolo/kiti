@@ -96,26 +96,17 @@ impl Tmux {
 
     /// Sesiones de Kiti vivas. Sin servidor (nada lanzado aún), lista vacía.
     pub fn list(&self) -> Vec<TmuxSession> {
+        // Separador ASCII imprimible y ruta al final: tmux 3.8 sustituye `\t` y otros caracteres
+        // de control en `-F` por `_`.
         let Ok(out) = self.checked(&[
             "list-panes",
             "-a",
             "-F",
-            "#{session_name}\t#{pane_pid}\t#{session_path}\t#{@kiti_provider}",
+            "#{session_name}|#{pane_pid}|#{@kiti_provider}|#{session_path}",
         ]) else {
             return Vec::new();
         };
-        out.lines()
-            .filter_map(|line| {
-                let mut f = line.split('\t');
-                let (name, pid, cwd, provider) = (f.next()?, f.next()?, f.next()?, f.next());
-                name.starts_with(PREFIX).then(|| TmuxSession {
-                    name: name.to_owned(),
-                    pid: pid.parse().unwrap_or(0),
-                    cwd: cwd.to_owned(),
-                    provider: provider.filter(|p| !p.is_empty()).map(str::to_owned),
-                })
-            })
-            .collect()
+        parse_panes(&out)
     }
 
     fn next_name(&self) -> String {
@@ -238,5 +229,51 @@ impl Tmux {
 
     pub fn kill_server(&self) {
         let _ = self.run(&["kill-server"]);
+    }
+}
+
+fn parse_panes(out: &str) -> Vec<TmuxSession> {
+    out.lines()
+        .filter_map(|line| {
+            let mut f = line.splitn(4, '|');
+            let (name, pid, provider, cwd) = (f.next()?, f.next()?, f.next()?, f.next()?);
+            name.starts_with(PREFIX).then(|| TmuxSession {
+                name: name.to_owned(),
+                pid: pid.parse().unwrap_or(0),
+                cwd: cwd.to_owned(),
+                provider: Some(provider).filter(|p| !p.is_empty()).map(str::to_owned),
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lee_las_sesiones_de_kiti_con_su_proveedor_y_carpeta() {
+        let out = "\
+kiti-1|15268|claude|/Users/dev/mi_proyecto
+kiti-2|42305||/Users/dev/carpeta con espacios
+ajena|999|claude|/tmp
+incompleta|123";
+        assert_eq!(
+            parse_panes(out),
+            vec![
+                TmuxSession {
+                    name: "kiti-1".into(),
+                    pid: 15268,
+                    cwd: "/Users/dev/mi_proyecto".into(),
+                    provider: Some("claude".into()),
+                },
+                TmuxSession {
+                    name: "kiti-2".into(),
+                    pid: 42305,
+                    cwd: "/Users/dev/carpeta con espacios".into(),
+                    provider: None,
+                },
+            ]
+        );
     }
 }

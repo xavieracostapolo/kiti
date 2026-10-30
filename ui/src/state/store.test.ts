@@ -145,4 +145,13 @@ describe("store", () => {
     store.getState().setLayoutMode("vertical");
     expect(store.getState().layoutMode).toBe("vertical");
   });
+
+  it("acota el ancho de la terminal entre el mínimo y el máximo", () => {
+    const store = createKitiStore();
+    expect(store.getState().terminalFraction).toBe(0.46);
+    store.getState().setTerminalFraction(0.9);
+    expect(store.getState().terminalFraction).toBe(0.72);
+    store.getState().setTerminalFraction(0.1);
+    expect(store.getState().terminalFraction).toBe(0.32);
+  });
 });

@@ -21,6 +21,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 - The layout buttons in the top bar are icons only (⊞ ⊟ ☷), with a tooltip, so the bar fits on narrower windows.
 - Quota updates in real time: Antigravity's is read again as soon as one of its agents finishes a turn (at most every 30 s, and every 5 min without turns), and a window whose reset time has passed shows 100 % without waiting for a new reading.
+- Offices have a 2.5D diorama look, with depth and shadows; the terminal panel can be resized; and the status counters in the top bar shrink to just the number when they are zero.
 
 ### Fixed
 
@@ -28,6 +29,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 - The office board's box fits its text instead of a fixed width.
 - The office board read the wrong repository when Kiti ran inside a git hook that exports `GIT_DIR`.
 - A tmux session started outside Kiti (`tmux -L kiti new-session`) gets its terminal in the office without reopening the window.
+- Kiti lists its tmux sessions correctly with tmux 3.8, and an embedded terminal resizes to its panel after attaching.
 
 ## [0.2.0] - 2026-10-27
 

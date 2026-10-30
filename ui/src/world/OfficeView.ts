@@ -105,7 +105,7 @@ export class OfficeView {
     this.background = new Sprite(art.templates.claude[0]);
     const a = anchors(size);
     this.root.cullable = true;
-    this.root.cullArea = new Rectangle(-4, -4, size.w + 8, size.h + 8);
+    this.root.cullArea = new Rectangle(-8, -8, size.w + 20, size.h + 24);
 
     this.label = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 9 } });
     this.label.position.set(a.label.x, a.label.y);
@@ -248,9 +248,11 @@ export class OfficeView {
     }
     const height = barY + BOARD.bar + BOARD.pad;
     this.boardBg
+      .roundRect(2, 3, boxW, height, 3)
+      .fill({ color: 0x000000, alpha: 0.45 })
       .roundRect(0, 0, boxW, height, 3)
-      .fill({ color: PAL.housing, alpha: 0.88 })
-      .stroke({ color: PAL.zoneBorder, width: 1, alpha: 0.7 });
+      .fill({ color: PAL.housing, alpha: 0.9 })
+      .stroke({ color: PAL.zoneBorder, width: 1, alpha: 0.75 });
   }
 
   /** Avanza un paso de animación del personaje y el monitor al recibir actividad real/simulada. */
@@ -417,9 +419,11 @@ export class OfficeView {
     this.cardText.position.set(CARD.pad + 4, top + 4);
     const strokeColor = this.agent ? STATUS_COLOR[this.agent.status.kind] : PAL.dormant;
     this.cardBg
+      .roundRect(CARD.pad + 2, top + 3, this.size.w - 2 * CARD.pad, height, 4)
+      .fill({ color: 0x000000, alpha: 0.45 })
       .roundRect(CARD.pad, top, this.size.w - 2 * CARD.pad, height, 4)
-      .fill({ color: PAL.housing, alpha: 0.88 })
-      .stroke({ color: strokeColor, width: 1, alpha: 0.65 });
+      .fill({ color: PAL.housing, alpha: 0.9 })
+      .stroke({ color: strokeColor, width: 1.2, alpha: 0.75 });
   }
 
   private renderLabel(): void {
@@ -466,11 +470,21 @@ export class OfficeView {
 
   private drawDormant(c: ConversationInfo): void {
     const { w, h } = this.size;
+    // Maqueta 2.5D apagada: sombra sobre la zona y frente extruido oscuro.
     this.border
       .clear()
+      .roundRect(2, 5, w + 8, h + 11, 4)
+      .fill({ color: 0x000000, alpha: 0.42 })
+      .rect(-3, h + 2, w + 6, 6)
+      .fill(0x272c3a)
       .rect(-3, -3, w + 6, h + 6)
       .stroke({ color: PAL.dormant, width: 2 });
-    this.light.clear().roundRect(-1, 0, 12, 26, 2).fill(PAL.housing);
+    this.light
+      .clear()
+      .roundRect(1, 2, 12, 26, 2)
+      .fill({ color: 0x000000, alpha: 0.35 })
+      .roundRect(-1, 0, 12, 26, 2)
+      .fill(PAL.housing);
     for (let i = 0; i < 3; i++) this.light.circle(5, 5 + i * 8, 3).fill(PAL.lampOff);
     this.screen.clear().rect(0, 0, this.size.tile, 7).fill(PAL.monitor);
     // Luz apagada: la sala en penumbra, sin nadie en la silla.
@@ -478,6 +492,8 @@ export class OfficeView {
     const a = anchors(this.size);
     this.badge
       .clear()
+      .roundRect(a.badge.x + 1, a.badge.y + 2, 13, 12, 2)
+      .fill({ color: 0x000000, alpha: 0.4 })
       .roundRect(a.badge.x, a.badge.y, 13, 12, 2)
       .fill(PROVIDER_COLOR[c.provider])
       .stroke({ color: PAL.housing, width: 1 });
@@ -494,10 +510,17 @@ export class OfficeView {
 
   private drawMonitorScreen(kind: StatusKind, phase: number): void {
     const color = STATUS_COLOR[kind];
-    this.screen
-      .clear()
-      .rect(0, 0, this.size.tile, 7)
-      .fill(kind === "dead" ? PAL.monitor : color);
+    const t = this.size.tile;
+    this.screen.clear();
+    if (kind !== "dead" && kind !== "idle") {
+      // Cono de luz 2.5D que el monitor proyecta sobre el escritorio y la persona.
+      this.screen
+        .poly([-10, 7, t + 10, 7, t + 20, 32, -20, 32])
+        .fill({ color, alpha: 0.13 })
+        .ellipse(t / 2, 4, t * 0.95, 8)
+        .fill({ color, alpha: 0.22 });
+    }
+    this.screen.rect(0, 0, t, 7).fill(kind === "dead" ? PAL.monitor : color);
     if (kind === "working") {
       // Líneas de código simuladas que avanzan con cada evento del agente.
       const w1 = phase === 0 ? 10 : phase === 1 ? 6 : 12;
@@ -513,19 +536,48 @@ export class OfficeView {
   private drawStatus(kind: StatusKind): void {
     const { w, h } = this.size;
     const color = STATUS_COLOR[kind];
+    // Versión oscurecida del color del estado para el frente extruido 2.5D de la sala.
+    const r = Math.floor(((color >> 16) & 0xff) * 0.52);
+    const g = Math.floor(((color >> 8) & 0xff) * 0.52);
+    const b = Math.floor((color & 0xff) * 0.52);
+    const wallFront = (r << 16) | (g << 8) | b;
 
     this.border
       .clear()
+      // Sombra proyectada de la oficina sobre el suelo de la zona.
+      .roundRect(3, 6, w + 8, h + 12, 5)
+      .fill({ color: 0x000000, alpha: 0.45 });
+    if (kind === "working" || kind === "waiting" || kind === "error") {
+      // Resplandor ambiental exterior en oficinas que trabajan o piden atención.
+      this.border.roundRect(-6, -6, w + 12, h + 17, 5).stroke({ color, width: 2, alpha: 0.22 });
+    }
+    this.border
+      // Frente inferior extruido (efecto bloque/diorama 2.5D).
+      .rect(-3, h + 2, w + 6, 7)
+      .fill(wallFront)
+      .rect(-3, h + 8, w + 6, 1.5)
+      .fill({ color: 0x000000, alpha: 0.45 })
+      // Marco principal y bisel superior iluminado.
       .rect(-3, -3, w + 6, h + 6)
-      .stroke({ color, width: 3 });
+      .stroke({ color, width: 3 })
+      .rect(-2, -3, w + 4, 1)
+      .fill({ color: 0xffffff, alpha: 0.28 });
 
-    // Semáforo: carcasa con tres lámparas (rojo, ámbar, verde); idle las deja todas apagadas.
+    // Semáforo con relieve 2.5D: sombra sobre la pared y doble halo en la lámpara activa.
     const lit = LAMP_FOR[kind];
     const lamps = [STATUS_COLOR.error, STATUS_COLOR.waiting, STATUS_COLOR.working];
-    this.light.clear().roundRect(-1, 0, 12, 26, 2).fill(PAL.housing);
+    this.light
+      .clear()
+      .roundRect(1, 2, 12, 26, 2)
+      .fill({ color: 0x000000, alpha: 0.4 })
+      .roundRect(-1, 0, 12, 26, 2)
+      .fill(PAL.housing);
     lamps.forEach((c, i) => {
       const on = lit === i;
-      if (on) this.light.circle(5, 5 + i * 8, 5).fill({ color: c, alpha: 0.35 });
+      if (on) {
+        this.light.circle(5, 5 + i * 8, 7.5).fill({ color: c, alpha: 0.18 });
+        this.light.circle(5, 5 + i * 8, 5).fill({ color: c, alpha: 0.38 });
+      }
       this.light.circle(5, 5 + i * 8, 3).fill(on ? c : PAL.lampOff);
     });
 

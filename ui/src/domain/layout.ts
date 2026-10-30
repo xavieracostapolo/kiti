@@ -20,8 +20,10 @@ export function union(a: Rect, b: Rect): Rect {
   return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
 }
 
-/** Ancho del panel de terminal como fracción del viewport (debe coincidir con `.terminalPanel`). */
+/** Ancho del panel de terminal como fracción del viewport (por defecto y límites al redimensionar). */
 export const TERMINAL_FRACTION = 0.46;
+export const MIN_TERMINAL_FRACTION = 0.32;
+export const MAX_TERMINAL_FRACTION = 0.72;
 
 export const DEFAULT_LAYOUT: LayoutOpts = { roomW: 12, roomH: 9, gap: 2, tile: 16 };
 

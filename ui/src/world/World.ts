@@ -28,13 +28,7 @@ import {
   type Viewport,
   zoomAt,
 } from "../domain/camera";
-import {
-  DEFAULT_LAYOUT,
-  type LayoutOpts,
-  type Rect,
-  TERMINAL_FRACTION,
-  union,
-} from "../domain/layout";
+import { DEFAULT_LAYOUT, type LayoutOpts, type Rect, union } from "../domain/layout";
 import { LOD_SCALE, type Lod, lodFor } from "../domain/lod";
 import { fontFor } from "../domain/text";
 import { DEFAULT_ZONES, layoutZones, type Zone, type ZoneSlots } from "../domain/zones";
@@ -265,9 +259,15 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           scheduler?.request();
         }
         takePendingLaunch();
-        // Al abrir o cerrar la terminal cambia la zona libre: se encuadran TODAS las oficinas en
-        // ella, para seguir viendo los semáforos y poder cambiar de terminal con un clic.
-        if (s.openTerminalId !== prev.openTerminalId) setCamera(fitAllCamera(), true);
+        // Al abrir, cerrar o redimensionar la terminal cambia la zona libre: se recolocan las zonas
+        // para la proporción libre y se encuadran todas las oficinas a la izquierda del panel.
+        if (
+          s.openTerminalId !== prev.openTerminalId ||
+          s.terminalFraction !== prev.terminalFraction
+        ) {
+          relayout();
+          setCamera(fitAllCamera(), s.openTerminalId !== prev.openTerminalId);
+        }
         if (s.terminals !== prev.terminals || s.agents.agents !== prev.agents.agents) {
           for (const [id, view] of views) {
             const agent = s.agents.agents.get(id);
@@ -304,7 +304,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           scheduler?.request();
         }
         if (s.layoutMode !== prev.layoutMode) {
-          sync(EMPTY, NO_ROOMS);
+          relayout();
           setCamera(fitAllCamera(), true);
         }
         if (s.hover?.id !== prev.hover?.id) {
@@ -384,7 +384,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   /** Aplica a la escena lo que cambió en agentes y conversaciones cerradas, y recoloca todo. */
   function sync(prev: ReadonlyMap<AgentId, AgentState>, prevDormant: ReadonlyMap<string, unknown>) {
     if (!art) return;
-    const { agents: state, dormant, terminals, layoutMode } = store.getState();
+    const { agents: state, dormant, terminals } = store.getState();
     const next = state.agents;
     const ops = planScene(prev, next);
     if (ops.length === 0 && dormant === prevDormant) return;
@@ -403,10 +403,17 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       for (const id of prevDormant.keys()) if (!dormant.has(id)) dropView(id);
       for (const [id, c] of dormant) (views.get(id) ?? newView(id)).showConversation(c);
     }
-    const l = layoutZones(zoneSlots, roomEntries(next, dormant), layout, {
+    relayout();
+  }
+
+  /** Recoloca las zonas según el modo de distribución y el espacio libre actual. */
+  function relayout() {
+    if (!art) return;
+    const { agents: state, dormant, layoutMode } = store.getState();
+    const l = layoutZones(zoneSlots, roomEntries(state.agents, dormant), layout, {
       ...DEFAULT_ZONES,
       mode: layoutMode,
-      aspect: vp.w / Math.max(1, vp.h - TOP_INSET),
+      aspect: Math.max(1, vp.w - insets().right) / Math.max(1, vp.h - TOP_INSET),
     });
     zoneSlots = l.slots;
     rooms = l.rooms;
@@ -436,10 +443,11 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       const a = rooms.get(tr.from);
       const b = rooms.get(tr.to);
       if (!a || !b) continue;
+      // En el tercio superior (a la altura de la etiqueta del alias) para no tapar el cartel de título.
       const ax = a.x + a.w / 2;
-      const ay = a.y + a.h * 0.6;
+      const ay = a.y + a.h * 0.25;
       const bx = b.x + b.w / 2;
-      const by = b.y + b.h * 0.6;
+      const by = b.y + b.h * 0.25;
       const len = Math.hypot(bx - ax, by - ay);
       if (len < 1) continue;
       const g = new Graphics();
@@ -507,12 +515,21 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     const t = layout.tile;
     for (const z of zones) {
       const g = new Graphics()
+        // Sombra proyectada y canto frontal inferior para que la zona se vea como una plataforma 2.5D.
+        .roundRect(z.x + 5, z.y + 8, z.w, z.h + 4, 4)
+        .fill({ color: 0x000000, alpha: 0.36 })
+        .rect(z.x, z.y + z.h, z.w, 6)
+        .fill(0x1e2331)
         .rect(z.x, z.y, z.w, z.h)
         .fill(PAL.zoneFloor)
         .rect(z.x, z.y, z.w, 2 * t)
         .fill(PAL.zoneHeader)
+        .rect(z.x, z.y + 2 * t, z.w, 3)
+        .fill({ color: 0x000000, alpha: 0.22 })
         .rect(z.x, z.y, z.w, z.h)
-        .stroke({ color: PAL.zoneBorder, width: 2 });
+        .stroke({ color: PAL.zoneBorder, width: 2 })
+        .rect(z.x + 1, z.y + 1, z.w - 2, 1)
+        .fill({ color: 0xffffff, alpha: 0.12 });
       const name = new BitmapText({
         text: `${z.name}  ·  ${z.count}`,
         style: { fontFamily: FONT, fontSize: zoneFont },
@@ -597,7 +614,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
 
   /** Pantalla ocupada por la barra superior y, si está abierta, la terminal. */
   function insets() {
-    const right = store.getState().openTerminalId ? Math.round(vp.w * TERMINAL_FRACTION) + 12 : 0;
+    const st = store.getState();
+    const right = st.openTerminalId ? Math.round(vp.w * st.terminalFraction) + 12 : 0;
     return { top: TOP_INSET, right };
   }
 
