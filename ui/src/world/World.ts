@@ -45,7 +45,7 @@ import {
 } from "../state/mail";
 import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
-import { officeTaskBadges, taskLinks } from "../state/taskLinks";
+import { clipLink, officeTaskBadges, taskLinks } from "../state/taskLinks";
 import type { Metrics } from "../telemetry/metrics";
 import { attachCameraInput } from "./camera/CameraInput";
 import {
@@ -227,7 +227,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       height: 1,
     });
 
-    worldRoot.addChild(corridor, zonesLayer, officesLayer, taskLayer, mailLayer);
+    // Las líneas van bajo las oficinas: nunca tapan su contenido.
+    worldRoot.addChild(corridor, zonesLayer, taskLayer, officesLayer, mailLayer);
     app.stage.addChild(worldRoot);
 
     let firstFrame: (() => void) | undefined;
@@ -548,8 +549,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   }
 
   /**
-   * Una línea continua fina del orquestador a cada agente efímero vivo (ADR 0019), ámbar si está
-   * atascado, y la etiqueta de cada oficina. Solo se redibuja al cambiar tareas, alias o layout.
+   * Una línea con flecha, de borde a borde, del orquestador a cada agente efímero vivo (ADR 0019),
+   * violeta si está atascado, y la etiqueta de cada oficina. Solo se redibuja al cambiar tareas, alias o layout.
    */
   function applyTaskLinks() {
     const { tasks, mail } = store.getState();
@@ -558,15 +559,30 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     for (const [id, view] of views) view.setTaskBadge(badges.get(id));
     for (const child of taskLayer.removeChildren()) child.destroy({ children: true });
     taskLinkCount = 0;
-    const width = Math.max(1.5, layout.tile * 0.15);
+    // Más gruesas en la vista lejana para que se vean; finas de cerca.
+    const width = Math.max(1.5, layout.tile * (lod === "far" ? 0.3 : lod === "mid" ? 0.2 : 0.12));
+    const head = width * 3.5;
     const g = new Graphics();
     for (const l of links) {
       const a = rooms.get(l.from);
       const b = rooms.get(l.to);
       if (!a || !b) continue;
-      g.moveTo(a.x + a.w / 2, a.y + a.h / 2)
-        .lineTo(b.x + b.w / 2, b.y + b.h / 2)
-        .stroke({ color: l.stuck ? PAL.taskStuck : PAL.taskLine, width, alpha: 0.95 });
+      const seg = clipLink(a, b);
+      if (!seg) continue;
+      const color = l.stuck ? PAL.taskStuck : PAL.taskLine;
+      // La línea acaba en la base de la flecha; la punta toca el borde del subagente.
+      const bx = seg.x2 - Math.cos(seg.angle) * head;
+      const by = seg.y2 - Math.sin(seg.angle) * head;
+      g.moveTo(seg.x1, seg.y1).lineTo(bx, by).stroke({ color, width, alpha: 0.95 });
+      const wing = Math.PI / 2;
+      g.poly([
+        seg.x2,
+        seg.y2,
+        bx + Math.cos(seg.angle + wing) * head * 0.45,
+        by + Math.sin(seg.angle + wing) * head * 0.45,
+        bx + Math.cos(seg.angle - wing) * head * 0.45,
+        by + Math.sin(seg.angle - wing) * head * 0.45,
+      ]).fill({ color, alpha: 0.95 });
       taskLinkCount++;
     }
     if (taskLinkCount > 0) taskLayer.addChild(g);
@@ -647,6 +663,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       lod = nextLod;
       for (const v of views.values()) v.setLod(lod);
       store.getState().setLod(lod);
+      applyTaskLinks();
     }
     if (request) scheduler?.request();
   }

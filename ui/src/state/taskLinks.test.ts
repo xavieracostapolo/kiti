@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { MailState, TaskInfo } from "../protocol";
-import { officeTaskBadges, taskLinks } from "./taskLinks";
+import { clipLink, officeTaskBadges, taskLinks } from "./taskLinks";
 
 const MAIL = {
   mode: "auto",
@@ -84,5 +84,38 @@ describe("officeTaskBadges", () => {
       by: "claude-1",
       role: "implementar",
     });
+  });
+});
+
+describe("clipLink", () => {
+  const A = { x: 0, y: 0, w: 10, h: 10 };
+  const B = { x: 30, y: 0, w: 10, h: 10 };
+
+  it("sale por el borde del orquestador y llega al borde del subagente", () => {
+    const s = clipLink(A, B);
+    expect(s).toBeDefined();
+    expect(s?.x1).toBeCloseTo(10);
+    expect(s?.y1).toBeCloseTo(5);
+    expect(s?.x2).toBeCloseTo(30);
+    expect(s?.y2).toBeCloseTo(5);
+  });
+
+  it("la flecha apunta del orquestador al subagente", () => {
+    expect(clipLink(A, B)?.angle).toBeCloseTo(0);
+    expect(clipLink(B, A)?.angle).toBeCloseTo(Math.PI);
+    expect(clipLink(A, { x: 0, y: 30, w: 10, h: 10 })?.angle).toBeCloseTo(Math.PI / 2);
+  });
+
+  it("en diagonal los extremos quedan sobre los bordes", () => {
+    const s = clipLink(A, { x: 30, y: 30, w: 10, h: 10 });
+    expect(s?.x1).toBeCloseTo(10);
+    expect(s?.y1).toBeCloseTo(10);
+    expect(s?.x2).toBeCloseTo(30);
+    expect(s?.y2).toBeCloseTo(30);
+  });
+
+  it("no dibuja si las oficinas se tocan o se solapan", () => {
+    expect(clipLink(A, { x: 10, y: 0, w: 10, h: 10 })).toBeUndefined();
+    expect(clipLink(A, { x: 5, y: 5, w: 10, h: 10 })).toBeUndefined();
   });
 });

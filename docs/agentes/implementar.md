@@ -21,7 +21,8 @@ Escribes el código que pide tu encargo, con sus tests, en uno o varios commits 
    - diffs coalescidos a ~10 Hz como máximo.
 4. **Observabilidad:** si el encargo trae ficha, emite las señales con el nombre que dice (`info!(event = "...")`).
 5. **Cambio visible para el usuario:** añade una línea en `## [Unreleased]` de CHANGELOG.md (en inglés: Added, Changed, Fixed o Removed).
-6. **No toques** los ADR ni AGENTS.md: los actualiza el orquestador o un agente de [documentar](documentar.md).
+6. **Capturas para el usuario:** guárdalas en `~/.kiti/shots/<slug>/`, nunca dentro del worktree: Kiti lo borra al cerrar la tarea (y con él lo no commiteado). Pon las rutas absolutas en el `summary` de `kiti_done`.
+7. **No toques** los ADR ni AGENTS.md: los actualiza el orquestador o un agente de [documentar](documentar.md).
 
 ## Antes de cada commit
 
