@@ -18,7 +18,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 - The agent's side panel also shows the project's git status, and for Claude the model, context used and session cost.
 - An empty map shows a «Sin agentes en ejecución» notice, with buttons to launch Claude Code, Codex CLI or Antigravity CLI when Kiti can open terminals.
 - Agents can message each other through Kiti, whatever their CLI: `mise run mcp:install` adds the `kiti_agents`, `kiti_send` and `kiti_inbox` tools to Claude Code, Antigravity CLI and Codex CLI. Kiti types each message into the recipient's terminal when it is free. A ✉ panel lists the threads, and the map shows aliases and envelopes between offices. Delivery is automatic by default, a manual mode asks for approval, and limits on messages per hour and per thread stop loops.
-- Project and session memory (ADR 0018): Kiti automatically tracks each session's initial prompt, modified files and task checklist via hooks, and exposes `kiti_remember` and two-step `kiti_recall` (lightweight pulse/title index + on-demand SQLite `FTS5` `bm25` search) in `kiti-mcp` so agents survive context compaction and share project decisions, gotchas and handoffs without bloating the context window.
+- Project and session memory (ADR 0018): Kiti automatically tracks each session's initial prompt, modified files and task checklist via hooks, and exposes `kiti_remember` and two-step `kiti_recall` (a light index of the project, and an in-memory search that ignores accents and matches singular and plural forms; memories are stored in SQLite and shared by all git worktrees of a repository) in `kiti-mcp` so agents survive context compaction and share project decisions, gotchas and handoffs without bloating the context window.
 
 ### Changed
 
@@ -31,6 +31,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 ### Fixed
 
+- The messages and tasks panels no longer overlap: opening one closes the other. The task board groups tasks by the agent that launched them.
 - Messages waiting for an agent and open threads survive a Kiti restart.
 - Agent aliases for messages stay the same across Kiti restarts, and an agent relaunched in the same Kiti tmux session keeps its alias.
 - The office board's box fits its text instead of a fixed width.

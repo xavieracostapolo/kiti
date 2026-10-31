@@ -51,6 +51,7 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
   const terminal = useStore(store, (st) => (agent ? st.terminals.get(agent.pid) : undefined));
   // Con la terminal abierta, su cabecera ya dice qué agente es: el panel no tapa oficinas.
   const terminalOpen = useStore(store, (st) => st.openTerminalId !== undefined);
+  const sideOpen = useStore(store, (st) => st.sidePanel !== null);
   if (!agent || terminalOpen) return null;
   const projectMemories = memories.filter((m) => m.project === agent.project).slice(0, 3);
   const tasks = agent.tasks ?? [];
@@ -71,7 +72,11 @@ function Details({ store, world, now, terminalsAvailable = false, onFocusExterna
       ].join(" · ")
     : undefined;
   return (
-    <aside className={s.agentPanel} aria-label="Agente seleccionado">
+    <aside
+      className={`${s.agentPanel} ${sideOpen ? s.agentPanelShifted : ""}`}
+      data-shifted={sideOpen ? "true" : undefined}
+      aria-label="Agente seleccionado"
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <h2 className={s.agentTitle} style={{ margin: 0 }}>
           <span className={s.dot} style={{ background: hex(STATUS_COLOR[agent.status.kind]) }} />
