@@ -398,10 +398,13 @@
           <div class="card"><div class="icon" style="background: var(--codex)">↗</div><h3>Jump to its terminal</h3><p>For an agent started elsewhere, one click shows its exact tab in Ghostty or Terminal.app.</p></div>
           <div class="card"><div class="icon" style="background: var(--claude)">↺</div><h3>Resume conversations</h3><p>Closed Claude conversations from the last 7 days stay as dark offices. One click resumes them.</p></div>
           <div class="card"><div class="icon" style="background: var(--error)">!</div><h3>Notifications</h3><p>macOS tells you when an agent asks for permission, finishes a long turn, fails or crashes. Click it to land on that office.</p></div>
-          <div class="card"><div class="icon" style="background: var(--waiting)">%</div><h3>Usage quota</h3><p>How much of your Claude plan (5 h and weekly) and Antigravity quota is left, right in the top bar, with a warning at 20 %.</p></div>
+          <div class="card"><div class="icon" style="background: var(--waiting)">%</div><h3>Usage quota</h3><p>How much of your Claude plan (5 h and weekly) and Antigravity quota is left, live in the top bar, with a warning at 20 %.</p></div>
           <div class="card"><div class="icon" style="background: var(--working)">▥</div><h3>Office board</h3><p>Zoom all the way in for the model, context and session cost, the project's git status and the last hour of activity. The side panel shows them at any zoom.</p></div>
+          <div class="card"><div class="icon" style="background: var(--gemini)">✉</div><h3>Agents talk to each other</h3><p>Agents of any CLI message each other through Kiti. A ✉ panel lists the threads and envelopes travel between offices. Automatic by default, or manual with your approval, with limits that stop loops.</p></div>
+          <div class="card"><div class="icon" style="background: var(--antigravity)">☰</div><h3>Project memory</h3><p>Kiti tracks each session's goal, files and tasks, and agents save decisions and gotchas. Context survives compaction and is shared across worktrees.</p></div>
+          <div class="card"><div class="icon" style="background: var(--codex)">⚙</div><h3>Ephemeral agents</h3><p>An agent can start another for one task, in its own worktree and branch. When it opens its pull request, Kiti closes it and cleans up. A task board shows who does what.</p></div>
           <div class="card"><div class="icon" style="background: var(--dead); color: var(--text)">×</div><h3>Close safely</h3><p>Ends an agent after a confirmation, and checks pid, start time, user and command first, so it never hits a reused PID.</p></div>
-          <div class="card"><div class="icon" style="background: var(--floor-a)">▤</div><h3>Pixel art by Kenney</h3><p>CC0 tiles for rooms, furniture and people. Each agent keeps its person; the rug shows its provider.</p></div>
+          <div class="card"><div class="icon" style="background: var(--floor-a)">▤</div><h3>Pixel art by Kenney</h3><p>CC0 tiles for rooms, furniture and people, as a 2.5D diorama. Each agent keeps its person; the rug shows its provider.</p></div>
         </div>
       </div>
     </section>
@@ -459,6 +462,7 @@
               <li>Codex, Antigravity, Gemini: <code>kiti-hook</code> forwarder</li>
               <li>Processes via <code>sysinfo</code></li>
               <li>Session files and transcripts</li>
+              <li>MCP tools from <code>kiti-mcp</code></li>
             </ul>
           </div>
           <div class="arrow" aria-hidden="true">→</div>
@@ -524,7 +528,7 @@ mise run app:dev
 <span class="c"># or build Kiti.app</span>
 mise run app:bundle</pre>
         </div>
-        <p class="note" style="text-align: left">Claude Code hooks are added on first start and removed with <code>mise run hooks:uninstall</code>. Codex, Antigravity and Gemini are opt-in, from a clone: <code>mise run hooks:install-codex</code>, <code>hooks:install-antigravity</code> or <code>hooks:install-gemini</code>. Full guide in the <a href="https://github.com/xavieracostapolo/kiti#readme">README</a>.</p>
+        <p class="note" style="text-align: left">Claude Code hooks are added on first start and removed with <code>mise run hooks:uninstall</code>. Codex, Antigravity and Gemini are opt-in, from a clone: <code>mise run hooks:install-codex</code>, <code>hooks:install-antigravity</code> or <code>hooks:install-gemini</code>. To let agents message each other and share memory, run <code>mise run mcp:install</code>: it adds seven tools (<code>kiti_agents</code>, <code>kiti_send</code>, <code>kiti_inbox</code>, <code>kiti_remember</code>, <code>kiti_recall</code>, <code>kiti_spawn</code>, <code>kiti_done</code>) to Claude Code, Antigravity CLI and Codex CLI. Full guide in the <a href="https://github.com/xavieracostapolo/kiti#readme">README</a>.</p>
       </div>
     </section>
   </main>
