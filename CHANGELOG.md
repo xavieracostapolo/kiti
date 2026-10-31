@@ -30,6 +30,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 ### Fixed
 
+- The messages and tasks panels no longer overlap: opening one closes the other. The task board groups tasks by the agent that launched them.
 - Messages waiting for an agent and open threads survive a Kiti restart.
 - Agent aliases for messages stay the same across Kiti restarts, and an agent relaunched in the same Kiti tmux session keeps its alias.
 - The office board's box fits its text instead of a fixed width.

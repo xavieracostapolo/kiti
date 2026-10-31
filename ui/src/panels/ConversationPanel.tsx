@@ -28,6 +28,7 @@ function Details({ store, world, now, onResume, onArchive }: Props) {
   const selected = useStore(store, (st) => st.view.selectedId);
   const conv = useStore(store, (st) => (selected ? st.dormant.get(selected) : undefined));
   const terminalOpen = useStore(store, (st) => st.openTerminalId !== undefined);
+  const sideOpen = useStore(store, (st) => st.sidePanel !== null);
   const [busy, setBusy] = useState(false);
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [error, setError] = useState<string | undefined>();
@@ -48,7 +49,11 @@ function Details({ store, world, now, onResume, onArchive }: Props) {
   const archive = () => onArchive && run(onArchive, "No se pudo archivar la conversación");
 
   return (
-    <aside className={s.agentPanel} aria-label="Conversación cerrada">
+    <aside
+      className={`${s.agentPanel} ${sideOpen ? s.agentPanelShifted : ""}`}
+      data-shifted={sideOpen ? "true" : undefined}
+      aria-label="Conversación cerrada"
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <h2 className={s.agentTitle} style={{ margin: 0 }}>
           <span className={s.dot} style={{ background: "#4a5266" }} />

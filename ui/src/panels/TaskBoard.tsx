@@ -1,7 +1,7 @@
 import { useStore } from "zustand";
 import type { TaskInfo } from "../protocol";
 import type { KitiStore } from "../state/store";
-import { sortTasks, taskSummary } from "../state/tasks";
+import { groupTasks, taskSummary } from "../state/tasks";
 import { ago } from "./labels";
 import s from "./panels.module.css";
 
@@ -16,7 +16,7 @@ const STATE_LABEL: Record<TaskInfo["state"], string> = {
 /** Chip de la barra superior: abre el tablero; ámbar si alguna tarea está atascada o falló. */
 export function TaskChip({ store }: { store: KitiStore }) {
   const tasks = useStore(store, (st) => st.tasks);
-  const open = useStore(store, (st) => st.tasksOpen);
+  const open = useStore(store, (st) => st.sidePanel === "tasks");
   if (tasks.length === 0) return null;
   // El resumen solo mira los estados abiertos; la hora no cuenta aquí.
   const { active, attention } = taskSummary(tasks, 0);
@@ -30,7 +30,11 @@ export function TaskChip({ store }: { store: KitiStore }) {
       aria-label={`Tablero de tareas: ${label}${attention > 0 ? ", con atención" : ""}`}
       aria-pressed={open}
       title="Tareas de los agentes efímeros"
-      onClick={() => store.getState().setTasksOpen(!open)}
+      onClick={() => {
+        const st = store.getState();
+        if (open) st.closeSidePanel();
+        else st.openSidePanel("tasks");
+      }}
     >
       ⚙ {label}
     </button>
@@ -40,7 +44,7 @@ export function TaskChip({ store }: { store: KitiStore }) {
 /** Tablero de las tareas de los agentes efímeros (ADR 0019). */
 export function TaskBoard({ store, now }: { store: KitiStore; now: () => number }) {
   const tasks = useStore(store, (st) => st.tasks);
-  const open = useStore(store, (st) => st.tasksOpen);
+  const open = useStore(store, (st) => st.sidePanel === "tasks");
   if (!open) return null;
   const t = now();
   const { active, attention, doneLast24h } = taskSummary(tasks, t);
@@ -52,16 +56,25 @@ export function TaskBoard({ store, now }: { store: KitiStore; now: () => number 
           type="button"
           className={s.closeBtn}
           aria-label="Cerrar tareas"
-          onClick={() => store.getState().setTasksOpen(false)}
+          onClick={() => store.getState().closeSidePanel()}
         >
           ✕
         </button>
       </div>
-      <ul className={s.taskList} aria-label="Tareas">
-        {sortTasks(tasks).map((task) => (
-          <TaskRow key={task.id} task={task} now={t} />
+      <div className={s.taskGroups}>
+        {groupTasks(tasks).map((g) => (
+          <section key={g.orchestrator} aria-label={`Lanzadas por ${g.orchestrator}`}>
+            <h3 className={s.taskGroupHead}>
+              lanzadas por {g.orchestrator} · {g.active} en curso
+            </h3>
+            <ul className={s.taskList} aria-label={`Tareas de ${g.orchestrator}`}>
+              {g.tasks.map((task) => (
+                <TaskRow key={task.id} task={task} now={t} />
+              ))}
+            </ul>
+          </section>
         ))}
-      </ul>
+      </div>
       <div className={s.mailFoot}>
         <span>
           {active} en curso · {attention} con atención
