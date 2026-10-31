@@ -45,6 +45,7 @@ import {
 } from "../state/mail";
 import { isDormantId, roomEntries } from "../state/rooms";
 import type { KitiStore } from "../state/store";
+import { officeTaskBadges, taskLinks } from "../state/taskLinks";
 import type { Metrics } from "../telemetry/metrics";
 import { attachCameraInput } from "./camera/CameraInput";
 import {
@@ -100,6 +101,10 @@ export type WorldHandle = {
   mail(id: string): string | undefined;
   /** Sobres dibujados entre oficinas (tests E2E, ADR 0017). */
   envelopes(): number;
+  /** Líneas dibujadas del orquestador a sus agentes efímeros (tests E2E, ADR 0019). */
+  taskLinks(): number;
+  /** Texto de la etiqueta de agentes efímeros de una oficina (tests E2E). */
+  taskTag(id: string): string | undefined;
   dispose(): void;
 };
 
@@ -110,7 +115,7 @@ const FOCUS_PADDING = 24;
 const EMPTY = new Map<AgentId, AgentState>();
 const NO_ROOMS = new Map<string, ConversationInfo>();
 /** Caracteres de la fuente bitmap: los títulos y pedidos llegan en español (ADR 0009). */
-const FONT_CHARS = " -_.:!/()[]#·…?¿¡,;'\"<>«»=+*&%$@áéíóúüñÁÉÍÓÚÜÑ↑↓";
+const FONT_CHARS = "⚙ -_.:!/()[]#·…?¿¡,;'\"<>«»=+*&%$@áéíóúüñÁÉÍÓÚÜÑ↑↓";
 
 export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOptions): WorldHandle {
   const layout = opts.layout ?? DEFAULT_LAYOUT;
@@ -140,6 +145,9 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
   /** Rutas y sobres de los mensajes en camino entre oficinas (ADR 0017). */
   const mailLayer = new Container();
   let envelopeCount = 0;
+  /** Líneas del orquestador a los agentes efímeros que lanzó (ADR 0019). */
+  const taskLayer = new Container();
+  let taskLinkCount = 0;
   /** Cuándo vio la UI pasar cada mensaje a entregado (id → ms de `performance.now()`). */
   const deliveredSeen = new Map<number, number>();
   let mailAnimating = false;
@@ -219,7 +227,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       height: 1,
     });
 
-    worldRoot.addChild(corridor, zonesLayer, officesLayer, mailLayer);
+    worldRoot.addChild(corridor, zonesLayer, officesLayer, taskLayer, mailLayer);
     app.stage.addChild(worldRoot);
 
     let firstFrame: (() => void) | undefined;
@@ -303,6 +311,11 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
           applyMail();
           scheduler?.request();
           trackLingering();
+        }
+        // Agentes efímeros (ADR 0019): se resuelven por los alias de los mensajes.
+        if (s.tasks !== prev.tasks || s.mail?.aliases !== prev.mail?.aliases) {
+          applyTaskLinks();
+          scheduler?.request();
         }
         // Git del proyecto de cada oficina (ADR 0016).
         if (s.git !== prev.git) {
@@ -435,6 +448,7 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     for (const [id, r] of rooms) views.get(id)?.root.position.set(r.x, r.y);
     drawZones(l.zones);
     applyMail();
+    applyTaskLinks();
     if (corridor) {
       const margin = layout.tile * 40;
       corridor.position.set(-margin, -margin);
@@ -531,6 +545,32 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
       }
       envelopeCount++;
     }
+  }
+
+  /**
+   * Una línea continua fina del orquestador a cada agente efímero vivo (ADR 0019), ámbar si está
+   * atascado, y la etiqueta de cada oficina. Solo se redibuja al cambiar tareas, alias o layout.
+   */
+  function applyTaskLinks() {
+    const { tasks, mail } = store.getState();
+    const links = taskLinks(tasks, mail);
+    const badges = officeTaskBadges(links);
+    for (const [id, view] of views) view.setTaskBadge(badges.get(id));
+    for (const child of taskLayer.removeChildren()) child.destroy({ children: true });
+    taskLinkCount = 0;
+    const width = Math.max(1.5, layout.tile * 0.15);
+    const g = new Graphics();
+    for (const l of links) {
+      const a = rooms.get(l.from);
+      const b = rooms.get(l.to);
+      if (!a || !b) continue;
+      g.moveTo(a.x + a.w / 2, a.y + a.h / 2)
+        .lineTo(b.x + b.w / 2, b.y + b.h / 2)
+        .stroke({ color: l.stuck ? PAL.taskStuck : PAL.taskLine, width, alpha: 0.95 });
+      taskLinkCount++;
+    }
+    if (taskLinkCount > 0) taskLayer.addChild(g);
+    else g.destroy();
   }
 
   /** Un área por proyecto con su nombre: pocas, se redibujan enteras. */
@@ -758,6 +798,8 @@ export function createWorld(el: HTMLElement, store: KitiStore, opts: WorldOption
     board: (id) => views.get(id)?.boardShown(),
     mail: (id) => views.get(id)?.mailShown(),
     envelopes: () => envelopeCount,
+    taskLinks: () => taskLinkCount,
+    taskTag: (id) => views.get(id)?.taskShown(),
     async bench(durationMs = 10_000) {
       await ready;
       const s = scheduler;

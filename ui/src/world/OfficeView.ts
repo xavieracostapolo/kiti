@@ -10,6 +10,7 @@ import { displayName } from "../domain/names";
 import { decorFor, personFor } from "../domain/people";
 import { charsIn, fitLines, fitWords, fontFor, LINE_H } from "../domain/text";
 import type { AgentState, ConversationInfo, GitInfo, Provider, StatusKind } from "../protocol";
+import type { OfficeTaskBadge } from "../state/taskLinks";
 import { anchors, type RoomSize } from "./officeTemplate";
 import { PAL, PROVIDER_COLOR, PROVIDER_LETTER, STATUS_COLOR } from "./palette";
 
@@ -68,6 +69,13 @@ export class OfficeView {
   private readonly mailBg = new Graphics();
   private readonly mailText: BitmapText;
   private mailKey = "";
+  private lod: Lod = "far";
+  /** Etiqueta de agentes efímeros: «⚙ de claude-1 · implementar» o «⚙ 2» (ADR 0019). */
+  private readonly taskTag = new Container();
+  private readonly taskBg = new Graphics();
+  private readonly taskText: BitmapText;
+  private taskBadge: OfficeTaskBadge | undefined;
+  private taskKey = "";
   /** Franja inferior: qué hace ahora o el último pedido (ADR 0009). */
   private readonly note = new Container();
   private readonly noteBg = new Graphics();
@@ -146,6 +154,10 @@ export class OfficeView {
     this.mailText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 6 } });
     this.mailTag.addChild(this.mailBg, this.mailText);
     this.mailTag.visible = false;
+    this.taskText = new BitmapText({ text: "", style: { fontFamily: FONT, fontSize: 6 } });
+    this.taskText.position.set(3, 1.5);
+    this.taskTag.addChild(this.taskBg, this.taskText);
+    this.taskTag.visible = false;
     this.root.addChild(
       this.background,
       this.person,
@@ -162,6 +174,7 @@ export class OfficeView {
       this.card,
       this.terminalBadge,
       this.mailTag,
+      this.taskTag,
       this.hoverRing,
       this.selection,
     );
@@ -331,6 +344,8 @@ export class OfficeView {
     this.note.visible = !this.far;
     this.near.visible = lod === "near";
     this.near_ = lod === "near";
+    this.lod = lod;
+    this.drawTaskTag();
     if (this.near_ && this.boardStale) this.refreshBoard();
     for (const which of ["label", "note", "card"] as const) {
       if (this.stale[which]) this.refresh(which);
@@ -369,6 +384,39 @@ export class OfficeView {
         .stroke({ color: PAL.mailInk, width: 0.75 });
     }
     this.mailTag.position.set(this.size.w - w - 6, this.size.tile * 2 + 4);
+  }
+
+  /** Quién lanzó esta oficina y cuántos agentes efímeros vivos lanzó ella (ADR 0019). */
+  setTaskBadge(badge: OfficeTaskBadge | undefined): void {
+    this.taskBadge = badge;
+    this.drawTaskTag();
+  }
+
+  private drawTaskTag(): void {
+    const b = this.taskBadge;
+    const full = this.lod !== "far";
+    const parts: string[] = [];
+    if (b?.by !== undefined) parts.push(full ? `⚙ de ${b.by} · ${b.role ?? ""}` : "⚙");
+    if (b && b.launched > 0) parts.push(`⚙ ${b.launched}`);
+    const text = parts.join("  ");
+    if (text === this.taskKey) return;
+    this.taskKey = text;
+    this.taskTag.visible = text !== "";
+    if (text === "") return;
+    this.taskText.text = text;
+    this.taskText.tint = PAL.text;
+    const w = Math.ceil(this.taskText.width) + 6;
+    this.taskBg
+      .clear()
+      .roundRect(0, 0, w, 10, 2)
+      .fill(PAL.housing)
+      .stroke({ color: PAL.taskLine, width: 1 });
+    this.taskTag.position.set(this.size.w - w - 6, this.size.tile * 2 + 16);
+  }
+
+  /** Texto de la etiqueta de agentes efímeros (tests E2E). */
+  taskShown(): string | undefined {
+    return this.taskTag.visible ? this.taskText.text : undefined;
   }
 
   /** Texto del alias y del sobre (tests E2E). */

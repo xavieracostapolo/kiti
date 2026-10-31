@@ -34,6 +34,10 @@ export type KitiDev = {
   mail(id: string): string | null;
   /** Sobres dibujados entre oficinas (ADR 0017). */
   envelopes(): number;
+  /** Líneas del orquestador a sus agentes efímeros (ADR 0019). */
+  taskLinks(): number;
+  /** Etiqueta de agentes efímeros de una oficina (ADR 0019). */
+  taskTag(id: string): string | null;
   /** Recuerdos de proyecto cargados (ADR 0018). */
   memory(): number;
   /** Resumen del tablero de tareas (ADR 0019). */
@@ -77,6 +81,8 @@ export function installDevHooks(
     board: (id) => getWorld()?.board(id) ?? null,
     mail: (id) => getWorld()?.mail(id) ?? null,
     envelopes: () => getWorld()?.envelopes() ?? 0,
+    taskLinks: () => getWorld()?.taskLinks() ?? 0,
+    taskTag: (id) => getWorld()?.taskTag(id) ?? null,
     memory: () => store.getState().memories.length,
     tasks: () => taskSummary(store.getState().tasks, sim?.now?.() ?? Date.now()),
     kill: (idOrIndex) => {

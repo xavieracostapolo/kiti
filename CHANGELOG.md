@@ -8,6 +8,7 @@ Every pull request with a change people can see adds a line under **Unreleased**
 
 ### Added
 
+- The map draws a line from each agent to the ephemeral agents it launched, and their offices show who launched them and with which role.
 - Agents can start ephemeral agents through Kiti with `kiti_spawn`: each one gets its own git worktree and branch, its role sheet and task, and when it calls `kiti_done` Kiti tells the orchestrator, closes its session, archives its conversation and removes the worktree if it is safe.
 - A task board (⚙ in the top bar) lists ephemeral agents' tasks with their role, branch, model, state and pull request.
 - Three map layouts, dynamic (centered rows), horizontal and vertical, picked from the top bar or with `?layout=` in the demo.
