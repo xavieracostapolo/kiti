@@ -1,6 +1,6 @@
 [package]
 name = "kiti-app"
-version = "0.2.0"
+version = "0.3.0"
 description = "Shell de escritorio Tauri v2 para Kiti"
 edition.workspace = true
 rust-version.workspace = true
