@@ -47,7 +47,7 @@ export const PAL = {
   mailFill: 0xf5c542,
   mailInk: 0x0e1018,
   mailPath: 0xf5c542,
-  /** Línea del orquestador a los agentes efímeros que lanzó (ADR 0019) y la de una tarea atascada. */
+  /** Línea del orquestador a los agentes efímeros que lanzó (ADR 0019) y la de una tarea atascada (violeta: ni amarillo de mensajes ni rojo de error). */
   taskLine: 0x5ec8e5,
-  taskStuck: 0xf5a142,
+  taskStuck: 0xd36bff,
 } as const;
