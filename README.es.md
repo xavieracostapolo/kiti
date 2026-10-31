@@ -29,13 +29,16 @@ Cuando tienes varios agentes de código abiertos, les pierdes la pista. Uno espe
 - **Cámara y distribución.** Pan, zoom, doble clic para enfocar una oficina y `0` para verlo todo, o los botones `+`, `−` y encuadrar de la esquina. De lejos, cada oficina muestra su título en un cartel grande; de cerca ves el título, la herramienta actual y el último pedido. Los iconos de la barra superior (⊞ ⊟ ☷) cambian el mapa entre tres distribuciones: dinámica (filas centradas), horizontal y vertical. Sin agentes en marcha, el mapa explica cómo abrir uno.
 - **Oficinas con vida.** Los agentes que trabajan están animados y cada oficina tiene su propia decoración, así que el mapa distingue de un vistazo quién trabaja y quién no.
 - **Filtro y buscador.** Los contadores de la barra superior filtran por estado, también las conversaciones apagadas. Pulsa `/` para buscar por título, proyecto, carpeta o proveedor, y `Esc` para limpiar. Las oficinas que no coinciden se atenúan, no se esconden: el mapa conserva su orden y la cámara encuadra las que coinciden.
-- **Terminal embebida.** Lanza un agente nuevo desde Kiti. Corre en `tmux` (`-L kiti`), así que sobrevive cuando cierras Kiti.
+- **Terminal embebida.** Lanza un agente nuevo desde Kiti. Corre en `tmux` (`-L kiti`), así que sobrevive cuando cierras Kiti. El panel de la terminal se puede redimensionar.
 - **Ir a su terminal.** Para un agente abierto fuera de Kiti, «Ir a su terminal» muestra su pestaña exacta en Ghostty o Terminal.app. Otras apps, como VS Code, pasan al frente.
 - **Retomar conversaciones.** Las conversaciones cerradas de Claude de los últimos 7 días quedan como oficinas apagadas. Un clic ejecuta `claude --resume` en una terminal de Kiti.
 - **Barra de menú y avisos.** La barra de menú muestra los contadores. macOS te avisa cuando un agente pide permiso, termina un turno largo, falla o se cae, solo si Kiti no está al frente. Un clic en el aviso abre Kiti en esa oficina.
-- **Cuota de uso.** La barra superior muestra cuánto queda de tu plan de Claude (ventanas de 5 h y semanal) y de tu cuota de Antigravity, y Kiti avisa una vez cuando a un límite semanal le queda el 20 % o menos.
+- **Cuota de uso.** La barra superior muestra cuánto queda de tu plan de Claude (ventanas de 5 h y semanal) y de tu cuota de Antigravity, al instante, y Kiti avisa una vez cuando a un límite semanal le queda el 20 % o menos.
 - **Tablero de la oficina.** Al acercarte a una oficina ves el modelo, el contexto usado y el coste de la sesión (Claude), la rama de git del proyecto, sus cambios y los commits por subir o por bajar, y una línea de tiempo de la última hora. Solo aparece en el zoom más cercano, para no recargar la vista general; el panel lateral muestra los mismos datos con cualquier zoom.
-- **Pixel art.** Salas, muebles y personas salen de los tilesheets CC0 de [Kenney](https://kenney.nl). Cada agente tiene siempre la misma persona, y la alfombra lleva el color de su proveedor.
+- **Pixel art.** Salas, muebles y personas salen de los tilesheets CC0 de [Kenney](https://kenney.nl), dibujados como un diorama 2.5D con profundidad y sombras. Cada agente tiene siempre la misma persona, y la alfombra lleva el color de su proveedor.
+- **Mensajes entre agentes.** Los agentes de cualquier CLI se escriben a través de Kiti. Kiti teclea cada mensaje en la terminal del destinatario cuando está libre. Un panel ✉ lista los hilos y el mapa muestra el alias de cada oficina y un sobre que viaja entre oficinas durante 3 segundos. La entrega es automática por defecto; un modo manual te pide aprobar cada mensaje. Límites de mensajes por hora y por hilo cortan los bucles. Los mensajes pendientes y los alias sobreviven a un reinicio.
+- **Memoria de proyecto.** Kiti anota con los hooks el primer pedido de cada sesión, los archivos tocados y la lista de tareas. Los agentes también pueden guardar decisiones, trampas y traspasos, y buscarlos después: así el contexto sobrevive a la compactación y se comparte con otros agentes. La memoria es común a todos los worktrees de un repositorio y la búsqueda ignora las tildes.
+- **Agentes efímeros.** Un agente puede lanzar a otro para una sola tarea. Kiti le crea un worktree y una rama de git, lo lanza en una terminal de Kiti con su ficha de rol y la tarea y, cuando avisa de que terminó, lo cierra, archiva su conversación y borra el worktree si es seguro. El tablero de tareas (⚙ en la barra superior) lista cada tarea con su rol, rama, modelo, estado y pull request. Lanzar gasta cuota, así que el modo manual lo bloquea y Kiti limita las tareas vivas y los lanzamientos por hora.
 - **Cerrar una oficina.** Termina el proceso del agente tras una confirmación. Kiti verifica `(pid, start_time, uid, cmd)` antes de cada señal, así que nunca mata un PID reutilizado.
 
 <table>
@@ -102,7 +105,7 @@ mise install && mise exec -- pnpm install
 mise run ui:dev                        # http://127.0.0.1:5173/?sim=20&seed=42
 ```
 
-O abre la [demo](https://xavieracostapolo.github.io/kiti/demo/). Parámetros de URL: `sim` (número de agentes), `seed`, `conversations=1` (conversaciones cerradas), `terminals=1` (terminal falsa), `quota=1` (cuota falsa) y `layout=dynamic|horizontal|vertical`.
+O abre la [demo](https://xavieracostapolo.github.io/kiti/demo/). Parámetros de URL: `sim` (número de agentes), `seed`, `conversations=1` (conversaciones cerradas), `terminals=1` (terminal falsa), `quota=1` (cuota falsa), `mail=1` (mensajes falsos entre agentes), `tasks=1` (tareas falsas de agentes efímeros) y `layout=dynamic|horizontal|vertical`.
 
 ### Ejecuta la app
 
@@ -124,6 +127,22 @@ mise run app:bundle    # genera Kiti.app y la copia al Escritorio
 | Gemini CLI | Hooks `command` a través del forwarder `kiti-hook` | `mise run hooks:install-gemini` |
 
 Para la cuota y el tablero de Claude, ejecuta también `mise run statusline:install` (ver [Privacidad y seguridad](#privacidad-y-seguridad)).
+
+### Deja que los agentes se hablen
+
+`mise run mcp:install` registra `kiti-mcp` en Claude Code, Antigravity CLI y Codex CLI (los que tengas instalados; `mise run mcp:uninstall` lo quita). Da a cada CLI siete herramientas:
+
+| Herramienta | Qué hace |
+|---|---|
+| `kiti_agents` | Lista los agentes en ejecución, con su alias, sesión tmux y PID |
+| `kiti_send` | Envía un mensaje a otro agente |
+| `kiti_inbox` | Lee los mensajes que te enviaron |
+| `kiti_remember` | Guarda una decisión, trampa, traspaso o nota en la memoria del proyecto |
+| `kiti_recall` | Sin consulta, un índice ligero del proyecto; con consulta, los recuerdos que coinciden |
+| `kiti_spawn` | Lanza un agente efímero para una tarea, en su propio worktree y rama |
+| `kiti_done` | Avisa a Kiti de que un agente efímero terminó, para que lo cierre y limpie |
+
+Tú no las llamas: las llaman tus agentes. `kiti_spawn` y `kiti_done` funcionan así: un agente que coordina un trabajo reparte cada parte a un agente nuevo, con su propia copia del repositorio y su rama, así que no se pisan. Cuando uno termina abre un pull request y Kiti lo cierra. El merge y el borrado de ramas quedan para ti. Las decisiones están en los ADR [0017](docs/decisiones/0017-mensajes-entre-agentes/README.md), [0018](docs/decisiones/0018-memoria-de-proyecto/README.md) y [0019](docs/decisiones/0019-agentes-efimeros/README.md).
 
 `mise run hooks:status` muestra qué está instalado. `mise run scan` muestra qué procesos ve Kiti como agentes y por qué. El forwarder falla en abierto: tiene un plazo de 150 ms, siempre sale con `0` y no hace nada si Kiti está cerrado.
 
@@ -171,6 +190,7 @@ Lo que cambió en cada versión está en [CHANGELOG.md](CHANGELOG.md).
 - [x] Antigravity CLI, el sucesor de Gemini CLI para cuentas gratuitas
 - [x] Build universal descargable (firma ad-hoc)
 - [x] Cuota de uso de Claude y Antigravity, y tablero de oficina con sesión, git y la última hora
+- [x] Mensajes entre agentes, memoria de proyecto y agentes efímeros con tablero de tareas
 - [ ] Soporte para Windows
 - [ ] Versiones firmadas y notarizadas
 
