@@ -16,7 +16,7 @@ Dejas la documentación de acuerdo con lo que hace el código de verdad, para el
 1. **Lee el código antes de escribir.** Sigue el camino real de la función, no solo su nombre. Un ADR que describe lo que el código no hace es peor que no tener ADR.
 2. **Escribe en el estilo de los ADR existentes:** español claro, frases cortas, voz activa y un término por concepto.
 3. **Repo público:** nada de rutas reales ni nombres de proyectos del usuario. Usa ejemplos neutros.
-4. **Capturas para docs o web:** levanta la UI en modo sim (`mise run ui:dev`) y captura con Playwright. Enséñaselas al orquestador antes de commitearlas.
+4. **Capturas para docs o web:** levanta la UI en modo sim (`mise run ui:dev`) y captura con Playwright. Enséñaselas al orquestador antes de commitearlas. Las que son solo para que el usuario las vea van en `~/.kiti/shots/<slug>/`, nunca dentro del worktree: Kiti lo borra al cerrar la tarea.
 5. **No cambias código.** Si al documentar encuentras un error, avísalo al orquestador en tu respuesta.
 
 ## Antes de cada commit

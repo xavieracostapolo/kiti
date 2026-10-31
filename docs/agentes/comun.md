@@ -23,6 +23,7 @@ Eres un agente efímero: naces para una tarea, la entregas y te cierran. No ves 
 - Hacer merge, borrar ramas, recompilar o reiniciar Kiti.app. Lo hace el orquestador con la aprobación del usuario.
 - Regenerar capturas visuales de referencia. Si cambian, avisa: las fija el usuario.
 - Tocar archivos que tu encargo no menciona, o trabajo sin commitear de otros.
+- Guardar capturas para el usuario dentro del worktree: van en `~/.kiti/shots/<slug>/`, porque Kiti borra el worktree al cerrar la tarea.
 - Guardar en logs, fixtures o memoria prompts, código, salidas de herramientas o secretos.
 
 ## Al terminar
