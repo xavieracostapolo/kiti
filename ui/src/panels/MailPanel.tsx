@@ -15,7 +15,7 @@ type Props = {
 /** Chip de la barra superior: abre el panel; amarillo solo si algo pide atención (ADR 0017). */
 export function MailChip({ store }: { store: KitiStore }) {
   const mail = useStore(store, (st) => st.mail);
-  const open = useStore(store, (st) => st.mailOpen);
+  const open = useStore(store, (st) => st.sidePanel === "mail");
   const chip = chipOf(mail);
   if (!chip) return null;
   const label = chip.attention
@@ -28,7 +28,11 @@ export function MailChip({ store }: { store: KitiStore }) {
       aria-label={label}
       aria-pressed={open}
       title={label}
-      onClick={() => store.getState().setMailOpen(!open)}
+      onClick={() => {
+        const st = store.getState();
+        if (open) st.closeSidePanel();
+        else st.openSidePanel("mail");
+      }}
     >
       ✉ {chip.count}
     </button>
@@ -49,7 +53,7 @@ const STATE_LABEL: Record<MailMessage["state"], string> = {
  */
 export function MailPanel({ store, now, act }: Props) {
   const mail = useStore(store, (st) => st.mail);
-  const open = useStore(store, (st) => st.mailOpen);
+  const open = useStore(store, (st) => st.sidePanel === "mail");
   if (!open || !mail) return null;
   const pending = mail.threads
     .flatMap((t) => t.messages)
@@ -85,7 +89,7 @@ export function MailPanel({ store, now, act }: Props) {
           type="button"
           className={s.closeBtn}
           aria-label="Cerrar mensajes"
-          onClick={() => store.getState().setMailOpen(false)}
+          onClick={() => store.getState().closeSidePanel()}
         >
           ✕
         </button>

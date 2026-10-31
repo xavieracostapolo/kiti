@@ -31,3 +31,25 @@ export function sortTasks(tasks: readonly TaskInfo[]): TaskInfo[] {
     (a, b) => Number(isLive(b)) - Number(isLive(a)) || b.createdAt - a.createdAt,
   );
 }
+
+export type TaskGroup = {
+  orchestrator: string;
+  /** `launching` + `running`. */
+  active: number;
+  tasks: TaskInfo[];
+};
+
+/** Agrupa por orquestador; los grupos salen en el orden de su primera tarea y dentro de cada uno rige `sortTasks`. */
+export function groupTasks(tasks: readonly TaskInfo[]): TaskGroup[] {
+  const groups = new Map<string, TaskGroup>();
+  for (const t of sortTasks(tasks)) {
+    let g = groups.get(t.orchestrator);
+    if (!g) {
+      g = { orchestrator: t.orchestrator, active: 0, tasks: [] };
+      groups.set(t.orchestrator, g);
+    }
+    g.tasks.push(t);
+    if (t.state === "launching" || t.state === "running") g.active++;
+  }
+  return [...groups.values()];
+}

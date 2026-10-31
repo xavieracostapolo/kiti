@@ -41,6 +41,14 @@ const base: AgentState = {
 };
 
 describe("AgentPanel", () => {
+  it("se corre a la izquierda con un panel lateral abierto", () => {
+    const store = setup(base);
+    const panel = screen.getByRole("complementary", { name: "Agente seleccionado" });
+    expect(panel.getAttribute("data-shifted")).toBeNull();
+    act(() => store.getState().openSidePanel("mail"));
+    expect(panel.getAttribute("data-shifted")).toBe("true");
+  });
+
   it("muestra estado, motivo, herramienta y último evento", () => {
     setup(base);
     expect(screen.getByText("billing")).toBeTruthy();

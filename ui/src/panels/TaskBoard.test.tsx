@@ -77,6 +77,32 @@ describe("TaskChip", () => {
   });
 });
 
+describe("un solo panel lateral", () => {
+  it("el chip abre y cierra, y marca aria-pressed", () => {
+    setup();
+    const chip = screen.getByRole("button", { name: /Tablero de tareas/ });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("complementary", { name: "Tablero de tareas" })).toBeNull();
+  });
+
+  it("abrir mensajes cierra las tareas y al revés", () => {
+    const store = setup();
+    act(() => store.getState().openSidePanel("tasks"));
+    act(() => store.getState().openSidePanel("mail"));
+    expect(store.getState().sidePanel).toBe("mail");
+    expect(screen.queryByRole("complementary", { name: "Tablero de tareas" })).toBeNull();
+    act(() => store.getState().openSidePanel("tasks"));
+    expect(store.getState().sidePanel).toBe("tasks");
+    act(() => store.getState().closeSidePanel());
+    act(() => store.getState().closeSidePanel());
+    expect(store.getState().sidePanel).toBeNull();
+  });
+});
+
 describe("TaskBoard", () => {
   it("cerrado no pinta nada; el chip lo abre", () => {
     setup();
@@ -87,8 +113,10 @@ describe("TaskBoard", () => {
 
   it("una fila por tarea: vivas primero y luego las terminadas, de la más nueva a la más vieja", () => {
     const store = setup();
-    act(() => store.getState().setTasksOpen(true));
-    const rows = within(screen.getByRole("list", { name: "Tareas" })).getAllByRole("listitem");
+    act(() => store.getState().openSidePanel("tasks"));
+    const rows = within(screen.getByRole("list", { name: "Tareas de claude-1" })).getAllByRole(
+      "listitem",
+    );
     expect(rows.map((r) => r.getAttribute("data-state"))).toEqual([
       "running",
       "stuck",
@@ -102,9 +130,35 @@ describe("TaskBoard", () => {
     expect(rows[0]?.textContent).toContain("hace 10 min");
   });
 
+  it("con un solo orquestador también hay cabecera", () => {
+    const store = setup();
+    act(() => store.getState().openSidePanel("tasks"));
+    expect(screen.getByRole("heading", { level: 3 }).textContent).toBe(
+      "lanzadas por claude-1 · 1 en curso",
+    );
+  });
+
+  it("agrupa por orquestador, cada grupo con su orden y su cuenta", () => {
+    const store = setup([
+      task({ id: 1, orchestrator: "claude-1", state: "done", createdAt: NOW - 50 * MIN }),
+      task({ id: 2, orchestrator: "codex-1", state: "running", createdAt: NOW - 5 * MIN }),
+      task({ id: 3, orchestrator: "claude-1", state: "running", createdAt: NOW - 20 * MIN }),
+      task({ id: 4, orchestrator: "claude-1", state: "launching", createdAt: NOW - 8 * MIN }),
+    ]);
+    act(() => store.getState().openSidePanel("tasks"));
+    expect(screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "lanzadas por codex-1 · 1 en curso",
+      "lanzadas por claude-1 · 2 en curso",
+    ]);
+    const rows = within(screen.getByRole("list", { name: "Tareas de claude-1" })).getAllByRole(
+      "listitem",
+    );
+    expect(rows.map((r) => r.getAttribute("data-state"))).toEqual(["launching", "running", "done"]);
+  });
+
   it("muestra el PR como enlace y el motivo de las fallidas", () => {
     const store = setup();
-    act(() => store.getState().setTasksOpen(true));
+    act(() => store.getState().openSidePanel("tasks"));
     const link = screen.getByRole("link", { name: /PR #12/ });
     expect(link.getAttribute("href")).toBe("https://github.com/ejemplo/tienda-web/pull/12");
     expect(screen.getByText("el agente terminó con error")).toBeTruthy();

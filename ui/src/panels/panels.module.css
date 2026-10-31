@@ -204,6 +204,11 @@
   pointer-events: auto;
 }
 
+/* Con un panel lateral abierto, el del agente se corre a su izquierda para no taparse. */
+.agentPanelShifted {
+  right: calc(min(420px, 100vw - 24px) + 24px);
+}
+
 .closeBtn {
   background: none;
   border: none;
@@ -667,10 +672,21 @@
 }
 
 /* Tablero de tareas (ADR 0019): reutiliza el marco del panel de mensajes. */
-.taskList {
+.taskGroups {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.taskGroupHead {
+  margin: 0;
+  padding: 10px 12px 0;
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--muted);
+}
+
+.taskList {
   margin: 0;
   padding: 12px;
   list-style: none;

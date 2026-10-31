@@ -44,14 +44,12 @@ export type KitiState = {
   /** Tareas de los agentes efímeros (ADR 0019), tal como llegan del core. */
   tasks: readonly TaskInfo[];
   setTasks(tasks: readonly TaskInfo[]): void;
-  /** Panel del tablero de tareas abierto. */
-  tasksOpen: boolean;
-  setTasksOpen(open: boolean): void;
+  /** Panel lateral derecho abierto: solo uno a la vez (mensajes o tareas). */
+  sidePanel: SidePanel | null;
+  openSidePanel(panel: SidePanel): void;
+  closeSidePanel(): void;
   /** Recuerdos de los proyectos (ADR 0018), del más reciente al más antiguo. */
   memories: readonly MemoryItem[];
-  /** Panel de mensajes abierto. */
-  mailOpen: boolean;
-  setMailOpen(open: boolean): void;
   /** Conversaciones de los últimos 7 días tal como llegan del core (ADR 0009). */
   conversations: readonly ConversationInfo[];
   /** Oficinas apagadas: las conversaciones sin agente encendido, por id de oficina. */
@@ -93,6 +91,8 @@ export type KitiState = {
   setLod(lod: Lod): void;
 };
 
+export type SidePanel = "mail" | "tasks";
+
 export type KitiStore = ReturnType<typeof createKitiStore>;
 
 function without<K extends keyof ViewState>(view: ViewState, key: K): ViewState {
@@ -116,13 +116,12 @@ export function createKitiStore() {
     setTasks(tasks) {
       set({ tasks });
     },
-    tasksOpen: false,
-    setTasksOpen(tasksOpen) {
-      if (get().tasksOpen !== tasksOpen) set({ tasksOpen });
+    sidePanel: null,
+    openSidePanel(panel) {
+      if (get().sidePanel !== panel) set({ sidePanel: panel });
     },
-    mailOpen: false,
-    setMailOpen(mailOpen) {
-      if (get().mailOpen !== mailOpen) set({ mailOpen });
+    closeSidePanel() {
+      if (get().sidePanel !== null) set({ sidePanel: null });
     },
     conversations: [],
     dormant: new Map(),

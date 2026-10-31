@@ -57,6 +57,17 @@ describe("MailPanel", () => {
     expect(container.textContent).toBe("");
   });
 
+  it("el chip marca aria-pressed y lo pulsa de nuevo para cerrar", () => {
+    setup();
+    const chip = screen.getByRole("button", { name: "Mensajes: 1 por decidir" });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(chip);
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+    expect(screen.queryByRole("complementary", { name: "Mensajes entre agentes" })).toBeNull();
+  });
+
   it("el chip pide atención y abre el panel con el hilo pausado", () => {
     const { acts } = setup();
     const chip = screen.getByRole("button", { name: "Mensajes: 1 por decidir" });
@@ -98,7 +109,7 @@ describe("MailPanel", () => {
         { ...thread, state: "open", hops: 1, messages: [{ ...message, state: "pending" }] },
       ],
     });
-    act(() => store.getState().setMailOpen(true));
+    act(() => store.getState().openSidePanel("mail"));
     fireEvent.click(screen.getByRole("button", { name: "Entregar" }));
     fireEvent.click(screen.getByRole("button", { name: "Descartar" }));
     expect(acts).toEqual([
